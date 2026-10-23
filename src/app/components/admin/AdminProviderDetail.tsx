@@ -94,6 +94,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
   const [request, setRequest] = useState<ProviderRequestRow | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
   const [requestFetched, setRequestFetched] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -116,6 +117,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
 
@@ -149,7 +151,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
   useEffect(() => {
     if (tab !== 'overview' || !provider?.userId || requestFetched) return;
-    setRequestLoading(true);
+    setRequestLoading(true); setRequestError(null);
     Promise.resolve(
       supabase
         .from('service_provider_requests')
@@ -159,7 +161,11 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
         .limit(1)
         .maybeSingle(),
     )
-      .then(({ data }: any) => setRequest(data || null))
+      .then(({ data, error: err }: any) => {
+        if (err) { setRequestError(err.message || 'Failed to load the application status.'); return; }
+        setRequest(data || null);
+      })
+      .catch((e: any) => setRequestError(e?.message || 'Failed to load the application status.'))
       .finally(() => { setRequestLoading(false); setRequestFetched(true); });
   }, [tab, provider?.userId, requestFetched]);
 
@@ -235,14 +241,18 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
   useEffect(() => {
     if (tab !== 'audit' || !provider?.userId) return;
-    setAuditLoading(true);
+    setAuditLoading(true); setAuditError(null);
     Promise.resolve(
       supabase.from('admin_logs').select('id, action, details, created_at, actor_role')
         .eq('target_user_id', provider.userId)
         .eq('action', 'service_provider_request_decision')
         .order('created_at', { ascending: false }).limit(50),
     )
-      .then(({ data }: any) => setAudit(data || []))
+      .then(({ data, error: err }: any) => {
+        if (err) { setAuditError(err.message || 'Failed to load the audit trail.'); return; }
+        setAudit(data || []);
+      })
+      .catch((e: any) => setAuditError(e?.message || 'Failed to load the audit trail.'))
       .finally(() => setAuditLoading(false));
   }, [tab, provider?.userId]);
 
@@ -347,6 +357,8 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
           <div style={{ fontSize: 13, fontWeight: 700, color: adminTheme.textStrong, marginBottom: 10 }}>Provider Application (KYC)</div>
           {requestLoading ? (
             <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 12 }}>Loading application status…</div>
+          ) : requestError ? (
+            <NotAvailable reason={`could not load the application status — ${requestError}`} />
           ) : !request ? (
             <NotAvailable reason="no service_provider_requests row exists for this owner — they were granted the capability another way (e.g. admin_set_service_provider_capability), not through the application flow." />
           ) : (
@@ -464,6 +476,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
       {tab === 'audit' && (
         auditLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
+        : auditError ? <NotAvailable reason={`could not load the audit trail — ${auditError}`} />
         : audit.length === 0 ? <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this provider's application.</div>
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>

@@ -64,8 +64,10 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsFetched, setAnalyticsFetched] = useState(false);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -88,8 +90,17 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   useEffect(() => { loadEvent(); }, [loadEvent]);
 
   useEffect(() => {
-    if (tab !== 'overview' && tab !== 'checkins') return;
-    if (analytics || analyticsLoading) return;
+    // Guarding on `analytics`/`analyticsLoading` themselves (rather than a
+    // dedicated "have we fetched yet" flag) meant that on a failed RPC
+    // call -- analytics stays null forever, analyticsLoading cycles
+    // true->false -- this effect re-ran every time analyticsLoading
+    // flipped back to false, since that flip is itself a listed
+    // dependency and the guard no longer blocked it. That's an infinite
+    // fetch loop on any RPC failure, not just a cosmetic bug: it reruns
+    // get_event_analytics forever with no backoff. Switched to the same
+    // fetched-once flag pattern already used elsewhere in this console
+    // (e.g. AdminOrganizerDetail's KYC tab).
+    if ((tab !== 'overview' && tab !== 'checkins') || analyticsFetched || analyticsLoading) return;
     setAnalyticsLoading(true);
     setAnalyticsError(null);
     Promise.resolve(supabase.rpc('get_event_analytics' as any, { p_event_id: eventId }))
@@ -98,18 +109,25 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
         setAnalytics(data as any);
       })
       .catch((e: any) => setAnalyticsError(e?.message || 'Failed to load ticket stats.'))
-      .finally(() => setAnalyticsLoading(false));
-  }, [tab, eventId, analytics, analyticsLoading]);
+      .finally(() => { setAnalyticsLoading(false); setAnalyticsFetched(true); });
+  }, [tab, eventId, analyticsFetched, analyticsLoading]);
 
   useEffect(() => {
     if (tab !== 'audit') return;
-    setAuditLoading(true);
+    setAuditLoading(true); setAuditError(null);
     Promise.resolve(
       (supabase.from('admin_logs').select('id, action, details, created_at, actor_role') as any)
         .eq('details->>event_id', eventId).order('created_at', { ascending: false }).limit(50),
     )
-      .then(({ data }: any) => setAudit(data || []))
-      .catch(() => setAudit([]))
+      .then(({ data, error: err }: any) => {
+        // Previously: .catch(() => setAudit([])) swallowed a failed
+        // fetch into the same empty array a genuinely clean audit trail
+        // produces, rendering "No admin actions recorded for this
+        // event." either way.
+        if (err) { setAuditError(err.message || 'Failed to load the audit trail.'); return; }
+        setAudit(data || []);
+      })
+      .catch((e: any) => setAuditError(e?.message || 'Failed to load the audit trail.'))
       .finally(() => setAuditLoading(false));
   }, [tab, eventId]);
 
@@ -220,6 +238,7 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
 
       {tab === 'audit' && (
         auditLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
+        : auditError ? <NotAvailable reason={`could not load the audit trail — ${auditError}`} />
         : audit.length === 0 ? <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this event.</div>
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>

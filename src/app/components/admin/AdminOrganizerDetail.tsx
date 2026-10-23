@@ -78,10 +78,13 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
 
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventsFetched, setEventsFetched] = useState(false);
 
   const [verif, setVerif] = useState<VerifRequest | null>(null);
   const [verifLoading, setVerifLoading] = useState(false);
   const [verifFetched, setVerifFetched] = useState(false);
+  const [verifError, setVerifError] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -93,6 +96,7 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
 
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
 
@@ -115,19 +119,30 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (tab !== 'events' || events || eventsLoading) return;
-    setEventsLoading(true);
+    // Guarding on `events`/`eventsLoading` themselves meant that on a
+    // failed fetch -- events stays null forever, eventsLoading cycles
+    // true->false -- this effect re-ran every time eventsLoading flipped
+    // back to false, since that flip is itself a listed dependency and
+    // the guard no longer blocked it: an infinite re-fetch loop on any
+    // query failure. Switched to a dedicated fetched-once flag, the same
+    // pattern this file's own KYC tab (verifFetched) already uses.
+    if (tab !== 'events' || eventsFetched || eventsLoading) return;
+    setEventsLoading(true); setEventsError(null);
     Promise.resolve(
       supabase.from('events').select('id, title, event_date, deleted_at')
         .eq('organizer_id', organizerId).is('deleted_at', null)
         .order('event_date', { ascending: false }).limit(100),
     )
-      .then(({ data }: any) => setEvents(data || []))
-      .finally(() => setEventsLoading(false));
-  }, [tab, organizerId, events, eventsLoading]);
+      .then(({ data, error: err }: any) => {
+        if (err) { setEventsError(err.message || 'Failed to load events.'); return; }
+        setEvents(data || []);
+      })
+      .catch((e: any) => setEventsError(e?.message || 'Failed to load events.'))
+      .finally(() => { setEventsLoading(false); setEventsFetched(true); });
+  }, [tab, organizerId, eventsFetched, eventsLoading]);
 
   const loadVerif = useCallback(async () => {
-    setVerifLoading(true);
+    setVerifLoading(true); setVerifError(null);
     try {
       const { data, error: err } = await supabase
         .from('organizer_verification_requests')
@@ -138,6 +153,14 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
         .maybeSingle();
       if (err) throw err;
       setVerif(data || null);
+    } catch (e: any) {
+      // Previously uncaught: the thrown error here became an unhandled
+      // promise rejection (loadVerif's own caller never awaits or catches
+      // it), and the finally block still ran, leaving `verif` at null --
+      // rendered as the same "no verification request" NotAvailable
+      // message a genuinely unverified organizer gets. An admin could
+      // read a failed query as "this organizer never applied."
+      setVerifError(e?.message || 'Failed to load verification status.');
     } finally { setVerifLoading(false); setVerifFetched(true); }
   }, [organizerId]);
 
@@ -159,12 +182,16 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
 
   useEffect(() => {
     if (tab !== 'audit') return;
-    setAuditLoading(true);
+    setAuditLoading(true); setAuditError(null);
     Promise.resolve(
       supabase.from('admin_logs').select('id, action, details, created_at, actor_role')
         .eq('target_user_id', organizerId).order('created_at', { ascending: false }).limit(50),
     )
-      .then(({ data }: any) => setAudit(data || []))
+      .then(({ data, error: err }: any) => {
+        if (err) { setAuditError(err.message || 'Failed to load the audit trail.'); return; }
+        setAudit(data || []);
+      })
+      .catch((e: any) => setAuditError(e?.message || 'Failed to load the audit trail.'))
       .finally(() => setAuditLoading(false));
   }, [tab, organizerId]);
 
@@ -259,6 +286,7 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
 
       {tab === 'events' && (
         eventsLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading events…</div>
+        : eventsError ? <NotAvailable reason={`could not load events — ${eventsError}`} />
         : !events || events.length === 0 ? (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No events hosted yet.</div>
         ) : (
@@ -312,6 +340,7 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
 
       {tab === 'kyc' && (
         verifLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading verification…</div>
+        : verifError ? <NotAvailable reason={`could not load verification status — ${verifError}`} />
         : !verif ? <NotAvailable reason="no organizer_verification_requests row exists for this organizer — they have not submitted CAC verification." />
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 18, fontSize: 12.5, color: adminTheme.text, lineHeight: 1.7 }}>
@@ -360,6 +389,7 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
 
       {tab === 'audit' && (
         auditLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
+        : auditError ? <NotAvailable reason={`could not load the audit trail — ${auditError}`} />
         : audit.length === 0 ? <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this organizer.</div>
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>

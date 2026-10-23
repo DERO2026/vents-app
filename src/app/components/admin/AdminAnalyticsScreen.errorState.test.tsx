@@ -21,6 +21,7 @@ vi.mock('../../../lib/supabase', () => {
       select: () => q,
       eq: () => q,
       is: () => q,
+      range: () => q,
       then: (resolve: any) => {
         if (table === 'users' && failUsers) return resolve({ data: null, error: { message: 'permission denied for table users' }, count: null });
         if (table === 'users') return resolve({ data: null, error: null, count: 10 });

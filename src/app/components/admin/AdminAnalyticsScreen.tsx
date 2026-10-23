@@ -7,6 +7,40 @@ import { adminTheme } from './adminConsoleTheme';
 
 interface Stats { users: number; events: number; tickets: number; vc: number; revenue: number; newThisWeek: number; newThisMonth: number; }
 
+// Supabase's Data API caps how many rows a single request can return (the
+// project's "Max Rows" API setting -- commonly 1000, but not something
+// this client can read or rely on at a specific value). The VC-circulation
+// and revenue totals used to be summed client-side from a single unbounded
+// .select('amount') with no .limit()/.range() at all: once either
+// vc_transactions (earn/active) or tickets (paid) grows past that cap, the
+// request would silently come back truncated and both totals would
+// silently undercount -- with nothing in the UI indicating the number was
+// ever anything but complete. At today's row counts (double digits to low
+// hundreds on both tables, confirmed live) this hasn't happened yet, but
+// it would recur with no warning as the platform grows unless the sum is
+// computed by paging through explicitly rather than trusting one request
+// to return everything. This pages with .range() in fixed-size chunks and
+// keeps requesting until a page comes back short of a full page -- correct
+// for any row count, and makes no change to any database function.
+const SUM_PAGE_SIZE = 1000;
+
+async function sumColumnPaginated(
+  table: string, column: string, build: (q: any) => any,
+): Promise<{ sum: number; error: any }> {
+  let total = 0;
+  let offset = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await build(supabase.from(table).select(column)).range(offset, offset + SUM_PAGE_SIZE - 1);
+    if (error) return { sum: total, error };
+    const rows: any[] = data || [];
+    for (const row of rows) total += Number(row[column] || 0);
+    if (rows.length < SUM_PAGE_SIZE) break;
+    offset += SUM_PAGE_SIZE;
+  }
+  return { sum: total, error: null };
+}
+
 export function AdminAnalyticsScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -18,8 +52,8 @@ export function AdminAnalyticsScreen() {
       supabase.from('users').select('id', { count: 'exact', head: true }),
       supabase.from('events').select('id', { count: 'exact', head: true }).is('deleted_at', null),
       supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
-      supabase.from('vc_transactions').select('amount').eq('type', 'earn').eq('status', 'active'),
-      supabase.from('tickets').select('amount').eq('payment_status', 'paid'),
+      sumColumnPaginated('vc_transactions', 'amount', (q) => q.eq('type', 'earn').eq('status', 'active')),
+      sumColumnPaginated('tickets', 'amount', (q) => q.eq('payment_status', 'paid')),
       supabase.rpc('admin_get_new_user_stats' as any),
     ]).then(([uRes, eRes, tRes, vcRes, revRes, newUserRes]) => {
       // A failed query here previously fell through to the catch below,
@@ -32,11 +66,9 @@ export function AdminAnalyticsScreen() {
       const firstError = [uRes.error, eRes.error, tRes.error, vcRes.error, revRes.error, newUserRes.error].find(Boolean);
       if (firstError) { setError((firstError as any)?.message || 'Failed to load analytics.'); setLoading(false); return; }
       setError(null);
-      const vcTotal = (vcRes.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
-      const revenue = (revRes.data || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
       const newUserRow = (newUserRes.data || [])[0] || {};
       setStats({
-        users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcTotal, revenue,
+        users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcRes.sum, revenue: revRes.sum,
         newThisWeek: newUserRow.new_this_week ?? 0, newThisMonth: newUserRow.new_this_month ?? 0,
       });
       setLoading(false);
