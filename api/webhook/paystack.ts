@@ -106,10 +106,57 @@ function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
 
+// Vercel's default body parser (JSON.parse'd automatically into req.body)
+// discards the original request bytes -- fine for the two client-triggered
+// verify paths below, which only ever read plain fields out of req.body,
+// but wrong for the webhook path's own HMAC check (F17): JSON.stringify'ing
+// an already-parsed object is not guaranteed byte-identical to what
+// Paystack actually signed (key order, number formatting, etc. can differ
+// on the round trip), which is exactly the anti-pattern Paystack's and
+// Stripe's own webhook docs warn against. Disabling the automatic parser
+// (config.api.bodyParser below) and reading the raw bytes ourselves fixes
+// that at the source for all three entry points sharing this file, not
+// just the webhook one -- the two verify paths still get an equivalent
+// req.body set from those same bytes, parsed once here, so their existing
+// logic below is unchanged.
+export const config = { api: { bodyParser: false } };
+
+async function readRawBody(req): Promise<Buffer> {
+  // req is a real Node.js Readable (http.IncomingMessage) when bodyParser
+  // is disabled -- draining it this way is Vercel's own documented pattern
+  // for reading a raw request body. Buffer.isBuffer(req.body) is a
+  // deliberate escape hatch for tests only: constructing a genuine
+  // Readable in every test (as the regression suite below does for the
+  // cases that matter) exercises this exact code path, but a few call
+  // sites that don't care about streaming can hand this function a Buffer
+  // directly without losing any coverage of the real logic.
+  if (Buffer.isBuffer(req.body)) return req.body;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
 export default async function handler(req, res) {
-  if (req.query?.action === 'verify') return handleClientVerify(req, res);
-  if (req.query?.action === 'verify-deposit') return handleClientVerifyDeposit(req, res);
-  return handleWebhook(req, res);
+  // F17 follow-up: a request stream that errors mid-read (client
+  // disconnect, proxy reset, etc.) must not escape as an uncaught
+  // rejection -- that would skip this file's own error-handling/logging
+  // conventions and leave the actual failure mode invisible in the logs.
+  // Caught here, before any routing: no signature check, JSON parse, or
+  // RPC call ever runs against a partial/unavailable body. Only the
+  // error's own message is logged (never the signature header or any body
+  // content, which we don't have anyway -- the read itself failed).
+  let rawBody: Buffer;
+  try {
+    rawBody = await readRawBody(req);
+  } catch (err: any) {
+    console.error('[Paystack webhook] Failed to read request body:', err?.message || err);
+    return res.status(500).json({ error: 'Could not read request body' });
+  }
+  if (req.query?.action === 'verify') return handleClientVerify(req, res, rawBody);
+  if (req.query?.action === 'verify-deposit') return handleClientVerifyDeposit(req, res, rawBody);
+  return handleWebhook(req, res, rawBody);
 }
 
 // ── Wallet deposit verify path ────────────────────────────────────────────
@@ -119,10 +166,16 @@ export default async function handler(req, res) {
 // (project_admin-only per its EXECUTE grants -- not callable directly by an
 // authenticated client), which re-checks it against the amount recorded by
 // initiate_wallet_deposit before crediting anything.
-async function handleClientVerifyDeposit(req, res) {
+async function handleClientVerifyDeposit(req, res, rawBody: Buffer) {
   applyCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  try {
+    req.body = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
+  } catch {
+    return res.status(400).json({ error: 'Malformed JSON body' });
+  }
 
   const session = await verifyInsforgeSession(req.headers.authorization);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
@@ -195,11 +248,17 @@ async function handleClientVerifyDeposit(req, res) {
 }
 
 // ── Client-triggered verify path (formerly api/payments/verify.ts) ───────
-async function handleClientVerify(req, res) {
+async function handleClientVerify(req, res, rawBody: Buffer) {
   applyCors(req, res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  try {
+    req.body = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
+  } catch {
+    return res.status(400).json({ error: 'Malformed JSON body' });
+  }
 
   const session = await verifyInsforgeSession(req.headers.authorization);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
@@ -462,7 +521,7 @@ async function handleClientVerify(req, res) {
 }
 
 // ── Paystack's own signed webhook ─────────────────────────────────────────
-async function handleWebhook(req, res) {
+async function handleWebhook(req, res, rawBody: Buffer) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
@@ -474,8 +533,10 @@ async function handleWebhook(req, res) {
   const signature = req.headers['x-paystack-signature'] as string | undefined;
   if (!signature) return res.status(400).json({ error: 'Missing signature' });
 
-  // Vercel provides raw body as Buffer when Content-Type is application/json
-  const rawBody = JSON.stringify(req.body);
+  // F17 fix: signed against the genuine raw request bytes (read by
+  // readRawBody before bodyParser would otherwise have discarded them),
+  // not a re-serialization of an already-parsed object -- see this file's
+  // config.api.bodyParser comment above for why that distinction matters.
   const expected = crypto
     .createHmac('sha512', secret)
     .update(rawBody)
@@ -489,7 +550,19 @@ async function handleWebhook(req, res) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const event = req.body;
+  // JSON is only parsed AFTER the signature over the raw bytes has already
+  // been verified -- a validly-signed-but-malformed body (never expected
+  // from the real Paystack, but handled safely regardless) short-circuits
+  // to the same "received: true" no-op every other unrecognized/incomplete
+  // event already falls through to below, rather than throwing.
+  let event: any;
+  try {
+    event = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
+  } catch (err: any) {
+    console.error('[Paystack webhook] Signature valid but body is not valid JSON:', err?.message || err);
+    return res.status(200).json({ received: true });
+  }
+  req.body = event;
   console.log('Paystack webhook event:', event?.event);
 
   if (event?.event === 'charge.success') {

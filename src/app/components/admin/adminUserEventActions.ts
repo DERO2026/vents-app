@@ -12,6 +12,26 @@
 // copies of the same logic across the new files.
 import { supabase } from '../../../lib/supabase';
 
+// Detects the specific error produced by migration
+// 0182_admin_manual_trending_control.sql not having reached production yet
+// (apply_migration has timed out on it seven times -- see this repo's own
+// debug history; this is NOT a code bug, it's a pending DB change).
+//
+// Verified directly against the live database (not guessed): running the
+// exact SELECT this screen used to send gives Postgres's own `42703`
+// ("column \"admin_trending\" does not exist"). Calling the missing RPC
+// function directly in SQL gives `42883` ("function ... does not exist") --
+// confirmed the same way. PostgREST's documented behavior is to resolve
+// `/rpc/<name>` against its own schema cache and return its own `PGRST202`
+// ("Could not find the function ... in the schema cache") without ever
+// reaching Postgres for a genuinely unknown function -- but that specific
+// HTTP-layer behavior could not be confirmed from this environment (no
+// network path to the live REST endpoint), so 42883 is included here too
+// rather than relying solely on the documented-but-unverified PGRST202 path.
+export function isMissingTrendingSchemaError(error: any): boolean {
+  return error?.code === '42703' || error?.code === '42883' || error?.code === 'PGRST202';
+}
+
 export interface ActionMeta {
   target_type: string;
   target_id?: string | null;
@@ -171,7 +191,13 @@ export async function restoreDeletedEvent(isSuperAdmin: boolean, eventId: string
 export async function toggleEventFeatured(isSuperAdmin: boolean, eventId: string, label: string, currentlyFeatured: boolean) {
   const nextFeatured = !currentlyFeatured;
   return submitOrExecute(isSuperAdmin, 'toggle_event_featured',
-    { target_type: 'event', target_id: eventId, target_label: label, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
+    // `payload.featured`/`payload.duration_days` are what approve_admin_action()
+    // actually reads on a Sub-Admin's request (0186_approve_admin_action_featured_executor_payload_fix.sql)
+    // -- `previous`/`changes` below are audit-log display only. Without this,
+    // a missing payload.featured was previously defaulting to `false` on
+    // approval regardless of the admin's actual intent (same bug class fixed
+    // for Trending in 0185).
+    { target_type: 'event', target_id: eventId, target_label: label, payload: { featured: nextFeatured, duration_days: nextFeatured ? 14 : null }, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
     async () => {
       const { error } = await supabase.rpc('admin_set_event_featured', {
         p_event_id: eventId,
@@ -179,5 +205,37 @@ export async function toggleEventFeatured(isSuperAdmin: boolean, eventId: string
         p_duration_days: nextFeatured ? 14 : null,
       });
       if (error) throw error;
+    });
+}
+
+// Manual admin Trending placement (0182_admin_manual_trending_control.sql) --
+// the counterpart to toggleEventFeatured above, so an admin doesn't need an
+// organizer to buy a promotion just to pin an eligible event into Trending.
+// No duration/expiry here, unlike Featured's 14-day window: a manually
+// trending event stays trending until an admin removes it. The RPC itself
+// (not this client code) enforces the eligibility check (not hidden/deleted,
+// status live/published) and the real security boundary (Super Admin only,
+// Sub-Admins routed through submitOrExecute's request_admin_action path
+// exactly like every other admin_* action here).
+export async function toggleEventTrending(isSuperAdmin: boolean, eventId: string, label: string, currentlyTrending: boolean) {
+  const nextTrending = !currentlyTrending;
+  return submitOrExecute(isSuperAdmin, 'toggle_event_trending',
+    // `payload.trending` is the field a Sub-Admin's request actually carries
+    // through to approve_admin_action() (0185_approve_admin_action_trending_executor.sql) --
+    // unlike `previous`/`changes` below (audit-log display only), this is
+    // read by the executor itself via r.payload->>'trending', so it must be
+    // present and correctly reflect the admin's actual intent.
+    { target_type: 'event', target_id: eventId, target_label: label, payload: { trending: nextTrending }, previous: { admin_trending: currentlyTrending }, changes: { admin_trending: nextTrending } },
+    async () => {
+      const { error } = await supabase.rpc('admin_set_event_trending' as any, {
+        p_event_id: eventId,
+        p_trending: nextTrending,
+      });
+      if (error) {
+        if (isMissingTrendingSchemaError(error)) {
+          throw new Error('Trending control is pending a database migration and isn\'t available yet.');
+        }
+        throw error;
+      }
     });
 }

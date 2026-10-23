@@ -2,7 +2,7 @@
 // 'vc' tab as part of its full retirement. Adds one real fix: credit/debit
 // now go through a confirmation dialog before executing (gap #3), matching
 // every other destructive/consequential admin action in the new console.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { ConfirmModal } from './adminShared';
@@ -144,8 +144,26 @@ export function AdminVCScreen() {
     } finally { setSearching(false); }
   };
 
+  // Audit finding: ConfirmModal's own Confirm button has no busy/disabled
+  // state of its own, and p_idempotency_key is a fresh crypto.randomUUID()
+  // minted INSIDE doCredit()/doDebit() on every invocation -- so the
+  // server's real idempotency guard (a unique constraint on that key,
+  // confirmed live in admin_credit_vents_cents/admin_debit_vents_cents)
+  // only ever protects against a literal network-layer retry of ONE
+  // outgoing request. It does nothing to stop doCredit()/doDebit() being
+  // invoked twice in the first place -- a fast double-click on the modal's
+  // Confirm button before React unmounts it would mint two DIFFERENT keys
+  // and the server would record two separate, individually valid credits
+  // or debits. These refs close that race synchronously, the same pattern
+  // CheckoutScreen.tsx's payingRef already uses for the identical class of
+  // bug on ticket payments.
+  const creditInFlightRef = useRef(false);
+  const debitInFlightRef = useRef(false);
+
   const doCredit = async () => {
     if (!selectedUser || !creditAmount || Number(creditAmount) <= 0 || !creditReason.trim()) return;
+    if (creditInFlightRef.current) return;
+    creditInFlightRef.current = true;
     setCreditBusy(true); setCreditMsg(null);
     try {
       const { data, error } = await supabase.rpc('admin_credit_vents_cents' as any, {
@@ -162,11 +180,13 @@ export function AdminVCScreen() {
       load(); loadPoolStatus(); loadUserVcSummary(selectedUser.id);
     } catch (e: any) {
       setCreditMsg(e?.message || 'Credit failed.');
-    } finally { setCreditBusy(false); }
+    } finally { setCreditBusy(false); creditInFlightRef.current = false; }
   };
 
   const doDebit = async () => {
     if (!selectedUser || !debitAmount || Number(debitAmount) <= 0 || !debitReason.trim()) return;
+    if (debitInFlightRef.current) return;
+    debitInFlightRef.current = true;
     setDebitBusy(true); setDebitMsg(null);
     try {
       const { data, error } = await supabase.rpc('admin_debit_vents_cents' as any, {
@@ -182,7 +202,7 @@ export function AdminVCScreen() {
       load(); loadPoolStatus(); loadUserVcSummary(selectedUser.id);
     } catch (e: any) {
       setDebitMsg(e?.message || 'Debit failed.');
-    } finally { setDebitBusy(false); }
+    } finally { setDebitBusy(false); debitInFlightRef.current = false; }
   };
 
   // Display-only projections -- the server independently recomputes and

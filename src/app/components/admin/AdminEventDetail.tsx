@@ -8,22 +8,23 @@
 //    explicitly allows public.is_admin() for ANY event, not just the
 //    caller's own — a real, already-shipped admin-accessible aggregate.
 //  - Audit: `admin_logs` filtered on details->>'event_id' (the exact key
-//    admin_hide_event/admin_reinstate_event/admin_set_event_featured write).
+//    admin_hide_event/admin_reinstate_event/admin_set_event_featured/
+//    admin_set_event_trending write).
 // Explicit "not available" (no fabrication):
 //  - Tickets (per-buyer list) and Refunds: `tickets` RLS only allows the
 //    ticket's own owner or the event's organizer to read individual rows;
 //    there is no admin bypass and no admin RPC that lists ticket buyers for
 //    an arbitrary event.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
-import { hideEvent, reinstateEvent, toggleEventFeatured } from './adminUserEventActions';
+import { hideEvent, reinstateEvent, toggleEventFeatured, toggleEventTrending, isMissingTrendingSchemaError } from './adminUserEventActions';
 
 interface FullEventRow {
   id: string; title: string | null; organizer_id: string | null; hidden_by_admin: boolean; hidden_at: string | null;
-  created_at: string; event_date: string | null; venue: string | null; deleted_at: string | null;
-  is_featured: boolean; featured_until: string | null;
+  created_at: string; event_date: string | null; location: string | null; deleted_at: string | null;
+  is_featured: boolean; featured_until: string | null; admin_trending: boolean;
   'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
 
@@ -70,17 +71,39 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // Set only once this screen actually observes PostgREST reject
+  // admin_trending (migration 0182 pending production, timed out seven
+  // times so far) -- never assumed. See AdminEventsList.tsx's identical
+  // guard for the fuller explanation.
+  const [trendingColumnMissing, setTrendingColumnMissing] = useState(false);
 
   const loadEvent = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       const { data, error: err } = await supabase
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, venue, deleted_at, is_featured, featured_until, users!events_organizer_id_fkey(username, full_name, is_verified)')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, location, deleted_at, is_featured, featured_until, admin_trending, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .eq('id', eventId)
         .maybeSingle();
+      if (err && isMissingTrendingSchemaError(err)) {
+        setTrendingColumnMissing(true);
+        const fallback = await supabase
+          .from('events')
+          .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, location, deleted_at, is_featured, featured_until, users!events_organizer_id_fkey(username, full_name, is_verified)')
+          .eq('id', eventId)
+          .maybeSingle();
+        if (fallback.error) throw fallback.error;
+        if (!fallback.data) throw new Error('Event not found.');
+        setEvent({ ...(fallback.data as any), admin_trending: false });
+        return;
+      }
       if (err) throw err;
       if (!data) throw new Error('Event not found.');
+      // The full select just succeeded -- if a previous load on this same
+      // mounted screen had set the latch (migration landed mid-session, or
+      // this is a retry after a transient error), clear it so Trending
+      // re-enables itself without needing a remount.
+      setTrendingColumnMissing(false);
       setEvent(data as any);
     } catch (e: any) {
       setError(e?.message || 'Failed to load event.');
@@ -112,24 +135,38 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
       .finally(() => { setAnalyticsLoading(false); setAnalyticsFetched(true); });
   }, [tab, eventId, analyticsFetched, analyticsLoading]);
 
+  // Stale-response guard for the audit query, same pattern as
+  // AdminEventsList's event-search guard: each call gets its own ticket, and
+  // a response is only applied if it's still the latest -- a slower,
+  // superseded load (an old event's audit history, or an earlier retry
+  // attempt) can't overwrite state a newer call already set or is still
+  // loading.
+  const auditRequestIdRef = useRef(0);
+
+  const loadAudit = useCallback(async () => {
+    const requestId = ++auditRequestIdRef.current;
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const { data, error: err } = await (supabase.from('admin_logs').select('id, action, details, created_at, actor_role') as any)
+        .eq('details->>event_id', eventId).order('created_at', { ascending: false }).limit(50);
+      if (requestId !== auditRequestIdRef.current) return;
+      if (err) throw err;
+      setAudit(data || []);
+    } catch (e: any) {
+      if (requestId !== auditRequestIdRef.current) return;
+      setAuditError(e?.message || 'Unable to load admin activity. Please try again.');
+    } finally {
+      if (requestId === auditRequestIdRef.current) setAuditLoading(false);
+    }
+  }, [eventId]);
+
   useEffect(() => {
     if (tab !== 'audit') return;
-    setAuditLoading(true); setAuditError(null);
-    Promise.resolve(
-      (supabase.from('admin_logs').select('id, action, details, created_at, actor_role') as any)
-        .eq('details->>event_id', eventId).order('created_at', { ascending: false }).limit(50),
-    )
-      .then(({ data, error: err }: any) => {
-        // Previously: .catch(() => setAudit([])) swallowed a failed
-        // fetch into the same empty array a genuinely clean audit trail
-        // produces, rendering "No admin actions recorded for this
-        // event." either way.
-        if (err) { setAuditError(err.message || 'Failed to load the audit trail.'); return; }
-        setAudit(data || []);
-      })
-      .catch((e: any) => setAuditError(e?.message || 'Failed to load the audit trail.'))
-      .finally(() => setAuditLoading(false));
-  }, [tab, eventId]);
+    setAudit([]);
+    setAuditError(null);
+    loadAudit();
+  }, [tab, loadAudit]);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
   const run = async (fn: () => Promise<{ ok: boolean; message: string }>) => {
@@ -166,15 +203,22 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
             <div style={{ fontSize: 12.5, color: adminTheme.textMuted, marginTop: 4 }}>
               by {organizer?.username ? `@${organizer.username}` : organizer?.full_name || 'Unknown organizer'}
               {event.event_date && ` · ${new Date(event.event_date).toLocaleDateString('en-NG', { dateStyle: 'medium' })}`}
-              {event.venue && ` · ${event.venue}`}
+              {event.location && ` · ${event.location}`}
             </div>
             <span style={{ display: 'inline-block', marginTop: 8, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: status.bg, color: status.fg }}>{status.label}</span>
+            {event.is_featured && <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 6, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(251,191,36,.12)', color: adminTheme.amber }}>★ Featured</span>}
+            {event.admin_trending && <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 6, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(248,113,113,.12)', color: adminTheme.red }}>🔥 Trending</span>}
           </div>
           {!event.deleted_at && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button disabled={busy} onClick={() => run(() => toggleEventFeatured(isSuperAdmin, event.id, label, !!event.is_featured))}
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.is_featured ? 'rgba(251,191,36,.12)' : adminTheme.borderChip, border: `1px solid ${event.is_featured ? 'rgba(251,191,36,.35)' : adminTheme.border}`, color: event.is_featured ? adminTheme.amber : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
                 {event.is_featured ? '★ Featured' : '☆ Feature'}
+              </button>
+              <button disabled={busy || trendingColumnMissing} title={trendingColumnMissing ? 'Pending database migration (0182) — not available yet' : undefined}
+                onClick={() => run(() => toggleEventTrending(isSuperAdmin, event.id, label, !!event.admin_trending))}
+                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${event.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: event.admin_trending ? adminTheme.red : adminTheme.text, cursor: (busy || trendingColumnMissing) ? 'not-allowed' : 'pointer', opacity: trendingColumnMissing ? 0.5 : 1 }}>
+                {event.admin_trending ? '🔥 Trending' : '📈 Trend'}
               </button>
               <button disabled={busy} onClick={() => run(() => event.hidden_by_admin ? reinstateEvent(isSuperAdmin, event.id, label) : hideEvent(isSuperAdmin, event.id, label))}
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.hidden_by_admin ? 'rgba(52,211,153,.1)' : 'rgba(248,113,113,.1)', border: `1px solid ${event.hidden_by_admin ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)'}`, color: event.hidden_by_admin ? adminTheme.green : adminTheme.red, cursor: busy ? 'not-allowed' : 'pointer' }}>
@@ -238,7 +282,14 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
 
       {tab === 'audit' && (
         auditLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
-        : auditError ? <NotAvailable reason={`could not load the audit trail — ${auditError}`} />
+        : auditError ? (
+          <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center' }}>
+            <div style={{ color: adminTheme.red, fontSize: 12.5, marginBottom: 12 }}>Unable to load admin activity. Please try again.</div>
+            <button onClick={() => loadAudit()} style={{ fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, color: adminTheme.text, cursor: 'pointer' }}>
+              Retry
+            </button>
+          </div>
+        )
         : audit.length === 0 ? <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this event.</div>
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>

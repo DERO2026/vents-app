@@ -3,20 +3,21 @@ import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 import { AdminEventDetail } from './AdminEventDetail';
 
-// Regression coverage for two confirmed bugs:
+// Regression coverage for a confirmed bug: the analytics effect guarded
+// on `analytics`/`analyticsLoading` themselves instead of a dedicated
+// fetched-once flag. On a failed get_event_analytics call, `analytics`
+// stays null forever and `analyticsLoading` cycles true->false -- since
+// that flip is itself a listed dependency, the effect re-ran every time
+// it flipped back to false, forever: an infinite re-fetch loop on any
+// RPC failure, not just a cosmetic one. rpcCalls.length proves it only
+// ran once.
 //
-// 1. The analytics effect guarded on `analytics`/`analyticsLoading`
-//    themselves instead of a dedicated fetched-once flag. On a failed
-//    get_event_analytics call, `analytics` stays null forever and
-//    `analyticsLoading` cycles true->false -- since that flip is itself
-//    a listed dependency, the effect re-ran every time it flipped back
-//    to false, forever: an infinite re-fetch loop on any RPC failure,
-//    not just a cosmetic one. rpcCalls.length proves it only ran once.
-//
-// 2. The audit effect's .catch(() => setAudit([])) swallowed a failed
-//    fetch into the exact same empty array a genuinely clean audit
-//    trail produces, so a query failure rendered as "No admin actions
-//    recorded for this event."
+// (The Audit tab's own swallowed-error bug -- .catch(() => setAudit([]))
+// -- was fixed independently on main in a separate commit, with a more
+// complete implementation: a distinct error message with a Retry button
+// and a request-ID race guard. That fix, and its own thorough test
+// coverage including retry and stale-response races, lives in
+// AdminEventDetail.auditQuery.test.tsx; no need to duplicate it here.)
 
 const eventData = {
   id: 'e1', title: 'Afrobeats Night', organizer_id: 'o1', hidden_by_admin: false, hidden_at: null,
@@ -89,19 +90,5 @@ describe('AdminEventDetail: tab error states', () => {
     expect(rpcCalls).toBe(1);
     const el = container.querySelector('[data-testid="admin-event-detail"]');
     expect(el?.textContent).toContain('analytics unavailable');
-  });
-
-  it('Audit tab shows an explicit error instead of "No admin actions recorded" when the fetch fails', async () => {
-    root = createRoot(container);
-    act(() => { root.render(<AdminEventDetail eventId="e1" currentUser={admin} isMobile={false} onBack={() => {}} />); });
-    await flush();
-
-    const el = container.querySelector('[data-testid="admin-event-detail"]')!;
-    const auditTab = Array.from(el.querySelectorAll('div')).find((d) => d.textContent === 'Audit') as HTMLElement;
-    await act(async () => { auditTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-
-    expect(el.textContent).toContain('could not load the audit trail');
-    expect(el.textContent).not.toContain('No admin actions recorded for this event.');
   });
 });

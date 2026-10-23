@@ -373,16 +373,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    // Checked here (before create_pending_purchase) rather than left solely
-    // to openPaystackPopup's own guard, so a missing/unloaded Paystack
-    // script fails fast without first creating a server-side pending
-    // purchase row for a payment that was never going to open. Wallet
-    // payments never touch Paystack at all, so they're exempt.
-    if (paymentMethod !== 'wallet' && !window.PaystackPop) {
-      setPayError('Payment system not loaded. Please refresh the page and try again.');
-      return;
-    }
-
     const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
     const attendees = buildAttendees(purchaserName, payerEmail);
 
@@ -511,7 +501,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         amountKobo: chargeAmountKobo,
         ref: paystackRef,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
-        channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+        // No channels override here — omitting it lets openPaystackPopup
+        // fall through to its own defaultChannels() (src/lib/paystack.ts),
+        // which is the one place that decides native vs. web and includes
+        // the wallet channels on web. A hardcoded array here previously
+        // silently overrode that default on this exact screen — the real
+        // ticket checkout, the one path that mattered — so Google Pay (and
+        // Apple Pay) were never actually requested despite being wired up
+        // correctly everywhere else. Native behavior is unchanged: that
+        // default's native branch is still the exact same five channels
+        // this array used to hardcode.
         // NOT setting callback_url here — confirmed against Paystack's own
         // documentation (PaystackHQ/documentation, using-popup.md) that
         // PaystackPop.setup() (the Inline/popup method used here) has no

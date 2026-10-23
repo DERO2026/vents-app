@@ -4,7 +4,6 @@ import { fetchAiPlansPublic, initiateAiSubscriptionPayment, verifyAiSubscription
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase } from '../../lib/supabase';
 import { resolveHasRealAiAccess, cancelMyAiSubscription, type AiEntitlementRow } from '../../lib/aiEntitlementClient';
-import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 
 // Apple App Store rejection (Guideline 3.1.1, submission
 // 3098bebc-a2ff-43de-8b7e-358a82693200, Oct 14 2026): VENTS AI/AI+ could be
@@ -209,17 +208,17 @@ export function AiPlansScreen({
     }
   }
 
-  // Self-guard (Guideline 3.1.1 / Google Play Payments Policy): never
-  // reach this screen's price/plan rendering on native iOS or Android,
-  // independent of the App.tsx-level gate and of the per-element
+  // Self-guard (VENTS AI is web-only for this release): never reach this
+  // screen's price/plan rendering on native iOS or Android, independent
+  // of the App.tsx-level gate and of the per-element
   // IS_MOBILE_NATIVE_FOR_AI_GATE guards below (which cover the button and
-  // banner but never gated the Naira price display itself) -- replace the
-  // whole screen with Coming Soon so no price, plan, or purchase element
-  // can render on either native platform regardless of how this component
-  // was reached. The per-element guards below are now unreachable while
-  // this early return stands -- kept only as defense-in-depth belt-and-
-  // suspenders should this early return ever be removed or bypassed.
-  if (IS_MOBILE_NATIVE_FOR_AI_GATE) return <VentsAiIosComingSoonScreen onClose={onClose} />;
+  // banner but never gated the Naira price display itself) -- render
+  // nothing so no price, plan, or purchase element can render on either
+  // native platform regardless of how this component was reached. The
+  // per-element guards below are now unreachable while this early return
+  // stands -- kept only as defense-in-depth belt-and-suspenders should
+  // this early return ever be removed or bypassed.
+  if (IS_MOBILE_NATIVE_FOR_AI_GATE) return null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: BG, display: 'flex', flexDirection: 'column', zIndex: 960 }}>
