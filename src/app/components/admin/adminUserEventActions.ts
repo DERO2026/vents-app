@@ -12,6 +12,19 @@
 // copies of the same logic across the new files.
 import { supabase } from '../../../lib/supabase';
 
+// Detects the specific PostgREST error produced by migration
+// 0182_admin_manual_trending_control.sql not having reached production yet
+// (apply_migration has timed out on it seven times -- see this repo's own
+// debug history; this is NOT a code bug, it's a pending DB change). Code
+// 42703 is Postgres's own "column does not exist"; PGRST202 is PostgREST's
+// "could not find the function ... in the schema cache" for a missing RPC.
+// Both admin_trending (the column) and admin_set_event_trending (the
+// function) come from that same unapplied migration, so one guard covers
+// both the list/detail screens' SELECT and the Trend button's RPC call.
+export function isMissingTrendingSchemaError(error: any): boolean {
+  return error?.code === '42703' || error?.code === 'PGRST202';
+}
+
 export interface ActionMeta {
   target_type: string;
   target_id?: string | null;
@@ -211,6 +224,11 @@ export async function toggleEventTrending(isSuperAdmin: boolean, eventId: string
         p_event_id: eventId,
         p_trending: nextTrending,
       });
-      if (error) throw error;
+      if (error) {
+        if (isMissingTrendingSchemaError(error)) {
+          throw new Error('Trending control is pending a database migration and isn\'t available yet.');
+        }
+        throw error;
+      }
     });
 }

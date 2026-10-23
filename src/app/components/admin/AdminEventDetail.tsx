@@ -19,7 +19,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
-import { hideEvent, reinstateEvent, toggleEventFeatured, toggleEventTrending } from './adminUserEventActions';
+import { hideEvent, reinstateEvent, toggleEventFeatured, toggleEventTrending, isMissingTrendingSchemaError } from './adminUserEventActions';
 
 interface FullEventRow {
   id: string; title: string | null; organizer_id: string | null; hidden_by_admin: boolean; hidden_at: string | null;
@@ -70,6 +70,11 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // Set only once this screen actually observes PostgREST reject
+  // admin_trending (migration 0182 pending production, timed out seven
+  // times so far) -- never assumed. See AdminEventsList.tsx's identical
+  // guard for the fuller explanation.
+  const [trendingColumnMissing, setTrendingColumnMissing] = useState(false);
 
   const loadEvent = useCallback(async () => {
     setLoading(true); setError(null);
@@ -79,6 +84,18 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
         .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, location, deleted_at, is_featured, featured_until, admin_trending, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .eq('id', eventId)
         .maybeSingle();
+      if (err && isMissingTrendingSchemaError(err)) {
+        setTrendingColumnMissing(true);
+        const fallback = await supabase
+          .from('events')
+          .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, location, deleted_at, is_featured, featured_until, users!events_organizer_id_fkey(username, full_name, is_verified)')
+          .eq('id', eventId)
+          .maybeSingle();
+        if (fallback.error) throw fallback.error;
+        if (!fallback.data) throw new Error('Event not found.');
+        setEvent({ ...(fallback.data as any), admin_trending: false });
+        return;
+      }
       if (err) throw err;
       if (!data) throw new Error('Event not found.');
       setEvent(data as any);
@@ -183,8 +200,9 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.is_featured ? 'rgba(251,191,36,.12)' : adminTheme.borderChip, border: `1px solid ${event.is_featured ? 'rgba(251,191,36,.35)' : adminTheme.border}`, color: event.is_featured ? adminTheme.amber : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
                 {event.is_featured ? '★ Featured' : '☆ Feature'}
               </button>
-              <button disabled={busy} onClick={() => run(() => toggleEventTrending(isSuperAdmin, event.id, label, !!event.admin_trending))}
-                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${event.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: event.admin_trending ? adminTheme.red : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              <button disabled={busy || trendingColumnMissing} title={trendingColumnMissing ? 'Pending database migration (0182) — not available yet' : undefined}
+                onClick={() => run(() => toggleEventTrending(isSuperAdmin, event.id, label, !!event.admin_trending))}
+                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${event.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: event.admin_trending ? adminTheme.red : adminTheme.text, cursor: (busy || trendingColumnMissing) ? 'not-allowed' : 'pointer', opacity: trendingColumnMissing ? 0.5 : 1 }}>
                 {event.admin_trending ? '🔥 Trending' : '📈 Trend'}
               </button>
               <button disabled={busy} onClick={() => run(() => event.hidden_by_admin ? reinstateEvent(isSuperAdmin, event.id, label) : hideEvent(isSuperAdmin, event.id, label))}

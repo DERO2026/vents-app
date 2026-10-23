@@ -7,7 +7,7 @@ import { BadgeCheck, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
-import { hideEvent, reinstateEvent, restoreDeletedEvent, toggleEventFeatured, toggleEventTrending } from './adminUserEventActions';
+import { hideEvent, reinstateEvent, restoreDeletedEvent, toggleEventFeatured, toggleEventTrending, isMissingTrendingSchemaError } from './adminUserEventActions';
 
 interface AdminEventRow {
   id: string; title: string | null; organizer_id: string | null; hidden_by_admin: boolean;
@@ -47,6 +47,11 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // Set once this screen actually observes PostgREST reject admin_trending
+  // -- never assumed up front -- so the Trending filter tab/column hide
+  // themselves automatically the moment migration 0182 lands, with no
+  // follow-up deploy needed.
+  const [trendingColumnMissing, setTrendingColumnMissing] = useState(false);
 
   // Debounce: only the trailing value after SEARCH_DEBOUNCE_MS of no typing
   // becomes a real server query, so fast typing doesn't fire a request per
@@ -66,21 +71,42 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
     const requestId = ++requestIdRef.current;
     setLoading(true); setError(null);
     try {
-      let q = supabase
-        .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, deleted_at, is_featured, featured_until, admin_trending, image_url, users!events_organizer_id_fkey(username, full_name, is_verified)')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (filter === 'deleted') q = q.not('deleted_at', 'is', null);
-      else {
-        q = q.is('deleted_at', null);
-        if (filter === 'hidden') q = q.eq('hidden_by_admin', true);
-        if (filter === 'featured') q = q.eq('is_featured', true);
-        if (filter === 'trending') q = q.eq('admin_trending', true);
+      // admin_trending (migration 0182_admin_manual_trending_control.sql)
+      // has not reached production yet -- apply_migration has timed out on
+      // it seven times (see this repo's own debug history). Selecting a
+      // column PostgREST doesn't know about fails the WHOLE query, not just
+      // the Trending feature, so this screen must be resilient to that
+      // column's absence rather than assume the reviewed migration file
+      // reflects the live schema. buildQuery(includeTrending) builds the
+      // identical query either way; only the trending-specific pieces are
+      // conditional, so there's exactly one place this falls back.
+      const buildQuery = (includeTrending: boolean) => {
+        const cols = includeTrending
+          ? 'id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, deleted_at, is_featured, featured_until, admin_trending, image_url, users!events_organizer_id_fkey(username, full_name, is_verified)'
+          : 'id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, deleted_at, is_featured, featured_until, image_url, users!events_organizer_id_fkey(username, full_name, is_verified)';
+        let query = supabase.from('events').select(cols).order('created_at', { ascending: false }).limit(50);
+        if (filter === 'deleted') query = query.not('deleted_at', 'is', null);
+        else {
+          query = query.is('deleted_at', null);
+          if (filter === 'hidden') query = query.eq('hidden_by_admin', true);
+          if (filter === 'featured') query = query.eq('is_featured', true);
+          if (filter === 'trending' && includeTrending) query = query.eq('admin_trending', true);
+        }
+        const term = search.trim();
+        if (term) query = query.ilike('title', `%${escapeIlike(term)}%`);
+        return query;
+      };
+
+      let { data, error: err } = await buildQuery(true);
+      if (err && isMissingTrendingSchemaError(err)) {
+        setTrendingColumnMissing(true);
+        // The 'trending' filter tab has no meaning without the column --
+        // fall back to the default tab rather than return an empty,
+        // confusing list.
+        if (filter === 'trending') { setFilter('active'); return; }
+        ({ data, error: err } = await buildQuery(false));
+        if (data) data = (data as any[]).map((row) => ({ ...row, admin_trending: false }));
       }
-      const term = search.trim();
-      if (term) q = q.ilike('title', `%${escapeIlike(term)}%`);
-      const { data, error: err } = await q;
       if (requestId !== requestIdRef.current) return; // a newer request superseded this one
       if (err) throw err;
       setEvents((data as any) || []);
@@ -138,7 +164,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
         )}
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap' }}>
-        {FILTERS.map((f) => (
+        {FILTERS.filter((f) => f !== 'trending' || !trendingColumnMissing).map((f) => (
           <div key={f} onClick={() => setFilter(f)} style={{
             fontSize: 11.5, fontWeight: 700, padding: '7px 12px', borderRadius: 8, cursor: 'pointer', flexShrink: 0, textTransform: 'capitalize',
             background: filter === f ? adminTheme.accentSoftBg : adminTheme.panel,
@@ -149,6 +175,11 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
       </div>
       {msg && <div style={{ fontSize: 12.5, color: adminTheme.text, marginBottom: 10 }}>{msg}</div>}
       {error && <div style={{ color: adminTheme.red, fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      {trendingColumnMissing && (
+        <div style={{ fontSize: 11.5, color: adminTheme.textMuted, marginBottom: 12 }}>
+          Trending controls are pending a database migration and aren't available yet.
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5, padding: 32 }}>Loading events…</div>
@@ -204,8 +235,9 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
                     </button>
                   )}
                   {!ev.deleted_at && (
-                    <button disabled={isBusy} onClick={() => doAction(ev.id, label, () => toggleEventTrending(isSuperAdmin, ev.id, label, !!ev.admin_trending))}
-                      style={{ fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 8, background: ev.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${ev.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: ev.admin_trending ? adminTheme.red : adminTheme.textMuted, cursor: isBusy ? 'not-allowed' : 'pointer' }}>
+                    <button disabled={isBusy || trendingColumnMissing} title={trendingColumnMissing ? 'Pending database migration (0182) — not available yet' : undefined}
+                      onClick={() => doAction(ev.id, label, () => toggleEventTrending(isSuperAdmin, ev.id, label, !!ev.admin_trending))}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 8, background: ev.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${ev.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: ev.admin_trending ? adminTheme.red : adminTheme.textMuted, cursor: (isBusy || trendingColumnMissing) ? 'not-allowed' : 'pointer', opacity: trendingColumnMissing ? 0.5 : 1 }}>
                       {ev.admin_trending ? '🔥 Trending' : '📈 Trend'}
                     </button>
                   )}
