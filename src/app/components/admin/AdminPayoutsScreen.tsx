@@ -6,7 +6,7 @@
 // point at this one real screen -- the backend has exactly one Payouts
 // feature, not four, so no placeholder pages were created to pad out the
 // nav to match the export's mock IA.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { ConfirmModal } from './adminShared';
@@ -32,8 +32,30 @@ export function AdminPayoutsScreen() {
   const [reconciling, setReconciling] = useState(false);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [rejectConfirmId, setRejectConfirmId] = useState<string | null>(null);
+  // Audit finding: "Approve & Pay" — the one action here that actually
+  // moves real money via Paystack — had no confirmation step at all, unlike
+  // Reject/Cancel (both typed-confirmation). A single stray click fired a
+  // real transfer immediately. Server-side it's protected from a genuine
+  // DUPLICATE transfer (admin_claim_payout_for_processing's atomic
+  // compare-and-swap, confirmed live), so this is a misclick safety net,
+  // not a duplicate-transfer fix.
+  const [approveConfirmId, setApproveConfirmId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
+  // Audit finding: unlike Approve (protected server-side by
+  // admin_claim_payout_for_processing's atomic status compare-and-swap),
+  // admin_reject_organizer_payout and admin_cancel_processing_payout both
+  // do an unlocked SELECT of the current status followed by a SEPARATE
+  // UPDATE not reconditioned on that status (confirmed live via
+  // pg_get_functiondef) -- a genuine TOCTOU race: two concurrent calls for
+  // the same request could both read 'pending'/'processing', both pass,
+  // and both refund the organizer's wallet, double-crediting it. That
+  // needs a database fix (prepared separately, not applied here). This ref
+  // is the only mitigation available without a migration: it closes the
+  // client-side half of the race (a double-click on the modal's own
+  // Confirm button, which has no busy state of its own) so this app can
+  // never be the one that fires the second call.
+  const actionInFlightRef = useRef<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -101,6 +123,8 @@ export function AdminPayoutsScreen() {
   useEffect(() => { load(); }, [statusFilter]);
 
   const handleApprove = async (id: string) => {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = id;
     setActionLoading(id);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -113,11 +137,13 @@ export function AdminPayoutsScreen() {
       if (!res.ok) throw new Error(json.error || 'Approve failed');
       await load();
       flash(true, 'Transfer initiated — Paystack is processing. Status will update to Completed once confirmed.');
-    } catch (e: any) { flash(false, e.message || 'Approve failed'); } finally { setActionLoading(null); }
+    } catch (e: any) { flash(false, e.message || 'Approve failed'); } finally { setActionLoading(null); actionInFlightRef.current = null; }
   };
 
   const handleReject = async (id: string, reason: string) => {
     if (!reason.trim()) return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = id;
     setActionLoading(id);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -131,7 +157,7 @@ export function AdminPayoutsScreen() {
       await load();
       notifyByEmail('payout', id, 'rejected', reason.trim());
       flash(true, 'Payout rejected and funds returned to available balance.');
-    } catch (e: any) { flash(false, e.message || 'Reject failed'); } finally { setActionLoading(null); }
+    } catch (e: any) { flash(false, e.message || 'Reject failed'); } finally { setActionLoading(null); actionInFlightRef.current = null; }
   };
 
   const handleReconcile = async () => {
@@ -151,6 +177,8 @@ export function AdminPayoutsScreen() {
   const handleCancelConfirmed = async (id: string, reason: string) => {
     setCancelConfirmId(null);
     if (!reason.trim()) return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = id;
     setActionLoading(id);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -163,7 +191,7 @@ export function AdminPayoutsScreen() {
       if (!res.ok) throw new Error(json.error || 'Cancel failed');
       await load();
       flash(true, 'Payout cancelled and funds returned to available balance.');
-    } catch (e: any) { flash(false, e.message || 'Cancel failed'); } finally { setActionLoading(null); }
+    } catch (e: any) { flash(false, e.message || 'Cancel failed'); } finally { setActionLoading(null); actionInFlightRef.current = null; }
   };
 
   const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -231,7 +259,7 @@ export function AdminPayoutsScreen() {
               </div>
               {pendingReq && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                  <button onClick={() => handleApprove(pendingReq.request_id)} disabled={actionLoading === pendingReq.request_id || payoutsDisabled} style={{ flex: 1, background: 'rgba(52,211,153,.15)', border: '1px solid rgba(52,211,153,.3)', borderRadius: 10, padding: 8, color: adminTheme.green, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  <button onClick={() => setApproveConfirmId(pendingReq.request_id)} disabled={actionLoading === pendingReq.request_id || payoutsDisabled} style={{ flex: 1, background: 'rgba(52,211,153,.15)', border: '1px solid rgba(52,211,153,.3)', borderRadius: 10, padding: 8, color: adminTheme.green, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                     {actionLoading === pendingReq.request_id ? 'Processing…' : 'Approve & Pay'}
                   </button>
                   <button onClick={() => setRejectConfirmId(pendingReq.request_id)} disabled={actionLoading === pendingReq.request_id || payoutsDisabled} title="Rejects the request — funds stay in the platform, nothing is sent to Paystack" style={{ flex: 1, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: 8, color: adminTheme.text, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Cancel Request</button>
@@ -257,7 +285,7 @@ export function AdminPayoutsScreen() {
           <p style={{ margin: 0, fontSize: 11, color: adminTheme.textFainter }}>{new Date(r.created_at).toLocaleString('en-NG')}</p>
           {r.status === 'pending' && (
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <button onClick={() => handleApprove(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} style={{ flex: 1, background: 'rgba(52,211,153,.15)', border: '1px solid rgba(52,211,153,.3)', borderRadius: 10, padding: 8, color: adminTheme.green, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              <button onClick={() => setApproveConfirmId(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} style={{ flex: 1, background: 'rgba(52,211,153,.15)', border: '1px solid rgba(52,211,153,.3)', borderRadius: 10, padding: 8, color: adminTheme.green, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 {actionLoading === r.request_id ? 'Processing…' : 'Approve & Pay'}
               </button>
               <button onClick={() => setRejectConfirmId(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} title="Rejects the request — funds stay in the platform, nothing is sent to Paystack" style={{ flex: 1, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: 8, color: adminTheme.text, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Cancel Request</button>
@@ -273,6 +301,15 @@ export function AdminPayoutsScreen() {
         </div>
       ))}
 
+      {approveConfirmId && (
+        <ConfirmModal
+          title="Approve this payout?"
+          message="This will immediately send a real transfer to the organizer's bank account via Paystack. This cannot be undone from here."
+          confirmLabel="Approve & Pay" danger typedConfirmationText="APPROVE" requireReason={false}
+          onConfirm={() => { const id = approveConfirmId; setApproveConfirmId(null); handleApprove(id); }}
+          onCancel={() => setApproveConfirmId(null)}
+        />
+      )}
       {rejectConfirmId && (
         <ConfirmModal
           title="Cancel this payout request?"
