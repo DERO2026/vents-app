@@ -142,4 +142,46 @@ describe('toggle_event_featured: Sub-Admin submit -> Super Admin approve -> real
     expect(res.ok).toBe(true);
     expect(requests).toHaveLength(0);
   });
+
+  it('self-approval is blocked, same as every other action type', async () => {
+    currentCallerId = 'super-1';
+    await toggleEventFeatured(false, 'event-1', 'My Event', false);
+    const approval = simulateApproveAdminAction(requests[0].id, 'super-1', true);
+    expect(approval.error?.message).toBe('Cannot approve your own request');
+    expect(requests[0].status).toBe('pending');
+  });
+
+  it('a Sub-Admin attempting to approve is rejected -- Super-Admin-only check is preserved', async () => {
+    await toggleEventFeatured(false, 'event-1', 'My Event', false);
+    const approval = simulateApproveAdminAction(requests[0].id, 'sub-2', false);
+    expect(approval.error?.message).toBe('Super Admin access required');
+    expect(requests[0].status).toBe('pending');
+  });
+
+  it('a request already approved cannot be approved again (stale/duplicate click) -- RPC fires once, second attempt is rejected with no second RPC call', async () => {
+    await toggleEventFeatured(false, 'event-1', 'My Event', false);
+    const requestId = requests[0].id;
+
+    const first = simulateApproveAdminAction(requestId, 'super-1', true);
+    expect(first.error).toBeNull();
+    expect(eventRpcCalls).toHaveLength(1);
+
+    const second = simulateApproveAdminAction(requestId, 'super-1', true);
+    expect(second.error?.message).toBe('Request already approved');
+    expect(eventRpcCalls).toHaveLength(1); // admin_set_event_featured not called twice
+  });
+
+  it('a rejected request cannot later be approved', async () => {
+    await toggleEventFeatured(false, 'event-1', 'My Event', false);
+    requests[0].status = 'rejected';
+    const approval = simulateApproveAdminAction(requests[0].id, 'super-1', true);
+    expect(approval.error?.message).toBe('Request already rejected');
+    expect(eventRpcCalls).toHaveLength(0);
+  });
+
+  it('a stale/nonexistent request id (e.g. already deleted) is rejected cleanly', () => {
+    const approval = simulateApproveAdminAction('does-not-exist', 'super-1', true);
+    expect(approval.error?.message).toBe('Request not found');
+    expect(eventRpcCalls).toHaveLength(0);
+  });
 });
