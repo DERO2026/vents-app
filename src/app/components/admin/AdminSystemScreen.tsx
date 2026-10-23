@@ -4,7 +4,7 @@
 // Global Broadcast stays root-only, matching the legacy console exactly —
 // there is no separate, less-restrictive "Communication" screen, since that
 // would widen access beyond what production has ever granted.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Zap, Wrench, ToggleLeft, ToggleRight, Mic, Image as ImageIcon, Activity,
   Ticket, ScanLine, UserPlus, Banknote, MapPin, Megaphone, Trash2, Swords, Bot,
@@ -51,6 +51,14 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isSuspendingAll, setIsSuspendingAll] = useState(false);
+  // A second click on ConfirmModal's own Confirm button (no busy state of
+  // its own) fires its onClick handler before React has re-rendered with
+  // isSuspendingAll's new value -- both closures would read the same
+  // stale `false`. A synchronous ref, mutated immediately rather than via
+  // setState, closes that race; isSuspendingAll (state) stays only for
+  // the button's disabled/label rendering.
+  const suspendingAllRef = useRef(false);
   const [isPinging, setIsPinging] = useState(false);
   const [healthResult, setHealthResult] = useState<{ ok: boolean; latencyMs: number; detail: string } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -126,11 +134,26 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
   };
 
   const handleBulkSuspend = () => {
+    // Unlike the other three Bulk/System actions on this screen (orphan
+    // cleanup -> isCleaning, broadcast -> isSending, health ping ->
+    // isPinging), this one previously had no busy-state guard at all and
+    // its button was never disabled. It fetches the current
+    // unverified+active cohort and awaits one admin_suspend_user call per
+    // row in sequence -- a loop that can run for a while on a large cohort.
+    // A second click (or a double-click on ConfirmModal's own Confirm
+    // button, which has no busy state of its own) while that loop is still
+    // running re-fetches the same "status = 'active'" cohort and re-fires
+    // admin_suspend_user for every row the first run hasn't reached status
+    // 'suspended' on yet -- duplicate work and duplicate admin_logs entries
+    // for no benefit, since admin_suspend_user is otherwise idempotent.
+    if (suspendingAllRef.current) return;
     setConfirmModal({
       title: 'Bulk Suspend Unverified', message: 'Suspend all unverified accounts with status "active"? They can be unsuspended individually.',
       confirmLabel: 'Suspend All', danger: true,
       onConfirm: async () => {
-        setConfirmModal(null);
+        if (suspendingAllRef.current) { setConfirmModal(null); return; }
+        suspendingAllRef.current = true;
+        setConfirmModal(null); setIsSuspendingAll(true);
         try {
           const { data: targets, error: fetchErr } = await supabase.from('users').select('id').eq('is_verified', false).eq('status', 'active').neq('id', ROOT_UID);
           if (fetchErr) throw fetchErr;
@@ -141,7 +164,7 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
           }
           await writeAuditLog(currentUser, 'ROOT_bulk_suspend_unverified', null, { count: (targets || []).length, failed });
           flash(failed === 0, failed === 0 ? `${(targets || []).length} unverified account(s) suspended.` : `${failed} of ${(targets || []).length} failed — see individual admin_logs entries.`);
-        } catch (err: any) { flash(false, err?.message || 'Bulk suspend failed.'); }
+        } catch (err: any) { flash(false, err?.message || 'Bulk suspend failed.'); } finally { suspendingAllRef.current = false; setIsSuspendingAll(false); }
       },
     });
   };
@@ -270,8 +293,8 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
             <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: '2px 0 0' }}>Platform-wide user operations</p>
           </div>
         </div>
-        <button onClick={handleBulkSuspend} style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.2)', borderRadius: 12, padding: 12, color: adminTheme.red, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-          🚫 Suspend All Unverified Accounts
+        <button onClick={handleBulkSuspend} disabled={isSuspendingAll} style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.2)', borderRadius: 12, padding: 12, color: adminTheme.red, fontSize: 14, fontWeight: 700, cursor: isSuspendingAll ? 'wait' : 'pointer' }}>
+          {isSuspendingAll ? 'Suspending…' : '🚫 Suspend All Unverified Accounts'}
         </button>
       </div>
 
