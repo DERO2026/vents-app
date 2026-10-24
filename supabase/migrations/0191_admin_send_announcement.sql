@@ -72,13 +72,15 @@
 --     is the explicit, tested behavior requirement #5 asks for, not an
 --     oversight: today, Everyone has no mute control of its own at all.
 --
--- Notification shape: identical column set/values to admin_send_broadcast()
--- -- id, user_id, type ('broadcast'), title, body, read (false), icon
--- ('📢'), created_at -- so this shares the exact same notification feed
--- rendering and push-eligibility path (0041's own comment: push is a
--- type-agnostic polling cron, no new plumbing needed). Only the recipient
--- SELECT differs per audience; the INSERT's target columns/literals do
--- not vary by branch.
+-- Notification shape: same column set as admin_send_broadcast() -- id,
+-- user_id, type, title, body, read (false), icon ('📢'), created_at.
+-- 'everyone' uses type = 'broadcast', byte-identical to
+-- admin_send_broadcast()'s own INSERT; role audiences use type =
+-- 'announcement' instead -- see the dedicated "Notification type"
+-- section below for why. Every branch shares the exact same
+-- notification feed rendering and push-eligibility path either way
+-- (0041's own comment: push is a type-agnostic polling cron, no new
+-- plumbing needed).
 --
 -- Audit logging: one admin_logs row per call, action 'announcement_sent',
 -- details including audience/title/body/recipients -- mirroring
@@ -97,6 +99,48 @@
 -- function body is the real gate, not the grant -- same stated rationale
 -- 0182_admin_manual_trending_control.sql already gives for that pattern).
 -- anon never receives EXECUTE.
+--
+-- Rate limiting: PERFORM public.check_rate_limit(...) -- the same existing
+-- primitive send_event_announcement() already uses
+-- (0041_event_announcements.sql:67, confirmed live via pg_get_functiondef:
+-- check_rate_limit(p_key text, p_max_attempts integer, p_window_seconds
+-- integer)), called once per admin caller (keyed on v_admin_id, not on
+-- audience or content) immediately after authorization/validation and
+-- before any INSERT. admin_send_broadcast() itself has no rate limit at
+-- all -- this migration does not add one there, only to the new RPC.
+-- Limit chosen: 10 calls per 300-second window per admin. This is
+-- deliberately generous relative to send_event_announcement's 1-per-900s
+-- (that limit exists to stop one organizer spamming one event's
+-- attendees; this one exists only to stop a runaway client/script loop
+-- calling this RPC repeatedly) -- a Super Admin composing and sending to
+-- all three audiences in quick succession, or correcting a typo and
+-- re-sending, stays well under 10 calls in 5 minutes. Exceeding it raises
+-- 'rate_limited' (ERRCODE P0429, check_rate_limit's own existing
+-- behavior) rather than silently dropping or queuing the call.
+--
+-- Notification type: 'everyone' keeps type = 'broadcast', byte-identical
+-- to admin_send_broadcast()'s own INSERT -- zero behavior change for the
+-- existing Everyone path, including NotificationsScreen.tsx's
+-- TYPE_COLORS['broadcast'] color mapping and the type-agnostic push-
+-- delivery cron (get_pending_push_notifications_for_user, confirmed live:
+-- it claims any notifications row with push_sent = false, never filters
+-- on type). Role-specific sends ('organizers'/'service_providers') use a
+-- NEW, distinct type = 'announcement' instead of reusing 'broadcast' --
+-- confirmed this is compatible, not a drift risk: NotificationsScreen.tsx
+-- resolves an unmapped type via `TYPE_COLORS[notif.type] ?? ventsColors.
+-- accent`, the same safe fallback 'reminder'/'event_update' already rely
+-- on, so a new type renders correctly today without a UI change; and
+-- push delivery is confirmed type-agnostic above, so it is unaffected
+-- either way. Distinguishing the two matters because 'broadcast' already
+-- means, everywhere else in this schema and UI, "sent to literally
+-- everyone" -- silently reusing that label for an audience-scoped send
+-- would misrepresent who actually received it (to the admin re-reading
+-- their own admin_logs, and to any future per-type notification
+-- preference). Both role branches share one 'announcement' type rather
+-- than a per-audience type, since nothing today needs to tell an
+-- organizer-announcement apart from a service-provider-announcement
+-- after delivery -- audience is still fully recorded, per-send, in the
+-- admin_logs 'audience' field.
 
 CREATE OR REPLACE FUNCTION public.admin_send_announcement(p_audience text, p_title text, p_body text)
  RETURNS jsonb
@@ -123,20 +167,30 @@ BEGIN
   IF v_body = '' THEN RAISE EXCEPTION 'Message is required'; END IF;
   IF length(v_body) > 500 THEN RAISE EXCEPTION 'Message must be 500 characters or fewer'; END IF;
 
+  -- One admin, up to 10 sends per 5-minute window -- generous enough that
+  -- a legitimate Super Admin sending to all three audiences, or
+  -- correcting a typo and re-sending, is never blocked; tight enough to
+  -- stop a runaway script loop.
+  PERFORM public.check_rate_limit('admin_send_announcement:' || v_admin_id::text, 10, 300);
+
   CASE p_audience
     WHEN 'everyone' THEN
-      -- Same population admin_send_broadcast() already targets. No
-      -- announcement_mutes lookup -- deliberately: 'everyone' has no
-      -- announcement_groups row (CHECK constraint forbids it), so no
-      -- mute row can structurally reference it.
+      -- Same population admin_send_broadcast() already targets, same
+      -- type ('broadcast') so existing rendering/push behavior for
+      -- Everyone sends is unchanged. No announcement_mutes lookup --
+      -- deliberately: 'everyone' has no announcement_groups row (CHECK
+      -- constraint forbids it), so no mute row can structurally
+      -- reference it.
       INSERT INTO public.notifications (id, user_id, type, title, body, read, icon, created_at)
       SELECT gen_random_uuid(), u.id, 'broadcast', v_title, v_body, false, '📢', now()
       FROM public.users u
       WHERE u.role <> 'admin';
 
     WHEN 'organizers' THEN
+      -- type = 'announcement' (not 'broadcast') -- audience-scoped, not
+      -- "sent to literally everyone"; see this file's header comment.
       INSERT INTO public.notifications (id, user_id, type, title, body, read, icon, created_at)
-      SELECT gen_random_uuid(), m.user_id, 'broadcast', v_title, v_body, false, '📢', now()
+      SELECT gen_random_uuid(), m.user_id, 'announcement', v_title, v_body, false, '📢', now()
       FROM public.announcement_group_members m
       JOIN public.announcement_groups g ON g.id = m.group_id AND g.key = 'organizers'
       WHERE NOT EXISTS (
@@ -146,7 +200,7 @@ BEGIN
 
     WHEN 'service_providers' THEN
       INSERT INTO public.notifications (id, user_id, type, title, body, read, icon, created_at)
-      SELECT gen_random_uuid(), m.user_id, 'broadcast', v_title, v_body, false, '📢', now()
+      SELECT gen_random_uuid(), m.user_id, 'announcement', v_title, v_body, false, '📢', now()
       FROM public.announcement_group_members m
       JOIN public.announcement_groups g ON g.id = m.group_id AND g.key = 'service_providers'
       WHERE NOT EXISTS (

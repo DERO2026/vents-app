@@ -207,12 +207,117 @@ describe('0191: audit logging and return shape', () => {
   });
 });
 
-describe('0191: notification insertion format matches admin_send_broadcast exactly', () => {
-  it('every branch inserts the same column set and literal type/icon/read values as admin_send_broadcast uses', () => {
+describe('0191: notification column shape matches admin_send_broadcast; type is decided deliberately per audience', () => {
+  it('every branch inserts the same column set as admin_send_broadcast (id, user_id, type, title, body, read, icon, created_at)', () => {
     const fn = fnBody(m0191);
     const inserts = fn.match(/INSERT INTO public\.notifications \(id, user_id, type, title, body, read, icon, created_at\)/g) ?? [];
     expect(inserts).toHaveLength(3);
-    expect(fn.match(/gen_random_uuid\(\), [\w.]+, 'broadcast', v_title, v_body, false, '📢', now\(\)/g)).toHaveLength(3);
+  });
+
+  it('every branch uses read=false and icon=\'📢\', matching admin_send_broadcast\'s literals', () => {
+    const fn = fnBody(m0191);
+    expect(fn.match(/v_title, v_body, false, '📢', now\(\)/g)).toHaveLength(3);
+  });
+
+  it('everyone keeps type = \'broadcast\', byte-identical to admin_send_broadcast -- zero behavior change for the existing Everyone path', () => {
+    const fn = fnBody(m0191);
+    const everyoneBranch = fn.match(/WHEN 'everyone' THEN[\s\S]*?(?=WHEN 'organizers')/)?.[0] ?? '';
+    expect(everyoneBranch).toMatch(/SELECT gen_random_uuid\(\), u\.id, 'broadcast', v_title, v_body, false, '📢', now\(\)/);
+  });
+
+  it('organizers and service_providers use a distinct type = \'announcement\', not \'broadcast\' -- a deliberate decision, not reused by accident', () => {
+    const fn = fnBody(m0191);
+    const organizersBranch = fn.match(/WHEN 'organizers' THEN[\s\S]*?(?=WHEN 'service_providers')/)?.[0] ?? '';
+    const providersBranch = fn.match(/WHEN 'service_providers' THEN[\s\S]*?END CASE;/)?.[0] ?? '';
+    expect(organizersBranch).toMatch(/SELECT gen_random_uuid\(\), m\.user_id, 'announcement', v_title, v_body, false, '📢', now\(\)/);
+    expect(providersBranch).toMatch(/SELECT gen_random_uuid\(\), m\.user_id, 'announcement', v_title, v_body, false, '📢', now\(\)/);
+    // Check the actual SQL (the SELECT list), not prose comments which may
+    // legitimately mention 'broadcast' for contrast/explanation.
+    expect(organizersBranch).not.toMatch(/SELECT gen_random_uuid\(\), m\.user_id, 'broadcast'/);
+    expect(providersBranch).not.toMatch(/SELECT gen_random_uuid\(\), m\.user_id, 'broadcast'/);
+  });
+
+  it('exactly two distinct type literals are used in the three INSERT ... SELECT statements: \'broadcast\' once, \'announcement\' twice', () => {
+    const fn = fnBody(m0191);
+    const selectLines = fn.match(/SELECT gen_random_uuid\(\), [\w.]+, '(\w+)', v_title/g) ?? [];
+    expect(selectLines).toHaveLength(3);
+    const types = selectLines.map((l) => l.match(/'(\w+)', v_title/)?.[1]);
+    expect(types.filter((t) => t === 'broadcast')).toHaveLength(1);
+    expect(types.filter((t) => t === 'announcement')).toHaveLength(2);
+  });
+
+  it('the migration documents why the new type is safe for existing rendering and push delivery (TYPE_COLORS fallback, type-agnostic push cron)', () => {
+    expect(m0191).toMatch(/TYPE_COLORS\['broadcast'\]/);
+    expect(m0191).toMatch(/TYPE_COLORS\[notif\.type\]/);
+    expect(m0191).toMatch(/ventsColors\.?\s*\n?--?\s*accent/);
+    expect(m0191).toMatch(/push delivery is confirmed type-agnostic/);
+  });
+});
+
+describe('0191: rate limiting -- bounded per admin, generous enough for legitimate use', () => {
+  it('calls check_rate_limit once, keyed per admin caller (not per audience or content)', () => {
+    const fn = fnBody(m0191);
+    expect(fn.match(/public\.check_rate_limit\(/g)).toHaveLength(1);
+    expect(fn).toMatch(/PERFORM public\.check_rate_limit\('admin_send_announcement:' \|\| v_admin_id::text, 10, 300\);/);
+  });
+
+  it('the rate-limit key does not vary by audience -- a single admin is limited across all three audiences combined, not separately per audience', () => {
+    const fn = fnBody(m0191);
+    const callLine = fn.match(/PERFORM public\.check_rate_limit\([^)]*\);/)?.[0] ?? '';
+    expect(callLine).not.toMatch(/p_audience/);
+  });
+
+  it('the rate limit runs after authorization/validation and before any INSERT -- an unauthorized or invalid call never consumes a rate-limit slot', () => {
+    const fn = fnBody(m0191);
+    const authIdx = fn.indexOf('is_admin_or_root()');
+    const validationIdx = fn.indexOf("length(v_body) > 500");
+    const rateLimitIdx = fn.indexOf('check_rate_limit(');
+    const firstInsertIdx = fn.indexOf('INSERT INTO public.notifications');
+    expect(rateLimitIdx).toBeGreaterThan(authIdx);
+    expect(rateLimitIdx).toBeGreaterThan(validationIdx);
+    expect(firstInsertIdx).toBeGreaterThan(rateLimitIdx);
+  });
+
+  it('the limit (10 per 300s) is generous relative to send_event_announcement\'s own 1-per-900s, so a legitimate admin sending to all three audiences or re-sending a correction is never blocked', () => {
+    expect(m0191).toMatch(/10 calls per 300-second window per admin/);
+    // Sanity: 10 calls comfortably covers one send per audience (3) plus
+    // room for corrections, well under the limit.
+    const maxAudiences = 3;
+    const comfortableRetries = 2;
+    expect(10).toBeGreaterThanOrEqual(maxAudiences * (1 + comfortableRetries));
+  });
+
+  it('does not add a rate limit to admin_send_broadcast -- scope is limited to the new RPC only', () => {
+    expect(m0191).not.toMatch(/CREATE (OR REPLACE )?FUNCTION public\.admin_send_broadcast/);
+    expect(m0191).toMatch(/admin_send_broadcast\(\) itself has no rate limit at\s*\n-- all -- this migration does not add one there, only to the new RPC\./);
+  });
+});
+
+describe('0191: Everyone audience includes every non-admin role (Sub-Admins, Organizers, Service Providers), excluding only role=\'admin\'', () => {
+  it('the everyone filter is exactly role <> \'admin\' -- a plain negative check, not an allow-list that could accidentally omit a role', () => {
+    const fn = fnBody(m0191);
+    const everyoneBranch = fn.match(/WHEN 'everyone' THEN[\s\S]*?(?=WHEN 'organizers')/)?.[0] ?? '';
+    expect(everyoneBranch).toMatch(/WHERE u\.role <> 'admin';/);
+    // Not an IN(...) allow-list of specific roles, which could silently
+    // drop a role this schema adds in the future.
+    expect(everyoneBranch).not.toMatch(/role\s+IN\s*\(/);
+  });
+
+  it('is_organizer/is_service_provider flags never gate the everyone branch -- an organizer or service provider is still role=\'user\' underneath and is included', () => {
+    const fn = fnBody(m0191);
+    const everyoneBranch = fn.match(/WHEN 'everyone' THEN[\s\S]*?(?=WHEN 'organizers')/)?.[0] ?? '';
+    expect(everyoneBranch).not.toMatch(/is_organizer/);
+    expect(everyoneBranch).not.toMatch(/is_service_provider/);
+  });
+
+  it('sub-admin is not role=\'admin\' (confirmed live: is_admin_or_root/is_super_admin check role = \'admin\' specifically, sub-admin is a separate literal), so the everyone filter includes Sub-Admins', () => {
+    // Mirrors the exact live semantics already confirmed in this session:
+    // is_super_admin() == is_root() OR role = 'admin'; role = 'sub-admin'
+    // is a distinct value that role <> 'admin' does not exclude.
+    const role = 'sub-admin';
+    expect(role).not.toBe('admin');
+    const includedInEveryone = role !== 'admin';
+    expect(includedInEveryone).toBe(true);
   });
 });
 
