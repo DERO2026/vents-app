@@ -72,7 +72,53 @@ ALTER TABLE public.tickets
   ADD CONSTRAINT tickets_qualifying_status_check CHECK (qualifying_status IN ('pending', 'qualifying', 'qualified', 'disqualified'));
 
 COMMENT ON COLUMN public.tickets.platform_fee_kobo IS 'This ticket row''s share of its order''s buyer_fee_kobo (organizer_transactions.metadata), allocated by allocate_ticket_platform_fees() via largest-remainder apportionment on amount. NULL for historical tickets (never backfilled) and for tickets never paid.';
-COMMENT ON COLUMN public.tickets.qualifying_status IS 'Derived recruiter-commission eligibility state (Phase 4 cron sets this). pending: not yet evaluated. qualifying: paid, inside the 30-day hold from event_date. qualified: hold elapsed, no refund/dispute. disqualified: refunded, charged back, or dispute lost.';
+
+-- ---------------------------------------------------------------------
+-- QUALIFYING-STATUS LIFECYCLE (documentation only -- no transition logic
+-- is implemented in this migration; Phase 4 implements the cron sweep
+-- that actually moves rows through these states).
+-- ---------------------------------------------------------------------
+-- States and meaning:
+--   pending      Default on row creation. Not yet evaluated for recruiter-
+--                commission eligibility. Set on INSERT, never written back
+--                to by anything in this migration.
+--   qualifying   Ticket is paid and inside its 30-day holding period,
+--                anchored to events.event_date (per the approved rule).
+--                Not yet eligible; actively counting down.
+--   qualified    Holding period has elapsed (event_date > 30 days in the
+--                past) with no refund, chargeback, or dispute against the
+--                ticket. This is the terminal "eligible" state.
+--   disqualified Refunded, charged back, or dispute lost. Terminal unless
+--                a merchant-won dispute resolution restarts a fresh 30-day
+--                hold (per the approved rule: "a merchant-won dispute
+--                starts a fresh 30-day holding period from dispute
+--                resolution, not immediate re-eligibility") -- in which
+--                case the row moves back to 'qualifying', not 'qualified'.
+--
+-- Allowed transitions (enforced by Phase 4's cron + Phase 2/3's reversal/
+-- dispute handling -- NOT by any CHECK or trigger in this migration):
+--   pending      -> qualifying    (ticket paid, hold period begins)
+--   qualifying   -> qualified     (hold period elapses, no reversal/dispute)
+--   qualifying   -> disqualified  (refund/chargeback/dispute lost during hold)
+--   qualified    -> disqualified  (late-discovered refund/chargeback/dispute loss)
+--   disqualified -> qualifying    (merchant-won dispute resolution: FRESH
+--                                  30-day hold, never directly back to
+--                                  'qualified')
+--
+-- CRITICAL: qualifying_status is a derived, read-only-by-convention
+-- status column. It must NEVER be read as sufficient, on its own, to
+-- authorize a recruiter-commission payout -- no recruiter-commission
+-- system exists yet, and when one is built it must independently verify
+-- payment_status, the absence of any platform_fee_reversals/
+-- payment_disputes row against the same source, and the elapsed holding
+-- period, rather than trusting qualifying_status = 'qualified' as a
+-- single authorization gate (a stale or buggily-set status value must
+-- not be able to trigger a payout by itself). Nothing in this migration
+-- defines any function or view that treats qualifying_status as an
+-- authorization signal: platform_fee_reconciliation (below) does not
+-- reference qualifying_status at all, and no SECURITY DEFINER function
+-- here reads it to gate a monetary action.
+COMMENT ON COLUMN public.tickets.qualifying_status IS 'Derived recruiter-commission eligibility state (Phase 4 cron sets this; see the lifecycle comment block above this column''s definition for the full state/transition table). pending: not yet evaluated. qualifying: paid, inside the 30-day hold from event_date. qualified: hold elapsed, no refund/dispute -- NOT itself sufficient to authorize any payout; a future commission system must independently re-check payment status, reversals, and disputes. disqualified: refunded, charged back, or dispute lost; can return to qualifying (fresh hold) on a merchant-won dispute resolution, never directly to qualified.';
 
 -- service_bookings: verified live scheduling columns are scheduled_date
 -- (date) + scheduled_time (time without time zone); no completed_at exists
@@ -88,6 +134,7 @@ ALTER TABLE public.service_bookings
   ADD CONSTRAINT service_bookings_qualifying_status_check CHECK (qualifying_status IN ('pending', 'qualifying', 'qualified', 'disqualified'));
 
 COMMENT ON COLUMN public.service_bookings.completed_at IS 'Set by complete_service_booking() (not modified by this migration). Phase 4''s cron will use this as the primary 30-day-hold anchor, falling back to scheduled_date/scheduled_time + grace period for bookings never marked complete -- fallback formula designed in Phase 4, not here.';
+COMMENT ON COLUMN public.service_bookings.qualifying_status IS 'Same lifecycle and states as tickets.qualifying_status (see the lifecycle comment block above that column''s definition): pending -> qualifying -> qualified/disqualified, with disqualified -> qualifying on a merchant-won dispute restarting a fresh 30-day hold. Anchored to completed_at (or its Phase-4 fallback) instead of event_date. NOT sufficient on its own to authorize any recruiter-commission payout.';
 
 -- ============================================================
 -- 2. Append-only platform-fee reversal ledger
@@ -453,39 +500,79 @@ GRANT EXECUTE ON FUNCTION public.confirm_ticket_payment(p_reference text, p_amou
 -- ============================================================
 -- 6. Read-only reconciliation view
 -- ============================================================
--- Flags two mismatch classes per payment_ref:
---   (a) incomplete: at least one paid ticket row still has platform_fee_kobo IS NULL
---       (allocation hasn't run yet, or ran before this migration existed)
---   (b) mismatched: allocation ran, but the sum of ticket-level shares
---       doesn't equal the authoritative order-level buyer_fee_kobo exactly
---       (would indicate a bug in allocate_ticket_platform_fees, since the
---       algorithm is designed to make this impossible)
+-- Verified live (project slrtjxtzhowhwhebjprv): no payment_ref currently
+-- has more than one organizer_transactions row carrying it in
+-- metadata->>'paystack_reference'. There is, however, no unique
+-- constraint enforcing that today, so duplicates are structurally
+-- possible (e.g. a future bug double-crediting a wallet) and this view
+-- must not silently hide that if it ever happens.
+--
+-- Both sides are pre-aggregated to one row per payment_ref BEFORE the
+-- join, so the join itself is a 1:1 left join on payment_ref and can
+-- never multiply/fan out ticket amounts, regardless of how many
+-- organizer_transactions rows exist for a given payment_ref.
+--
+-- reconciliation_status classifies every payment_ref into exactly one of:
+--   missing_authoritative_fee  -- no organizer_transactions row at all
+--                                  carries this payment_ref (e.g. a paid
+--                                  ticket whose wallet credit never ran)
+--   duplicate_authoritative_fee -- more than one organizer_transactions
+--                                  row carries this payment_ref; the
+--                                  authoritative fee is ambiguous and is
+--                                  deliberately NOT silently picked --
+--                                  this must be investigated, not resolved
+--                                  by an ORDER BY ... LIMIT 1
+--   unallocated                 -- exactly one authoritative fee row
+--                                  exists, but at least one paid ticket
+--                                  row still has platform_fee_kobo IS NULL
+--   mismatch                    -- fully allocated, but the summed
+--                                  ticket-level shares != the single
+--                                  authoritative buyer_fee_kobo (would
+--                                  indicate a bug in
+--                                  allocate_ticket_platform_fees, since
+--                                  the algorithm is designed to make this
+--                                  impossible)
+--   ok                          -- exactly one authoritative fee row,
+--                                  fully allocated, sums match exactly
 
 CREATE VIEW public.platform_fee_reconciliation AS
-SELECT
-  t.payment_ref,
-  count(*) AS ticket_count,
-  count(*) FILTER (WHERE t.platform_fee_kobo IS NULL) AS unallocated_ticket_count,
-  sum(t.platform_fee_kobo) AS allocated_total_kobo,
-  ot.buyer_fee_kobo AS authoritative_buyer_fee_kobo,
-  (count(*) FILTER (WHERE t.platform_fee_kobo IS NULL) > 0) AS is_incomplete,
-  (
-    count(*) FILTER (WHERE t.platform_fee_kobo IS NULL) = 0
-    AND ot.buyer_fee_kobo IS NOT NULL
-    AND coalesce(sum(t.platform_fee_kobo), 0) <> ot.buyer_fee_kobo
-  ) AS is_mismatched
-FROM public.tickets t
-LEFT JOIN LATERAL (
-  SELECT (o.metadata->>'buyer_fee_kobo')::bigint AS buyer_fee_kobo
+WITH authoritative AS (
+  SELECT
+    o.metadata->>'paystack_reference' AS payment_ref,
+    count(*) AS fee_record_count,
+    max((o.metadata->>'buyer_fee_kobo')::bigint) AS buyer_fee_kobo
   FROM public.organizer_transactions o
-  WHERE o.metadata->>'paystack_reference' = t.payment_ref
-  ORDER BY o.created_at DESC
-  LIMIT 1
-) ot ON true
-WHERE t.payment_ref IS NOT NULL AND t.payment_status = 'paid'
-GROUP BY t.payment_ref, ot.buyer_fee_kobo;
+  WHERE o.metadata->>'paystack_reference' IS NOT NULL
+  GROUP BY 1
+),
+ticket_totals AS (
+  SELECT
+    t.payment_ref,
+    count(*) AS ticket_count,
+    count(*) FILTER (WHERE t.platform_fee_kobo IS NULL) AS unallocated_ticket_count,
+    sum(t.platform_fee_kobo) AS allocated_total_kobo
+  FROM public.tickets t
+  WHERE t.payment_ref IS NOT NULL AND t.payment_status = 'paid'
+  GROUP BY t.payment_ref
+)
+SELECT
+  tt.payment_ref,
+  tt.ticket_count,
+  tt.unallocated_ticket_count,
+  tt.allocated_total_kobo,
+  a.buyer_fee_kobo AS authoritative_buyer_fee_kobo,
+  coalesce(a.fee_record_count, 0) AS authoritative_fee_record_count,
+  CASE
+    WHEN a.fee_record_count IS NULL OR a.fee_record_count = 0 THEN 'missing_authoritative_fee'
+    WHEN a.fee_record_count > 1 THEN 'duplicate_authoritative_fee'
+    WHEN tt.unallocated_ticket_count > 0 THEN 'unallocated'
+    WHEN coalesce(tt.allocated_total_kobo, 0) <> a.buyer_fee_kobo THEN 'mismatch'
+    ELSE 'ok'
+  END AS reconciliation_status
+FROM ticket_totals tt
+LEFT JOIN authoritative a ON a.payment_ref = tt.payment_ref;
 
-COMMENT ON VIEW public.platform_fee_reconciliation IS 'Read-only. Per payment_ref: flags is_incomplete (a paid ticket row still has platform_fee_kobo IS NULL) or is_mismatched (allocated sum != the authoritative organizer_transactions.metadata buyer_fee_kobo). Should always be empty in steady state; a non-empty is_mismatched row is a bug report on allocate_ticket_platform_fees, never expected by design.';
+COMMENT ON VIEW public.platform_fee_reconciliation IS 'Read-only, informational only (not an authorization gate for anything, including any future recruiter-commission check). Per payment_ref: reconciliation_status is one of missing_authoritative_fee, duplicate_authoritative_fee, unallocated, mismatch, or ok. duplicate_authoritative_fee and mismatch should never occur by design; missing_authoritative_fee and unallocated are expected transiently between payment confirmation and allocation. Never picks an arbitrary row when more than one organizer_transactions record exists for a payment_ref -- that case is flagged, not resolved silently.';
 
 REVOKE ALL ON public.platform_fee_reconciliation FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.platform_fee_reconciliation TO project_admin;
