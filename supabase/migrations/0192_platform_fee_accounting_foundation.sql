@@ -636,3 +636,111 @@ COMMENT ON VIEW public.platform_fee_reconciliation IS 'Read-only, informational 
 
 REVOKE ALL ON public.platform_fee_reconciliation FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.platform_fee_reconciliation TO project_admin;
+
+-- ============================================================
+-- 6. Defense-in-depth: prevent duplicate authoritative fee rows
+-- ============================================================
+-- Live-data investigation before adding this: of 36 organizer_transactions
+-- rows with type = 'credit', 25 have a NULL metadata->>'paystack_reference'
+-- -- legitimate, because 'credit' also covers service-booking payments
+-- (metadata->>'service_booking_id', never paystack_reference) and one-off
+-- admin test credits (no metadata at all). Among the 11 rows that DO carry
+-- a paystack_reference, zero duplicates exist today. Separately,
+-- credit_organizer_wallet (0004/0039) already refuses to insert a second
+-- 'credit' row for the same ticket_sale_id, and confirm_ticket_payment
+-- always resolves a payment_ref to exactly one deterministic
+-- ticket_sale_id (min ticket id in the group) -- so a duplicate
+-- paystack_reference is not reachable through the current code paths.
+-- The invariant below is therefore scoped to exactly what the evidence
+-- supports: among type='credit' rows that carry a paystack_reference,
+-- that reference is unique. Not a blanket table-wide rule, and not
+-- "payment_ref is never reused" in general (unverifiable) -- only for the
+-- rows this index actually covers.
+
+CREATE UNIQUE INDEX organizer_transactions_credit_paystack_ref_uidx
+  ON public.organizer_transactions ((metadata->>'paystack_reference'))
+  WHERE type = 'credit' AND metadata->>'paystack_reference' IS NOT NULL;
+
+COMMENT ON INDEX public.organizer_transactions_credit_paystack_ref_uidx IS 'Backstop only -- credit_organizer_wallet already dedupes by ticket_sale_id before insert, making a duplicate paystack_reference unreachable through the current confirm_ticket_payment path. Turns any future violation of that invariant into a database-level rejection instead of a silent duplicate that would otherwise surface downstream as duplicate_authoritative_fee in allocate_ticket_platform_fees / platform_fee_reconciliation.';
+
+-- credit_organizer_wallet, re-defined here only to make its
+-- organizer_transactions insert safe under the new index. Reaching the
+-- new ON CONFLICT branch means the ticket_sale_id-based EXISTS guard
+-- above already found NO existing row for this ticket_sale_id, yet the
+-- paystack_reference is already claimed by a DIFFERENT ticket_sale_id --
+-- that is a genuine data inconsistency, not a legitimate retry (a
+-- legitimate retry is already caught by the EXISTS guard and never
+-- reaches this INSERT), so it is raised, never silently swallowed. The
+-- organizer_transactions insert also now runs before the wallet-balance
+-- update and short-circuits on conflict, so a (currently unreachable)
+-- conflict can never double-credit the wallet. Every other line is
+-- identical to the live function (confirmed via pg_get_functiondef
+-- immediately before this edit): same validation, same ticket_sale_id
+-- guard, same signature.
+
+CREATE OR REPLACE FUNCTION public.credit_organizer_wallet(p_organizer_id uuid, p_amount_kobo bigint, p_description text DEFAULT NULL::text, p_ticket_sale_id uuid DEFAULT NULL::uuid, p_metadata jsonb DEFAULT NULL::jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_ticket record;
+  v_inserted_id uuid;
+BEGIN
+  IF p_amount_kobo IS NULL OR p_amount_kobo <= 0 THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: amount must be positive';
+  END IF;
+
+  IF p_organizer_id IS NULL THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: organizer_id is required';
+  END IF;
+
+  IF p_ticket_sale_id IS NULL THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: a verified ticket_sale_id is required';
+  END IF;
+
+  SELECT t.id, e.organizer_id, t.payment_status
+    INTO v_ticket
+    FROM public.tickets t
+    JOIN public.events e ON e.id = t.event_id
+   WHERE t.id = p_ticket_sale_id
+   FOR UPDATE OF t;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: ticket % does not exist', p_ticket_sale_id;
+  END IF;
+
+  IF v_ticket.organizer_id IS DISTINCT FROM p_organizer_id THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: ticket % does not belong to organizer %', p_ticket_sale_id, p_organizer_id;
+  END IF;
+
+  IF v_ticket.payment_status <> 'paid' THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: ticket % is not paid (status=%)', p_ticket_sale_id, v_ticket.payment_status;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.organizer_transactions
+    WHERE ticket_sale_id = p_ticket_sale_id AND type = 'credit'
+  ) THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, ticket_sale_id, metadata)
+  VALUES (p_organizer_id, 'credit', p_amount_kobo, p_description, p_ticket_sale_id, p_metadata)
+  ON CONFLICT ((metadata->>'paystack_reference')) WHERE type = 'credit' AND metadata->>'paystack_reference' IS NOT NULL
+  DO NOTHING
+  RETURNING id INTO v_inserted_id;
+
+  IF v_inserted_id IS NULL THEN
+    RAISE EXCEPTION 'credit_organizer_wallet: paystack_reference in metadata is already recorded under a different ticket_sale_id (attempted ticket %)', p_ticket_sale_id;
+  END IF;
+
+  INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo)
+  VALUES (p_organizer_id, p_amount_kobo, p_amount_kobo)
+  ON CONFLICT (organizer_id) DO UPDATE
+    SET balance_kobo      = organizer_wallets.balance_kobo + p_amount_kobo,
+        total_earned_kobo = organizer_wallets.total_earned_kobo + p_amount_kobo,
+        updated_at        = now();
+END;
+$function$;

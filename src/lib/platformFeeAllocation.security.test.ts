@@ -484,3 +484,104 @@ describe('0192: scope discipline', () => {
     expect(migration).not.toMatch(/ADD COLUMN[^;]*(?:recruiter|commission)/i);
   });
 });
+
+// ------------------------------------------------------------------
+// Follow-up review pass: database-level backstop against a duplicate
+// authoritative fee row. Live-data investigation (not repeated here,
+// see the migration's own comment block) found: credit_organizer_wallet
+// already dedupes by ticket_sale_id before insert, and of 36 live
+// type='credit' rows, 25 have a NULL paystack_reference (legitimate --
+// service-booking credits and admin test credits also use type='credit'
+// but never set paystack_reference); zero duplicate non-null references
+// exist today. So the new unique index is scoped to exactly what's
+// proven safe: type='credit' rows that DO carry a paystack_reference.
+// ------------------------------------------------------------------
+
+function creditFn(): string {
+  return migration.match(/CREATE OR REPLACE FUNCTION public\.credit_organizer_wallet\([\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+}
+
+describe('0192: organizer_transactions duplicate-authoritative-fee backstop', () => {
+  it('adds a partial unique index scoped only to type=\'credit\' rows with a non-null paystack_reference -- never a blanket table-wide uniqueness rule', () => {
+    expect(migration).toMatch(
+      /CREATE UNIQUE INDEX organizer_transactions_credit_paystack_ref_uidx\s*\n\s*ON public\.organizer_transactions \(\(metadata->>'paystack_reference'\)\)\s*\n\s*WHERE type = 'credit' AND metadata->>'paystack_reference' IS NOT NULL;/
+    );
+  });
+
+  it('does not scope the index by any other condition that would also catch service-booking credits or admin test credits (both legitimately have no paystack_reference and must stay unaffected)', () => {
+    const idx = migration.match(/CREATE UNIQUE INDEX organizer_transactions_credit_paystack_ref_uidx[\s\S]*?;/)?.[0] ?? '';
+    expect(idx).not.toMatch(/service_booking_id/);
+    // the partial predicate's NOT NULL guard is exactly what exempts
+    // the 25 legitimate NULL-reference rows (service-booking + admin
+    // test credits) from the uniqueness rule entirely
+    expect(idx).toMatch(/IS NOT NULL/);
+  });
+
+  it('redefines credit_organizer_wallet to insert organizer_transactions before crediting organizer_wallets, and to short-circuit via RETURNING before the wallet update', () => {
+    const fn = creditFn();
+    const txnInsertIdx = fn.indexOf('INSERT INTO public.organizer_transactions');
+    const walletInsertIdx = fn.indexOf('INSERT INTO public.organizer_wallets');
+    expect(txnInsertIdx).toBeGreaterThan(-1);
+    expect(walletInsertIdx).toBeGreaterThan(-1);
+    // organizer_transactions insert must run first, so a conflict is
+    // detected before the wallet balance is ever touched -- otherwise a
+    // DO NOTHING on the transactions row would leave an orphaned double
+    // wallet credit with no corresponding ledger row
+    expect(txnInsertIdx).toBeLessThan(walletInsertIdx);
+    expect(fn).toMatch(/RETURNING id INTO v_inserted_id/);
+    expect(fn.indexOf('RETURNING id INTO v_inserted_id')).toBeLessThan(walletInsertIdx);
+  });
+
+  it('raises on conflict instead of silently swallowing it -- a conflict here can only mean a different ticket_sale_id already claimed this paystack_reference, which is a genuine inconsistency, not a legitimate retry', () => {
+    const fn = creditFn();
+    expect(fn).toMatch(/IF v_inserted_id IS NULL THEN\s*\n\s*RAISE EXCEPTION 'credit_organizer_wallet: paystack_reference[\s\S]*?different ticket_sale_id/);
+    // never DO NOTHING without also raising -- the ON CONFLICT clause's
+    // own DO NOTHING only prevents the unique-violation error from
+    // aborting the transaction; the IF-check immediately after is what
+    // actually surfaces the inconsistency instead of hiding it
+    expect(fn).toMatch(/ON CONFLICT \(\(metadata->>'paystack_reference'\)\) WHERE type = 'credit' AND metadata->>'paystack_reference' IS NOT NULL\s*\n\s*DO NOTHING\s*\n\s*RETURNING id INTO v_inserted_id;/);
+  });
+
+  it('a legitimate retry (same ticket_sale_id) is still caught by the pre-existing EXISTS guard and never reaches the new ON CONFLICT branch at all', () => {
+    const fn = creditFn();
+    const existsGuardIdx = fn.search(/IF EXISTS \(\s*\n\s*SELECT 1 FROM public\.organizer_transactions\s*\n\s*WHERE ticket_sale_id = p_ticket_sale_id AND type = 'credit'\s*\n\s*\) THEN\s*\n\s*RETURN;\s*\n\s*END IF;/);
+    const conflictInsertIdx = fn.indexOf("ON CONFLICT ((metadata->>'paystack_reference'))");
+    expect(existsGuardIdx).toBeGreaterThan(-1);
+    expect(conflictInsertIdx).toBeGreaterThan(-1);
+    expect(existsGuardIdx).toBeLessThan(conflictInsertIdx);
+  });
+
+  it('credit_organizer_wallet validation, ticket ownership/status checks, and wallet-balance update formula are otherwise unchanged from the live function', () => {
+    const fn = creditFn();
+    expect(fn).toMatch(/RAISE EXCEPTION 'credit_organizer_wallet: amount must be positive'/);
+    expect(fn).toMatch(/RAISE EXCEPTION 'credit_organizer_wallet: a verified ticket_sale_id is required'/);
+    expect(fn).toMatch(/RAISE EXCEPTION 'credit_organizer_wallet: ticket % does not belong to organizer %'/);
+    expect(fn).toMatch(/RAISE EXCEPTION 'credit_organizer_wallet: ticket % is not paid \(status=%\)'/);
+    expect(fn).toMatch(/SET balance_kobo\s*=\s*organizer_wallets\.balance_kobo \+ p_amount_kobo/);
+  });
+
+  it('simulated concurrent/repeated webhook processing: two calls with the same ticket_sale_id only ever produce one organizer_transactions row and one wallet credit, by construction of the EXISTS guard -- not by relying on the new index to catch it', () => {
+    // This is a structural assertion on the SQL, not a live-DB
+    // concurrency test (no DB execution in this suite). The EXISTS
+    // guard combined with `FOR UPDATE OF t` locking the ticket row
+    // means a second concurrent call for the same ticket_sale_id
+    // serializes behind the first and then sees the guard trip.
+    const fn = creditFn();
+    expect(fn).toMatch(/FOR UPDATE OF t;/);
+    const lockIdx = fn.indexOf('FOR UPDATE OF t;');
+    const guardIdx = fn.indexOf("WHERE ticket_sale_id = p_ticket_sale_id AND type = 'credit'");
+    expect(lockIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeGreaterThan(lockIdx);
+  });
+
+  it('recovery after a raised conflict is clean: nothing is written on the exception path (no wallet credit, no transactions row), so a corrected retry starts from the same pre-insert state', () => {
+    const fn = creditFn();
+    // the exception fires strictly before the wallet_organizers insert
+    // in source order, and plpgsql functions roll back entirely on an
+    // unhandled RAISE EXCEPTION -- so no partial state can persist
+    const exceptionIdx = fn.indexOf("RAISE EXCEPTION 'credit_organizer_wallet: paystack_reference");
+    const walletInsertIdx = fn.indexOf('INSERT INTO public.organizer_wallets');
+    expect(exceptionIdx).toBeGreaterThan(-1);
+    expect(exceptionIdx).toBeLessThan(walletInsertIdx);
+  });
+});
