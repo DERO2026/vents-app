@@ -95,6 +95,8 @@ function SettingRow({
   onPress,
   accent = false,
   danger = false,
+  testId,
+  disabled = false,
 }: {
   icon: React.ElementType;
   label: string;
@@ -104,9 +106,12 @@ function SettingRow({
   onPress?: () => void;
   accent?: boolean;
   danger?: boolean;
+  testId?: string;
+  disabled?: boolean;
 }) {
   return (
     <div
+      data-testid={testId}
       // Root cause of the Sign Out -> Forgot Password bug: this was
       // `onClick={onPress}`, which forwards React's click SyntheticEvent as
       // onPress's first argument. Every other row's onPress ignores that
@@ -117,14 +122,15 @@ function SettingRow({
       // the Forgot Password flow. Explicitly calling onPress with no
       // arguments closes off this whole class of accidental-argument bugs
       // for every row, not just Sign Out.
-      onClick={() => onPress?.()}
+      onClick={() => !disabled && onPress?.()}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
         width: '100%',
         padding: '14px 0',
-        cursor: onPress || onToggle ? 'pointer' : 'default',
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'default' : onPress || onToggle ? 'pointer' : 'default',
       }}
     >
       <div
@@ -145,7 +151,7 @@ function SettingRow({
         {label}
       </span>
       {typeof toggle === 'boolean' && onToggle ? (
-        <Toggle on={toggle} onChange={onToggle} />
+        <Toggle on={toggle} onChange={(v) => !disabled && onToggle(v)} />
       ) : value ? (
         <span style={{ color: '#94A3B8', fontSize: '13px' }}>{value}</span>
       ) : onPress ? (
@@ -1785,6 +1791,28 @@ export function SettingsScreen({
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [promoNotifs, setPromoNotifs] = useState(true);
   const [locationServices, setLocationServices] = useState(true);
+  // Announcement-group mute preferences (announcement_mutes, migration
+  // 0189) -- keyed by announcement_groups.id, NOT by role. Membership
+  // (announcement_group_members) is entirely automatic, synced server-side
+  // from users.is_organizer/is_service_provider by a SECURITY DEFINER
+  // trigger (0190) that grants this client role no write access at all --
+  // this screen only ever reads membership, never writes it, so a user can
+  // mute/unmute but can never join or leave a group themselves. Everyone
+  // broadcasts are structurally outside this: announcement_groups has no
+  // 'everyone' row (its own CHECK constraint forbids the key), so there is
+  // no group_id an Everyone mute could ever reference -- these toggles
+  // physically cannot affect an Everyone send.
+  const [announcementGroupIds, setAnnouncementGroupIds] = useState<{ organizers?: string; service_providers?: string }>({});
+  const [mutedAnnouncementGroupIds, setMutedAnnouncementGroupIds] = useState<Set<string>>(new Set());
+  const [announcementPrefsLoading, setAnnouncementPrefsLoading] = useState(true);
+  const [announcementMutePending, setAnnouncementMutePending] = useState<Record<string, boolean>>({});
+  // A rapid double-click on the same toggle fires both handlers before
+  // React re-renders with the first click's setState -- the same race
+  // this codebase's suspendingAllRef pattern already guards against
+  // elsewhere. A synchronous ref (mutated immediately, not via setState)
+  // closes that window; announcementMutePending (state) stays only for
+  // the toggle's disabled/opacity rendering.
+  const announcementMutePendingRef = useRef<Set<string>>(new Set());
   const [subScreen, setSubScreen] = useState<SubScreen>(initialSubScreen ?? null);
   const [clearingNotifs, setClearingNotifs] = useState(false);
   const [notifsCleared, setNotifsCleared] = useState(false);
@@ -1832,6 +1860,86 @@ export function SettingsScreen({
       .from('users')
       .update({ promotions_enabled: val })
       .eq('id', currentUser.id);
+  };
+
+  // Load this user's own announcement-group membership and mute state.
+  // RLS (0189) scopes both reads to the signed-in user's own rows
+  // (user_id = auth.uid()) -- no other user's membership/mute data is
+  // ever reachable from here, by server-enforced policy, not just by this
+  // query's own filter.
+  useEffect(() => {
+    if (!currentUser?.id) { setAnnouncementPrefsLoading(false); return; }
+    let cancelled = false;
+    (async () => {
+      const [membershipRes, muteRes] = await Promise.all([
+        supabase
+          .from('announcement_group_members')
+          .select('group_id, announcement_groups(key)')
+          .eq('user_id', currentUser.id),
+        supabase
+          .from('announcement_mutes')
+          .select('group_id')
+          .eq('user_id', currentUser.id),
+      ]);
+      if (cancelled) return;
+      const ids: { organizers?: string; service_providers?: string } = {};
+      for (const row of (membershipRes.data as any[]) || []) {
+        const key = row.announcement_groups?.key;
+        if (key === 'organizers' || key === 'service_providers') ids[key] = row.group_id;
+      }
+      setAnnouncementGroupIds(ids);
+      setMutedAnnouncementGroupIds(new Set(((muteRes.data as any[]) || []).map((r) => r.group_id)));
+      setAnnouncementPrefsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
+
+  // enabled=true means "I want these" (unmuted) -- insert/delete the
+  // user's own announcement_mutes row for exactly this one group_id.
+  // RLS (0189) further enforces user_id = auth.uid() on both the INSERT's
+  // WITH CHECK and the DELETE's USING clause -- this handler could not
+  // write another user's mute row even if groupId/currentUser.id were
+  // tampered with client-side, because the server still checks auth.uid()
+  // itself, not whatever this code sends. Scoped to a single group_id, so
+  // muting one group's announcements never touches the other's mute row.
+  const handleToggleAnnouncementMute = async (groupId: string, enabled: boolean) => {
+    if (!currentUser?.id || announcementMutePendingRef.current.has(groupId)) return;
+    announcementMutePendingRef.current.add(groupId);
+    setAnnouncementMutePending((p) => ({ ...p, [groupId]: true }));
+    setMutedAnnouncementGroupIds((prev) => {
+      const next = new Set(prev);
+      if (enabled) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+    try {
+      if (enabled) {
+        const { error } = await supabase
+          .from('announcement_mutes')
+          .delete()
+          .eq('user_id', currentUser.id)
+          .eq('group_id', groupId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('announcement_mutes')
+          .insert([{ user_id: currentUser.id, group_id: groupId }]);
+        if (error) throw error;
+      }
+    } catch (err) {
+      // Revert the optimistic update -- the server rejected or failed the
+      // write, so the toggle must not silently claim a state that never
+      // actually persisted.
+      setMutedAnnouncementGroupIds((prev) => {
+        const next = new Set(prev);
+        if (enabled) next.add(groupId); else next.delete(groupId);
+        return next;
+      });
+      console.error('Failed to update announcement mute preference:', err);
+      Sentry.captureException(err);
+    } finally {
+      announcementMutePendingRef.current.delete(groupId);
+      setAnnouncementMutePending((p) => ({ ...p, [groupId]: false }));
+    }
   };
 
   if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} onDeleteAccount={() => setSubScreen('delete-account')} onOpenConnectedAccounts={() => setSubScreen('connected-accounts')} />;
@@ -1978,6 +2086,37 @@ export function SettingsScreen({
           <SettingRow icon={Bell} label="Email Updates" toggle={emailNotifs} onToggle={setEmailNotifs} />
           <Divider />
           <SettingRow icon={Star} label="Promotions & Deals" toggle={promoNotifs} onToggle={handlePromoToggle} />
+          {/* Announcement-group mute controls -- shown only for a group
+              this user is actually (automatically) a member of. Never
+              rendered as editable membership: there is no "join"/"leave"
+              control here, only mute/unmute of announcements for a
+              membership the server already granted. */}
+          {!announcementPrefsLoading && announcementGroupIds.organizers && (
+            <>
+              <Divider />
+              <SettingRow
+                testId="setting-row-organizer-announcements"
+                icon={Bell}
+                label="Organizer Announcements"
+                toggle={!mutedAnnouncementGroupIds.has(announcementGroupIds.organizers)}
+                onToggle={(v) => handleToggleAnnouncementMute(announcementGroupIds.organizers!, v)}
+                disabled={!!announcementMutePending[announcementGroupIds.organizers]}
+              />
+            </>
+          )}
+          {!announcementPrefsLoading && announcementGroupIds.service_providers && (
+            <>
+              <Divider />
+              <SettingRow
+                testId="setting-row-service-provider-announcements"
+                icon={Bell}
+                label="Service Provider Announcements"
+                toggle={!mutedAnnouncementGroupIds.has(announcementGroupIds.service_providers)}
+                onToggle={(v) => handleToggleAnnouncementMute(announcementGroupIds.service_providers!, v)}
+                disabled={!!announcementMutePending[announcementGroupIds.service_providers]}
+              />
+            </>
+          )}
           <Divider />
           <SettingRow
             icon={Trash2}
