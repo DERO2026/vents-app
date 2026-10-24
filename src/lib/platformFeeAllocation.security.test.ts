@@ -130,7 +130,7 @@ describe('allocate_ticket_platform_fees: deterministic largest-remainder apporti
 
   it('is a no-op once every paid row in the order already has platform_fee_kobo set (idempotent retry)', () => {
     const fn = allocateFn();
-    expect(fn).toMatch(/IF NOT EXISTS \(\s*\n\s*SELECT 1 FROM public\.tickets\s*\n\s*WHERE payment_ref = p_payment_ref AND payment_status = 'paid' AND platform_fee_kobo IS NULL\s*\n\s*\) THEN\s*\n\s*RETURN;\s*\n\s*END IF;/);
+    expect(fn).toMatch(/IF NOT EXISTS \(\s*\n\s*SELECT 1 FROM public\.tickets\s*\n\s*WHERE payment_ref = p_payment_ref AND payment_status = 'paid' AND platform_fee_kobo IS NULL\s*\n\s*\) THEN\s*\n\s*RETURN 'already_allocated';\s*\n\s*END IF;/);
   });
 
   it('reads the authoritative fee from organizer_transactions.metadata, never recomputing the surcharge formula', () => {
@@ -139,10 +139,54 @@ describe('allocate_ticket_platform_fees: deterministic largest-remainder apporti
     expect(fn).not.toMatch(/1\.05/);
   });
 
-  it('zero-amount / unrecorded-fee orders get every row set to 0, not left NULL (so they count as allocated)', () => {
+  it('zero-amount orders get every row set to 0 without touching organizer_transactions at all (the only legitimate zero-match case)', () => {
     const fn = allocateFn();
-    expect(fn).toMatch(/IF v_buyer_fee_kobo IS NULL OR v_total_amount IS NULL OR v_total_amount <= 0 THEN/);
+    expect(fn).toMatch(/IF v_total_amount IS NULL OR v_total_amount <= 0 THEN/);
     expect(fn).toMatch(/SET platform_fee_kobo = 0\s*\n\s*WHERE payment_ref = p_payment_ref AND payment_status = 'paid' AND platform_fee_kobo IS NULL;/);
+    expect(fn).toMatch(/RETURN 'zero_fee_order';/);
+  });
+
+  it('for a non-free order, counts matching organizer_transactions rows BEFORE any UPDATE -- the same predicate platform_fee_reconciliation uses', () => {
+    const fn = allocateFn();
+    const countIdx = fn.indexOf('INTO v_fee_record_count');
+    const firstUpdateIdx = fn.indexOf('UPDATE public.tickets t');
+    expect(countIdx).toBeGreaterThan(-1);
+    expect(firstUpdateIdx).toBeGreaterThan(-1);
+    expect(countIdx).toBeLessThan(firstUpdateIdx);
+    expect(fn).toMatch(/WHERE ot\.metadata->>'paystack_reference' = p_payment_ref/);
+  });
+
+  it('zero matching organizer_transactions rows for a non-free order raises missing_authoritative_fee and performs no write', () => {
+    const fn = allocateFn();
+    expect(fn).toMatch(/IF v_fee_record_count = 0 THEN\s*\n\s*RAISE EXCEPTION 'missing_authoritative_fee:/);
+    // no UPDATE statement appears before the count check and its exception branches
+    const beforeCount = fn.slice(0, fn.indexOf('v_fee_record_count = 0'));
+    expect(beforeCount).not.toMatch(/UPDATE public\.tickets t\s*\n\s*SET platform_fee_kobo = r\.floor_share/);
+  });
+
+  it('more than one matching organizer_transactions row raises duplicate_authoritative_fee and performs no write -- never resolved by picking the newest', () => {
+    const fn = allocateFn();
+    expect(fn).toMatch(/IF v_fee_record_count > 1 THEN\s*\n\s*RAISE EXCEPTION 'duplicate_authoritative_fee:/);
+    expect(fn).not.toMatch(/ORDER BY ot\.created_at DESC/);
+    expect(fn).not.toMatch(/ORDER BY[\s\S]*?LIMIT 1/);
+  });
+
+  it('exactly one matching row proceeds to allocate and returns the allocated status', () => {
+    const fn = allocateFn();
+    expect(fn).toMatch(/IF v_fee_record_count = 0 THEN[\s\S]*?IF v_fee_record_count > 1 THEN[\s\S]*?RETURN 'allocated';/);
+  });
+
+  it('a retry after a failed (missing/duplicate) call re-evaluates fresh: the exception aborts before any write, so nothing partial or stuck is left behind', () => {
+    const fn = allocateFn();
+    // RAISE EXCEPTION happens strictly before the weighted/ranked CTE that performs the write --
+    // there is no code path from either exception branch into the UPDATE.
+    const missingIdx = fn.indexOf("RAISE EXCEPTION 'missing_authoritative_fee");
+    const duplicateIdx = fn.indexOf("RAISE EXCEPTION 'duplicate_authoritative_fee");
+    const writeIdx = fn.indexOf('WITH weighted AS');
+    expect(missingIdx).toBeGreaterThan(-1);
+    expect(duplicateIdx).toBeGreaterThan(-1);
+    expect(writeIdx).toBeGreaterThan(duplicateIdx);
+    expect(writeIdx).toBeGreaterThan(missingIdx);
   });
 
   it('computes a floor share per row and distributes the exact remainder by largest fractional part, tie-broken by id', () => {
@@ -396,9 +440,19 @@ describe('allocation formula simulation: exact-sum and determinism across realis
   it('repeated/idempotent calls: the SQL function itself (not this simulation) only ever targets rows WHERE platform_fee_kobo IS NULL, so a second call changes nothing -- asserted directly against the migration text, since idempotency is a property of the SQL\'s WHERE-clause scoping, not of this JS simulation', () => {
     const fn = allocateFn();
     // the early no-op guard: if no paid row in the order is still NULL, return immediately
-    expect(fn).toMatch(/IF NOT EXISTS \([\s\S]*?platform_fee_kobo IS NULL\s*\n\s*\) THEN\s*\n\s*RETURN;/);
+    expect(fn).toMatch(/IF NOT EXISTS \([\s\S]*?platform_fee_kobo IS NULL\s*\n\s*\) THEN\s*\n\s*RETURN 'already_allocated';/);
     // and the actual write path itself is scoped to NULL rows only, as a second layer of protection
     expect(fn).toMatch(/WHERE t\.payment_ref = p_payment_ref AND t\.payment_status = 'paid' AND t\.platform_fee_kobo IS NULL/);
+  });
+
+  it('allocate_ticket_platform_fees and platform_fee_reconciliation use the identical matching predicate for "authoritative row" (same column, same operator, same payment_ref correlation)', () => {
+    const allocatePredicate = allocateFn().match(/ot\.metadata->>'paystack_reference' = p_payment_ref/g) ?? [];
+    const reconciliationSql = migration.match(/CREATE VIEW public\.platform_fee_reconciliation AS[\s\S]*?LEFT JOIN authoritative a ON a\.payment_ref = tt\.payment_ref;/)?.[0] ?? '';
+    const viewPredicate = reconciliationSql.match(/o\.metadata->>'paystack_reference'/g) ?? [];
+    // both sides key off metadata->>'paystack_reference' -- not created_at, not id, not any other column
+    expect(allocatePredicate.length).toBeGreaterThan(0);
+    expect(viewPredicate.length).toBeGreaterThan(0);
+    expect(reconciliationSql).toMatch(/o\.metadata->>'paystack_reference' AS payment_ref/);
   });
 
   it('simulation sanity check: running the same non-trivial scenario twice yields identical per-row results (the JS mirror is itself deterministic, matching what the SQL is designed to guarantee)', () => {

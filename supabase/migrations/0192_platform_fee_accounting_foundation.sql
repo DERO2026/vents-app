@@ -56,6 +56,41 @@
 -- called again for an already-paid, already-allocated payment_ref) is a
 -- guaranteed no-op for the allocation step -- it never recomputes or
 -- overwrites a value once set.
+--
+-- AUTHORITATIVE-FEE LOOKUP (fail-safe, not "pick the newest row"):
+-- events.organizer_id is NOT NULL in the live schema (verified), so
+-- confirm_ticket_payment's "IF v_total_amount > 0 AND v_organizer_id IS
+-- NOT NULL" branch always fires whenever an order's total_amount > 0 --
+-- which always calls credit_organizer_wallet, which always inserts
+-- exactly one organizer_transactions row carrying this payment_ref in
+-- metadata->>'paystack_reference'. So for any paid, non-free order,
+-- "exactly one matching organizer_transactions row" is the only valid
+-- state. allocate_ticket_platform_fees counts matching rows (same
+-- predicate platform_fee_reconciliation uses below, kept consistent on
+-- purpose) BEFORE doing any UPDATE:
+--   0 matches  -> RAISE EXCEPTION ('missing_authoritative_fee'). This
+--                 should never happen (credit_organizer_wallet already
+--                 ran earlier in the same transaction) -- it signals a
+--                 real bug upstream, not a legitimate zero-fee case, so
+--                 it is never resolved by assuming 0. No write has
+--                 happened yet, so the exception aborts the whole
+--                 confirm_ticket_payment transaction cleanly (including
+--                 the payment_status='paid' update), leaving the order
+--                 exactly as before -- a retried webhook re-evaluates
+--                 fresh with no partial/stuck state.
+--   >1 matches -> RAISE EXCEPTION ('duplicate_authoritative_fee'). Never
+--                 resolved by ORDER BY created_at DESC LIMIT 1 or any
+--                 other "pick one" heuristic -- the schema has no unique
+--                 constraint that could disambiguate which row is
+--                 authoritative, so this is a real ambiguity, not a
+--                 formatting inconvenience, and must be investigated
+--                 rather than guessed at. Same no-write guarantee as
+--                 above.
+--   1 match    -> proceed with the largest-remainder allocation below.
+-- The v_total_amount <= 0 (free order) path is the only case where ZERO
+-- matching organizer_transactions rows is correct, precisely because
+-- credit_organizer_wallet is never called for free orders -- that is not
+-- a "missing record" fallback, it is the only state that can exist.
 
 -- ============================================================
 -- 1. New columns on tickets / service_bookings
@@ -249,18 +284,19 @@ CREATE POLICY payment_disputes_select_own_booking ON public.payment_disputes
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.allocate_ticket_platform_fees(p_payment_ref text)
- RETURNS void
+ RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
 AS $function$
 DECLARE
-  v_total_amount    numeric;
-  v_buyer_fee_kobo  bigint;
-  v_remainder       bigint;
+  v_total_amount      numeric;
+  v_buyer_fee_kobo    bigint;
+  v_remainder         bigint;
+  v_fee_record_count  integer;
 BEGIN
   IF p_payment_ref IS NULL THEN
-    RETURN;
+    RETURN 'noop_null_reference';
   END IF;
 
   -- Lock the order's ticket rows first, same convention confirm_ticket_payment uses.
@@ -271,30 +307,52 @@ BEGIN
     SELECT 1 FROM public.tickets
     WHERE payment_ref = p_payment_ref AND payment_status = 'paid' AND platform_fee_kobo IS NULL
   ) THEN
-    RETURN;
+    RETURN 'already_allocated';
   END IF;
 
   SELECT sum(t.amount) INTO v_total_amount
   FROM public.tickets t
   WHERE t.payment_ref = p_payment_ref AND t.payment_status = 'paid';
 
-  -- The authoritative order-level fee: read back from the wallet-credit
-  -- row's metadata written by confirm_ticket_payment via credit_organizer_wallet.
-  -- Never recomputed here -- only split.
-  SELECT (ot.metadata->>'buyer_fee_kobo')::bigint INTO v_buyer_fee_kobo
-  FROM public.organizer_transactions ot
-  WHERE ot.metadata->>'paystack_reference' = p_payment_ref
-  ORDER BY ot.created_at DESC
-  LIMIT 1;
-
-  IF v_buyer_fee_kobo IS NULL OR v_total_amount IS NULL OR v_total_amount <= 0 THEN
-    -- Free order, wallet-only payment with no organizer_transactions row
-    -- yet, or no recorded fee: every paid row's share is 0. Still mark
-    -- them non-NULL so the row is treated as allocated (idempotent).
+  IF v_total_amount IS NULL OR v_total_amount <= 0 THEN
+    -- Free order: credit_organizer_wallet is never called for
+    -- v_total_amount <= 0, so zero matching organizer_transactions rows
+    -- is the ONLY valid state here -- not a fallback for a missing
+    -- record, a genuinely fee-less order. Still mark rows non-NULL so
+    -- the row is treated as allocated (idempotent).
     UPDATE public.tickets
        SET platform_fee_kobo = 0
      WHERE payment_ref = p_payment_ref AND payment_status = 'paid' AND platform_fee_kobo IS NULL;
-    RETURN;
+    RETURN 'zero_fee_order';
+  END IF;
+
+  -- v_total_amount > 0: exactly one organizer_transactions row carrying
+  -- this payment_ref is the only valid state (see the design note above).
+  -- Same matching predicate as platform_fee_reconciliation, kept
+  -- consistent on purpose -- "missing"/"duplicate" must mean the same
+  -- thing in both places.
+  SELECT count(*) INTO v_fee_record_count
+  FROM public.organizer_transactions ot
+  WHERE ot.metadata->>'paystack_reference' = p_payment_ref;
+
+  IF v_fee_record_count = 0 THEN
+    RAISE EXCEPTION 'missing_authoritative_fee: no organizer_transactions row for payment_ref %', p_payment_ref;
+  END IF;
+
+  IF v_fee_record_count > 1 THEN
+    RAISE EXCEPTION 'duplicate_authoritative_fee: % organizer_transactions rows for payment_ref %', v_fee_record_count, p_payment_ref;
+  END IF;
+
+  -- The authoritative order-level fee: read back from the single
+  -- matching wallet-credit row's metadata written by
+  -- confirm_ticket_payment via credit_organizer_wallet. Never
+  -- recomputed here -- only split.
+  SELECT (ot.metadata->>'buyer_fee_kobo')::bigint INTO v_buyer_fee_kobo
+  FROM public.organizer_transactions ot
+  WHERE ot.metadata->>'paystack_reference' = p_payment_ref;
+
+  IF v_buyer_fee_kobo IS NULL THEN
+    RAISE EXCEPTION 'missing_authoritative_fee: organizer_transactions row for payment_ref % has no buyer_fee_kobo', p_payment_ref;
   END IF;
 
   -- Largest-remainder apportionment: base floor share per row, then
@@ -322,6 +380,8 @@ BEGIN
      SET platform_fee_kobo = r.floor_share + CASE WHEN r.rn <= v_remainder THEN 1 ELSE 0 END
     FROM ranked r
    WHERE t.id = r.id;
+
+  RETURN 'allocated';
 END;
 $function$;
 
