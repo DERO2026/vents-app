@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Zap, Wrench, ToggleLeft, ToggleRight, Mic, Image as ImageIcon, Activity,
-  Ticket, ScanLine, UserPlus, Banknote, MapPin, Megaphone, Trash2, Swords, Bot,
+  Ticket, ScanLine, UserPlus, Banknote, MapPin, Megaphone, Trash2, Swords, Bot, Send,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
@@ -50,6 +50,16 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
   const [killSwitches, setKillSwitches] = useState<Record<string, boolean>>({});
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
+  // Audience-aware announcements (admin_send_announcement, migration 0191)
+  // -- a separate card/handler from Global Broadcast above. Deliberately
+  // not merged into handleBroadcast/admin_broadcast: that RPC and its UI
+  // stay exactly as they are (same authorization, same Everyone-only
+  // behavior), per this feature's own instruction to preserve existing
+  // broadcast functionality rather than replace it.
+  const [announceTitle, setAnnounceTitle] = useState('');
+  const [announceBody, setAnnounceBody] = useState('');
+  const [announceAudience, setAnnounceAudience] = useState<'everyone' | 'organizers' | 'service_providers'>('everyone');
+  const [isAnnouncing, setIsAnnouncing] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
   const [isSuspendingAll, setIsSuspendingAll] = useState(false);
   // A second click on ConfirmModal's own Confirm button (no busy state of
@@ -187,6 +197,51 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
     });
   };
 
+  const ANNOUNCEMENT_AUDIENCES: { value: 'everyone' | 'organizers' | 'service_providers'; label: string }[] = [
+    { value: 'everyone', label: 'Everyone' },
+    { value: 'organizers', label: 'Organizers' },
+    { value: 'service_providers', label: 'Service Providers' },
+  ];
+
+  // Mirrors admin_send_announcement's own server-side caps
+  // (0191_admin_send_announcement.sql) so a submission that would be
+  // rejected server-side is never even reachable from this form -- not a
+  // replacement for the server check, just immediate feedback.
+  const ANNOUNCE_TITLE_MAX = 80;
+  const ANNOUNCE_BODY_MAX = 500;
+  const announceTitleTrimmed = announceTitle.trim();
+  const announceBodyTrimmed = announceBody.trim();
+  const announceAudienceLabel = ANNOUNCEMENT_AUDIENCES.find((a) => a.value === announceAudience)?.label ?? announceAudience;
+  const canSendAnnouncement = !!announceTitleTrimmed && !!announceBodyTrimmed && announceTitleTrimmed.length <= ANNOUNCE_TITLE_MAX && announceBodyTrimmed.length <= ANNOUNCE_BODY_MAX;
+
+  const handleSendAnnouncement = () => {
+    if (!canSendAnnouncement || isAnnouncing) return;
+    const title = announceTitleTrimmed;
+    const body = announceBodyTrimmed;
+    const audience = announceAudience;
+    const audienceLabel = announceAudienceLabel;
+    setConfirmModal({
+      title: 'Send Announcement',
+      message: `Send "${title}" to ${audienceLabel}?`,
+      confirmLabel: 'Send', danger: false,
+      onConfirm: async () => {
+        setConfirmModal(null); setIsAnnouncing(true);
+        try {
+          const { data, error: announceErr } = await supabase.rpc('admin_send_announcement', { p_audience: audience, p_title: title, p_body: body });
+          if (announceErr) throw announceErr;
+          const recipients = (data as any)?.recipients ?? 0;
+          await writeAuditLog(currentUser, 'ROOT_announcement', null, { audience, title, recipients });
+          setAnnounceTitle(''); setAnnounceBody('');
+          flash(true, `Announcement sent to ${recipients} ${audienceLabel.toLowerCase()} recipient${recipients === 1 ? '' : 's'}.`);
+        } catch (err: any) {
+          flash(false, err?.message || 'Failed to send announcement.');
+        } finally {
+          setIsAnnouncing(false);
+        }
+      },
+    });
+  };
+
   const handleHealthPing = async () => {
     setIsPinging(true); setHealthResult(null);
     const started = performance.now();
@@ -269,6 +324,68 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
         <textarea value={broadcastMsg} onChange={(e) => setBroadcastMsg(e.target.value)} placeholder="Type your announcement…" rows={3} style={{ background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 12, color: adminTheme.text, fontSize: 13, resize: 'none', outline: 'none' }} />
         <button onClick={handleBroadcast} disabled={isSending || !broadcastMsg.trim()} style={{ background: broadcastMsg.trim() ? adminTheme.accentSoftBg : adminTheme.panelAlt, border: `1px solid ${broadcastMsg.trim() ? adminTheme.accentSoftBorder : adminTheme.border}`, borderRadius: 12, padding: 12, color: broadcastMsg.trim() ? adminTheme.accentFrom : adminTheme.textFainter, fontSize: 14, fontWeight: 700, cursor: broadcastMsg.trim() ? 'pointer' : 'default' }}>
           {isSending ? 'Sending…' : '📡 Send Broadcast'}
+        </button>
+      </div>
+
+      <div data-testid="announcement-card" style={{ background: adminTheme.panel, borderRadius: 16, border: `1px solid ${adminTheme.border}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: adminTheme.accentSoftBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={17} color={adminTheme.accentFrom} /></div>
+          <div>
+            <p style={{ color: adminTheme.textStrong, fontSize: 14, fontWeight: 600, margin: 0 }}>Audience Announcement</p>
+            <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: '2px 0 0' }}>Send a titled announcement to Everyone, Organizers, or Service Providers</p>
+          </div>
+        </div>
+
+        <div role="radiogroup" aria-label="Announcement audience" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {ANNOUNCEMENT_AUDIENCES.map((a) => {
+            const selected = announceAudience === a.value;
+            return (
+              <button
+                key={a.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setAnnounceAudience(a.value)}
+                disabled={isAnnouncing}
+                style={{
+                  padding: '6px 12px', borderRadius: 100, fontSize: 12, fontWeight: 700, cursor: isAnnouncing ? 'default' : 'pointer',
+                  background: selected ? adminTheme.accentSoftBg : adminTheme.panelAlt,
+                  border: `1px solid ${selected ? adminTheme.accentSoftBorder : adminTheme.border}`,
+                  color: selected ? adminTheme.accentFrom : adminTheme.textFaint,
+                }}
+              >
+                {a.label}
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: 0 }}>
+          Sending to: <span style={{ color: adminTheme.textStrong, fontWeight: 700 }}>{announceAudienceLabel}</span>
+        </p>
+
+        <input
+          value={announceTitle}
+          onChange={(e) => setAnnounceTitle(e.target.value)}
+          placeholder="Title"
+          maxLength={ANNOUNCE_TITLE_MAX}
+          disabled={isAnnouncing}
+          style={{ background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 12, color: adminTheme.text, fontSize: 13, outline: 'none' }}
+        />
+        <p style={{ color: adminTheme.textFainter, fontSize: 10, margin: '-6px 0 0', textAlign: 'right' }}>{announceTitleTrimmed.length}/{ANNOUNCE_TITLE_MAX}</p>
+
+        <textarea
+          value={announceBody}
+          onChange={(e) => setAnnounceBody(e.target.value)}
+          placeholder="Message"
+          rows={3}
+          maxLength={ANNOUNCE_BODY_MAX}
+          disabled={isAnnouncing}
+          style={{ background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 12, color: adminTheme.text, fontSize: 13, resize: 'none', outline: 'none' }}
+        />
+        <p style={{ color: adminTheme.textFainter, fontSize: 10, margin: '-6px 0 0', textAlign: 'right' }}>{announceBodyTrimmed.length}/{ANNOUNCE_BODY_MAX}</p>
+
+        <button onClick={handleSendAnnouncement} disabled={isAnnouncing || !canSendAnnouncement} style={{ background: canSendAnnouncement ? adminTheme.accentSoftBg : adminTheme.panelAlt, border: `1px solid ${canSendAnnouncement ? adminTheme.accentSoftBorder : adminTheme.border}`, borderRadius: 12, padding: 12, color: canSendAnnouncement ? adminTheme.accentFrom : adminTheme.textFainter, fontSize: 14, fontWeight: 700, cursor: canSendAnnouncement ? 'pointer' : 'default' }}>
+          {isAnnouncing ? 'Sending…' : `📣 Send to ${announceAudienceLabel}`}
         </button>
       </div>
 
