@@ -193,8 +193,20 @@ describe('allocate_ticket_platform_fees: deterministic largest-remainder apporti
     const fn = allocateFn();
     expect(fn).toMatch(/floor\(v_buyer_fee_kobo \* t\.amount \/ v_total_amount\)::bigint AS floor_share/);
     expect(fn).toMatch(/row_number\(\) OVER \(ORDER BY \(raw_share - floor_share\) DESC, id ASC\) AS rn/);
-    expect(fn).toMatch(/v_buyer_fee_kobo - coalesce\(sum\(floor_share\), 0\) INTO v_remainder FROM weighted;/);
-    expect(fn).toMatch(/SET platform_fee_kobo = r\.floor_share \+ CASE WHEN r\.rn <= v_remainder THEN 1 ELSE 0 END/);
+    // The remainder, ranked, and write must all live in ONE statement --
+    // a CTE's scope ends at its own statement's semicolon, so splitting
+    // the remainder into a separate `SELECT ... INTO` (as an earlier,
+    // buggy version of this function did) makes `ranked` invisible to a
+    // later UPDATE and fails with "relation \"ranked\" does not exist".
+    expect(fn).toMatch(/totals AS \(\s*SELECT v_buyer_fee_kobo - coalesce\(sum\(floor_share\), 0\) AS remainder FROM weighted\s*\)/);
+    expect(fn).toMatch(/SET platform_fee_kobo = r\.floor_share \+ CASE WHEN r\.rn <= \(SELECT remainder FROM totals\) THEN 1 ELSE 0 END/);
+    // Exactly one statement-terminating semicolon between "WITH weighted AS"
+    // and the UPDATE's own semicolon -- i.e. weighted/totals/ranked/UPDATE
+    // are one statement, not split across several.
+    const weightedIdx = fn.indexOf('WITH weighted AS');
+    const updateIdx = fn.indexOf('UPDATE public.tickets t\n     SET platform_fee_kobo');
+    const between = fn.slice(weightedIdx, updateIdx);
+    expect(between).not.toMatch(/;/);
   });
 
   it('only ever updates rows where platform_fee_kobo IS NULL -- never overwrites an already-allocated row', () => {

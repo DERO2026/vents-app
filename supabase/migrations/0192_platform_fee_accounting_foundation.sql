@@ -292,7 +292,6 @@ AS $function$
 DECLARE
   v_total_amount      numeric;
   v_buyer_fee_kobo    bigint;
-  v_remainder         bigint;
   v_fee_record_count  integer;
 BEGIN
   IF p_payment_ref IS NULL THEN
@@ -358,6 +357,13 @@ BEGIN
   -- Largest-remainder apportionment: base floor share per row, then
   -- distribute the leftover kobo to the rows with the largest fractional
   -- remainder (ties broken by id for determinism).
+  -- NOTE: the "weighted"/"ranked"/"totals" CTEs below must all live in the
+  -- SAME statement as the UPDATE that consumes them -- a CTE's scope ends
+  -- at its statement's terminating semicolon, so splitting the remainder
+  -- computation into its own `SELECT ... INTO` (as an earlier version of
+  -- this function did) makes `ranked` invisible to the later UPDATE and
+  -- fails with "relation \"ranked\" does not exist". Keeping everything in
+  -- one WITH ... UPDATE statement is required, not stylistic.
   WITH weighted AS (
     SELECT
       t.id,
@@ -367,6 +373,9 @@ BEGIN
     FROM public.tickets t
     WHERE t.payment_ref = p_payment_ref AND t.payment_status = 'paid' AND t.platform_fee_kobo IS NULL
   ),
+  totals AS (
+    SELECT v_buyer_fee_kobo - coalesce(sum(floor_share), 0) AS remainder FROM weighted
+  ),
   ranked AS (
     SELECT
       id,
@@ -374,10 +383,8 @@ BEGIN
       row_number() OVER (ORDER BY (raw_share - floor_share) DESC, id ASC) AS rn
     FROM weighted
   )
-  SELECT v_buyer_fee_kobo - coalesce(sum(floor_share), 0) INTO v_remainder FROM weighted;
-
   UPDATE public.tickets t
-     SET platform_fee_kobo = r.floor_share + CASE WHEN r.rn <= v_remainder THEN 1 ELSE 0 END
+     SET platform_fee_kobo = r.floor_share + CASE WHEN r.rn <= (SELECT remainder FROM totals) THEN 1 ELSE 0 END
     FROM ranked r
    WHERE t.id = r.id;
 
