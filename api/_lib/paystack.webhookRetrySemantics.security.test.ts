@@ -324,6 +324,38 @@ describe('webhook retry semantics: a retried event that already succeeded is sti
 
     errSpy.mockRestore();
   });
+
+  it('two overlapping deliveries of the same event (concurrent, not sequential) each get a response and the RPC-level guard -- not this fix -- is what prevents a double-credit', async () => {
+    // This genuinely runs the handler twice concurrently via Promise.all
+    // (real execution against a mocked RPC layer), not a simulation. True
+    // Postgres-level lock contention from two overlapping SQL transactions
+    // is NOT exercised here -- that would require a live database and is
+    // explicitly out of scope for this zero-cost pass. What this proves:
+    // the webhook handler itself has no shared in-memory state that could
+    // let a race at the HTTP layer produce two different outcomes for the
+    // same reference -- each call independently awaits its own RPC result
+    // and responds based on it, exactly as a sequential call would.
+    const rawBody = JSON.stringify({ event: 'charge.success', data: { reference: 'pay_concurrent_1', amount: 15000 } });
+    mockCallProjectAdminTableRpc.mockResolvedValue([{ payment_ref: 'pay_concurrent_1' }]);
+    // First caller to resolve gets 'confirmed'; the second, resolving
+    // slightly later, gets the RPC's own idempotency guard result -- this
+    // models what confirm_ticket_payment's FOR UPDATE lock + already_paid
+    // guard would do for two real overlapping deliveries.
+    mockFinalizeAndConfirmPurchase
+      .mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve({ status: 'confirmed', ticketIds: ['t1'] }), 5)))
+      .mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve({ status: 'already_paid' }), 10)));
+
+    const req1 = makeWebhookReq(rawBody);
+    const res1 = makeRes();
+    const req2 = makeWebhookReq(rawBody);
+    const res2 = makeRes();
+
+    await Promise.all([handler(req1, res1), handler(req2, res2)]);
+
+    expect(res1.status).toHaveBeenCalledWith(200);
+    expect(res2.status).toHaveBeenCalledWith(200);
+    expect(mockFinalizeAndConfirmPurchase).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('webhook retry semantics: the client-triggered ?action=verify path is unaffected (not in scope of this fix)', () => {
