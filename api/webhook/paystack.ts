@@ -565,6 +565,28 @@ async function handleWebhook(req, res, rawBody: Buffer) {
   req.body = event;
   console.log('Paystack webhook event:', event?.event);
 
+  // Retry-recovery fix: every branch below used to swallow its own RPC
+  // exceptions (DB error, timeout, unexpected failure) and still fall
+  // through to the unconditional 200 at the end of this function -- which
+  // told Paystack the event was delivered successfully even though nothing
+  // was actually confirmed. Per Paystack's own webhook docs
+  // (https://paystack.com/docs/payments/webhooks/), only a non-2xx response
+  // is retried (every 3 min for the first 4 tries, then hourly for 72h in
+  // live mode), so a transient failure here needs a non-2xx response to get
+  // that retry at all. A caught, named business outcome (not_found,
+  // amount_mismatch, already_paid, etc.) is NOT a transient failure -- it's
+  // the authoritative, already-logged terminal state for this event, and
+  // retrying would not change it, so those keep returning 200 exactly as
+  // before. Only an actual thrown exception (the `catch` blocks below) now
+  // flips this flag, which the final response at the bottom of this
+  // function reads before deciding 200 vs 500. No RPC call's own idempotency
+  // (confirm_ticket_payment's payment_status guard, confirm_transfer_fee_
+  // payment's fee_paid_at guard, etc.) is touched -- a genuine retry of an
+  // already-successful event still short-circuits to its existing
+  // already_* no-op, exactly as before; this only changes which responses
+  // are honest about an attempt that did NOT complete.
+  let hadTransientFailure = false;
+
   if (event?.event === 'charge.success') {
     const reference = event.data?.reference;
     const amountKobo = event.data?.amount;
@@ -603,8 +625,9 @@ async function handleWebhook(req, res, rawBody: Buffer) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_transfer_fee_payment:', err?.message || err);
+        hadTransientFailure = true;
       }
-      return res.status(200).json({ received: true });
+      return res.status(hadTransientFailure ? 500 : 200).json({ received: hadTransientFailure ? false : true });
     }
 
     if (reference.startsWith('BKG-')) {
@@ -621,8 +644,9 @@ async function handleWebhook(req, res, rawBody: Buffer) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_service_booking_payment:', err?.message || err);
+        hadTransientFailure = true;
       }
-      return res.status(200).json({ received: true });
+      return res.status(hadTransientFailure ? 500 : 200).json({ received: hadTransientFailure ? false : true });
     }
 
     if (reference.startsWith('aisub_')) {
@@ -642,8 +666,9 @@ async function handleWebhook(req, res, rawBody: Buffer) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_ai_subscription_payment:', err?.message || err);
+        hadTransientFailure = true;
       }
-      return res.status(200).json({ received: true });
+      return res.status(hadTransientFailure ? 500 : 200).json({ received: hadTransientFailure ? false : true });
     }
 
     if (reference.startsWith('wdep_')) {
@@ -661,8 +686,9 @@ async function handleWebhook(req, res, rawBody: Buffer) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_wallet_deposit:', err?.message || err);
+        hadTransientFailure = true;
       }
-      return res.status(200).json({ received: true });
+      return res.status(hadTransientFailure ? 500 : 200).json({ received: hadTransientFailure ? false : true });
     }
 
     try {
@@ -705,6 +731,7 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       }
     } catch (err: any) {
       console.error('[Paystack webhook] Error calling confirm_ticket_payment:', err?.message || err);
+      hadTransientFailure = true;
     }
   }
 
@@ -750,6 +777,7 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       }
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
+      hadTransientFailure = true;
     }
   }
 
@@ -822,9 +850,22 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       }
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
+      hadTransientFailure = true;
     }
   }
 
-  // Always 200 so Paystack does not endlessly retry.
-  return res.status(200).json({ received: true });
+  // 200 for every event we actually finished processing (including every
+  // already-known terminal outcome: not_found, amount_mismatch,
+  // already_paid/already_credited/already_confirmed, an unrecognized event
+  // type, a malformed-but-validly-signed body) -- none of those are fixed
+  // by Paystack retrying, and retrying them would not be harmful anyway
+  // since every RPC above is idempotent, but there is nothing to gain by
+  // asking for a retry. 500 only when `hadTransientFailure` was actually
+  // set by a caught exception above (DB/RPC error, timeout, etc.) -- a
+  // genuine "please retry" per Paystack's own documented retry schedule
+  // (https://paystack.com/docs/payments/webhooks/: every 3 min for the
+  // first 4 tries, then hourly for 72h in live mode). This is the only
+  // change in this function: no RPC call, no idempotency guard, and no
+  // other response code is touched.
+  return res.status(hadTransientFailure ? 500 : 200).json({ received: !hadTransientFailure });
 }
