@@ -468,6 +468,51 @@ describe('allocation formula simulation: exact-sum and determinism across realis
   });
 });
 
+// ------------------------------------------------------------------
+// Follow-up review pass: zero-cost strengthening of the atomic-rollback
+// and statement-ordering claims made during PR review. These remain
+// TEXT-LEVEL assertions against the migration's SQL -- they prove the
+// function bodies contain no internal transaction-control statement
+// that could let a RAISE EXCEPTION commit a partial write, and that
+// credit_organizer_wallet's EXISTS guard is lexically positioned before
+// its INSERT ... ON CONFLICT. They do NOT execute SQL against a live
+// Postgres engine, so they cannot prove Postgres's actual runtime
+// rollback behavior on a RAISE -- that remains verified only by
+// standard Postgres semantics (a PL/pgSQL function body with no
+// SAVEPOINT/BEGIN...EXCEPTION block is one atomic unit of work; an
+// unhandled exception anywhere in it rolls back everything the call
+// did) plus code-reading, not by execution in this test suite. Closing
+// that gap fully would require a live Postgres instance (a local
+// Docker + supabase CLI setup, since none exists in this repo today,
+// or a paid Supabase branch) -- out of scope for a $0 pass.
+// ------------------------------------------------------------------
+describe('0192: no internal transaction-control statement could mask a partial write on RAISE EXCEPTION', () => {
+  it('confirm_ticket_payment contains no SAVEPOINT or BEGIN...EXCEPTION block that could swallow or partially commit around a RAISE', () => {
+    const fn = confirmFn();
+    expect(fn).not.toMatch(/\bSAVEPOINT\b/i);
+    expect(fn).not.toMatch(/EXCEPTION\s+WHEN/i);
+    expect(fn).not.toMatch(/\bCOMMIT\b/i);
+  });
+
+  it('credit_organizer_wallet (the function that introduces the new RAISE EXCEPTION path) contains no SAVEPOINT, nested exception handler, or COMMIT of its own', () => {
+    const fn = creditFn();
+    expect(fn).not.toMatch(/\bSAVEPOINT\b/i);
+    expect(fn).not.toMatch(/EXCEPTION\s+WHEN/i);
+    expect(fn).not.toMatch(/\bCOMMIT\b/i);
+  });
+
+  it('allocate_ticket_platform_fees contains no SAVEPOINT, nested exception handler, or COMMIT of its own', () => {
+    const fn = allocateFn();
+    expect(fn).not.toMatch(/\bSAVEPOINT\b/i);
+    expect(fn).not.toMatch(/EXCEPTION\s+WHEN/i);
+    expect(fn).not.toMatch(/\bCOMMIT\b/i);
+  });
+
+  it('credit_organizer_wallet is only ever invoked from within confirm_ticket_payment via PERFORM (same call, same transaction) -- not via a separate RPC round-trip that could commit independently', () => {
+    expect(confirmFn()).toMatch(/PERFORM public\.credit_organizer_wallet\(/);
+  });
+});
+
 describe('0192: scope discipline', () => {
   it('does not touch refund_ticket, finalize_ticket_refund, or define any dispute-webhook-handling function (deferred to Phases 2-4)', () => {
     expect(migration).not.toMatch(/CREATE OR REPLACE FUNCTION public\.refund_ticket/);
