@@ -5,7 +5,7 @@ import { searchUsers, UserSearchResult } from '../../lib/userSearch';
 
 interface RepresentativesScreenProps {
   onBack: () => void;
-  currentUser: { id: string; role?: string };
+  currentUser: { id: string; role?: string; full_name?: string | null; username?: string };
 }
 
 type SubTab = 'find' | 'invitations' | 'team';
@@ -43,6 +43,9 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   const [incoming, setIncoming] = useState<Partnership[]>([]);
   const [team, setTeam] = useState<Partnership[]>([]);
   const [loadingLists, setLoadingLists] = useState(false);
+  const [listsError, setListsError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     void checkRecruiterStatus();
@@ -52,15 +55,26 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     if (tab === 'invitations' || tab === 'team') void loadPartnerships();
   }, [tab]);
 
+  // recruiters.id IS the user's auth id (the table's PK references
+  // public.users(id) directly) -- there is no separate user_id column.
   async function checkRecruiterStatus() {
-    const { data } = await supabase.from('recruiters').select('user_id').eq('user_id', currentUser.id).maybeSingle();
+    setStatusError(null);
+    const { data, error } = await supabase.from('recruiters').select('id').eq('id', currentUser.id).maybeSingle();
+    if (error) {
+      setStatusError(error.message);
+      setIsRecruiter(null);
+      return;
+    }
     setIsRecruiter(!!data);
   }
 
   async function handleRegister() {
     setRegistering(true);
     setRegisterError(null);
-    const { error } = await supabase.rpc('register_as_recruiter', {});
+    const { error } = await supabase.rpc('register_as_recruiter', {
+      p_display_name: currentUser.full_name || currentUser.username || null,
+      p_bio: null,
+    });
     setRegistering(false);
     if (error) {
       setRegisterError(error.message);
@@ -111,34 +125,75 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     setResults([]);
   }
 
+  // recruiter_partnerships.provider_id references service_providers.id,
+  // NOT the user's own auth id -- a service-provider user's own
+  // service_providers row must be resolved first. A user with no
+  // service_providers row at all (not a provider) simply has no
+  // provider-side invitations; that is not an error.
+  async function resolveOwnProviderId(): Promise<string | null> {
+    const { data, error } = await supabase
+      .from('service_providers')
+      .select('id')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) {
+      setListsError(error.message);
+      return null;
+    }
+    return data?.id ?? null;
+  }
+
   async function loadPartnerships() {
     setLoadingLists(true);
-    const [{ data: asRecipient }, { data: asRecruiter }] = await Promise.all([
+    setListsError(null);
+    const providerId = await resolveOwnProviderId();
+    const recipientFilter = providerId
+      ? `organizer_id.eq.${currentUser.id},provider_id.eq.${providerId}`
+      : `organizer_id.eq.${currentUser.id}`;
+    const [recipientRes, recruiterRes] = await Promise.all([
       supabase
         .from('recruiter_partnerships')
         .select('*')
-        .or(`organizer_id.eq.${currentUser.id},provider_id.eq.${currentUser.id}`)
+        .or(recipientFilter)
         .eq('status', 'pending'),
       supabase.from('recruiter_partnerships').select('*').eq('recruiter_id', currentUser.id),
     ]);
-    setIncoming(asRecipient || []);
-    setTeam(asRecruiter || []);
+    if (recipientRes.error || recruiterRes.error) {
+      setListsError(recipientRes.error?.message || recruiterRes.error?.message || 'Failed to load partnerships.');
+    }
+    setIncoming(recipientRes.data || []);
+    setTeam(recruiterRes.data || []);
     setLoadingLists(false);
   }
 
   async function handleRespond(id: string, accept: boolean) {
+    setActionError(null);
     const { error } = await supabase.rpc('respond_to_recruiter_invitation', { p_partnership_id: id, p_accept: accept });
-    if (!error) void loadPartnerships();
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+    void loadPartnerships();
   }
 
   async function handleWithdraw(id: string) {
+    setActionError(null);
     const { error } = await supabase.rpc('withdraw_recruiter_invitation', { p_partnership_id: id });
-    if (!error) void loadPartnerships();
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+    void loadPartnerships();
   }
 
   async function handleRevoke(id: string) {
+    setActionError(null);
     const { error } = await supabase.rpc('revoke_recruiter_partnership', { p_partnership_id: id });
-    if (!error) void loadPartnerships();
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+    void loadPartnerships();
   }
 
   return (
@@ -147,6 +202,12 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         <button onClick={onBack} aria-label="Back"><ArrowLeft /></button>
         <h1>Representatives</h1>
       </header>
+
+      {statusError && (
+        <div style={{ padding: 16 }}>
+          <p role="alert">Could not check Representative status: {statusError}</p>
+        </div>
+      )}
 
       {isRecruiter === false && (
         <div style={{ padding: 16 }}>
@@ -201,9 +262,12 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         </div>
       )}
 
+      {actionError && <p role="alert">{actionError}</p>}
+
       {tab === 'invitations' && (
         <div style={{ padding: 16 }} data-testid="invitations-list">
           {loadingLists && <p>Loading...</p>}
+          {listsError && <p role="alert">{listsError}</p>}
           {incoming.map((p) => (
             <div key={p.id} data-testid="invitation-row">
               <span>Partnership request · agreed split {(p.commission_split_bps / 100).toFixed(1)}%</span>
@@ -218,6 +282,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
       {tab === 'team' && (
         <div style={{ padding: 16 }} data-testid="team-list">
           {loadingLists && <p>Loading...</p>}
+          {listsError && <p role="alert">{listsError}</p>}
           {team.map((p) => (
             <div key={p.id} data-testid="team-row">
               <span>Status: {p.status} · agreed split {(p.commission_split_bps / 100).toFixed(1)}%</span>

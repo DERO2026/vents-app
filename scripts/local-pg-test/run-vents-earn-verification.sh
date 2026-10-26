@@ -182,6 +182,34 @@ expect_count "organizer can see recruiter 1's profile (has a live pending invite
 expect_count "organizer can no longer see recruiter 2's profile (only revoked history)" \
   "SET ROLE authenticated; SET test.uid='$ORGANIZER'; SELECT count(*) FROM public.recruiters WHERE id='$RECRUITER2';" "0"
 
+echo "== Frontend integration fixes (PR #49 review): real-SQL proof, not mocked-client (findings #1-#3) =="
+
+echo "-- Finding #1: register_as_recruiter requires p_display_name (no default) --"
+expect_error "calling register_as_recruiter() with zero arguments fails (the UI's original bug)" \
+  "function public.register_as_recruiter() does not exist" \
+  "SELECT public.register_as_recruiter();"
+expect_count "calling it correctly (named p_display_name) creates exactly one row with that name" \
+  "SET test.uid='$UNRELATED'; SELECT public.register_as_recruiter(p_display_name := 'Fix Check', p_bio := NULL); SELECT count(*) FROM public.recruiters WHERE id='$UNRELATED' AND display_name='Fix Check';" "1"
+
+echo "-- Finding #2: recruiters.id IS the user's auth id; there is no recruiters.user_id column --"
+expect_error "querying the nonexistent recruiters.user_id column fails outright" \
+  "column \"user_id\" does not exist" \
+  "SELECT user_id FROM public.recruiters LIMIT 1;"
+expect_count "the correct lookup (id = auth id) finds a registered recruiter" \
+  "SELECT count(*) FROM public.recruiters WHERE id='$UNRELATED';" "1"
+expect_count "the correct lookup returns zero for a user who never registered" \
+  "SELECT count(*) FROM public.recruiters WHERE id='$ADMIN';" "0"
+
+echo "-- Finding #3: recruiter_partnerships.provider_id references service_providers.id, not the owner's auth id --"
+expect_ok "recruiter1 invites provider1 for the provider-id-resolution check" \
+  "SET test.uid='$RECRUITER'; SELECT public.invite_recruiter_partnership(NULL, '$PROVIDER1', 200);"
+expect_count "filtering by the owner's raw auth id finds nothing (the UI's original bug, reproduced in SQL)" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE status='pending' AND (organizer_id='$PROVIDER_OWNER' OR provider_id='$PROVIDER_OWNER');" "0"
+expect_count "filtering by the resolved service_providers.id correctly surfaces this recruiter's invitation" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE status='pending' AND recruiter_id='$RECRUITER' AND (organizer_id='$PROVIDER_OWNER' OR provider_id=(SELECT id FROM public.service_providers WHERE user_id='$PROVIDER_OWNER'));" "1"
+expect_ok "a user with no service_providers row can run the same resolve-then-filter query without erroring" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE status='pending' AND (organizer_id='$UNRELATED' OR provider_id=(SELECT id FROM public.service_providers WHERE user_id='$UNRELATED'));"
+
 echo "== Cleanup =="
 sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DB_NAME;"
 
