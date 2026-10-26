@@ -342,6 +342,7 @@ export type Screen =
   | 'conversation'
   | 'wallet'
   | 'customer-wallet'
+  | 'representatives'
   | 'services-home'
   | 'services-category'
   | 'service-provider-profile'
