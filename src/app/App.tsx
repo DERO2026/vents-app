@@ -1824,11 +1824,19 @@ export default function App() {
   const [analyticsEventId, setAnalyticsEventId] = useState<string | undefined>(undefined);
   const [analyticsEventTitle, setAnalyticsEventTitle] = useState<string | undefined>(undefined);
 
-  const handleTabChange = useCallback((tab: TabId) => {
+  const handleTabChange = useCallback((tab: TabId, exploreSubTab?: 'people' | 'chats') => {
     const wasAlreadyActive = activeTab === tab;
     setActiveTab(tab);
     setScreen(TAB_SCREENS[tab]);
     setScreenStack([]);
+    // The bottom nav's "explore" destination is labeled Chat (see
+    // BottomNav.tsx's TABS), so tapping it must land on ExploreScreen's
+    // chats inbox, not whatever sub-tab exploreTab was last left on (it
+    // defaults to 'people' and stays there once set). Callers that want the
+    // People/Explore view instead (search) pass exploreSubTab explicitly.
+    if (tab === 'explore') {
+      setExploreTab(exploreSubTab ?? 'chats');
+    }
     // Revalidate Home's event list on every tap of the Home tab — not just
     // when navigating to Home from elsewhere. The existing "fetch on
     // screen === 'home'" effect below only fires when `screen` actually
@@ -3156,7 +3164,7 @@ export default function App() {
               onEventPress={handleEventPress}
               savedEvents={savedEvents}
               onToggleSave={handleToggleSave}
-              onSearchPress={() => handleTabChange('explore')}
+              onSearchPress={() => handleTabChange('explore', 'people')}
               onNotificationsPress={() => navigateTo('notifications')}
               onProfilePress={() => handleTabChange('profile')}
               onCreatePress={() => navigateTo('org-dashboard')}
