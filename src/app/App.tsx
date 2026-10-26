@@ -3895,7 +3895,18 @@ export default function App() {
         {showBottomNav && (
           <BottomNav
             activeTab={screen === 'services-home' ? 'services' : activeTab}
-            onTabChange={handleTabChange}
+            onTabChange={(tab) => {
+              // The "Chat" nav item is TabId 'explore' (ExploreScreen also
+              // hosts the People sub-tab, reached separately via Home's
+              // search icon -> handleTabChange('explore') directly, which
+              // must keep defaulting to People). Only THIS bottom-nav tap
+              // should land on the chats inbox, on first switch-in and on
+              // every re-tap alike -- handleTabChange's own re-tap branch
+              // already assumes the chats sub-tab is active when it bumps
+              // chatRefreshKey to refresh the inbox list.
+              if (tab === 'explore') setExploreTab('chats');
+              handleTabChange(tab);
+            }}
             siActive={screen === 'vents-ai'}
             siEnabled={ventsAiEnabled}
             onOpenSi={() => navigateTo('vents-ai')}
