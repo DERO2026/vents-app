@@ -33,6 +33,9 @@ CREATE TABLE public.recruiters (
   id            uuid PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
   display_name  text,
   bio           text,
+  -- 'suspended' is set ONLY by admin_set_recruiter_status (below), never by
+  -- register_as_recruiter or any other authenticated-callable path -- see
+  -- that function for the is_admin() enforcement.
   status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now()
@@ -88,6 +91,48 @@ $function$;
 REVOKE ALL ON FUNCTION public.register_as_recruiter(text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.register_as_recruiter(text, text) TO authenticated;
 
+-- Admin-only moderation lever for the 'suspended' status above. This is
+-- the ONLY place in this migration that can ever set a recruiter's status
+-- to 'suspended' (or back to 'active'). Ordinary recruiters cannot
+-- suspend themselves or anyone else -- enforced by is_admin() inside the
+-- function, not by the GRANT (which, like every other function here, is
+-- EXECUTE TO authenticated; the authorization check is internal, matching
+-- the is_admin() convention already used by recruiters_admin_select /
+-- recruiter_partnerships_admin_select / revoke_recruiter_partnership
+-- elsewhere in this file).
+CREATE OR REPLACE FUNCTION public.admin_set_recruiter_status(p_recruiter_id uuid, p_status text)
+ RETURNS public.recruiters
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_row public.recruiters;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+
+  IF p_status NOT IN ('active', 'suspended') THEN
+    RAISE EXCEPTION 'Invalid status: %', p_status;
+  END IF;
+
+  UPDATE public.recruiters
+     SET status = p_status, updated_at = now()
+   WHERE id = p_recruiter_id
+  RETURNING * INTO v_row;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Recruiter not found';
+  END IF;
+
+  RETURN v_row;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.admin_set_recruiter_status(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_set_recruiter_status(uuid, text) TO authenticated;
+
 -- 2. recruiter_partnerships -------------------------------------------
 --
 -- Exactly one of (organizer_id-via-event, provider_id) is populated per
@@ -102,7 +147,14 @@ CREATE TABLE public.recruiter_partnerships (
   recruiter_id         uuid NOT NULL REFERENCES public.recruiters(id) ON DELETE CASCADE,
   organizer_id         uuid REFERENCES public.users(id) ON DELETE CASCADE,
   provider_id          uuid REFERENCES public.service_providers(id) ON DELETE CASCADE,
-  status               text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined', 'revoked')),
+  -- 'withdrawn' is distinct from 'revoked': 'withdrawn' means the
+  -- recruiter pulled back their own invitation before anyone responded
+  -- (see withdraw_recruiter_invitation); 'revoked' means an ACCEPTED
+  -- partnership was ended afterward (see revoke_recruiter_partnership).
+  -- They are kept separate so recruiter_partnerships_response_consistency
+  -- below can still enforce "a row with a responder was actually
+  -- responded to" without weakening that guarantee for 'revoked'.
+  status               text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined', 'revoked', 'withdrawn')),
   commission_split_bps integer NOT NULL CHECK (commission_split_bps >= 0 AND commission_split_bps <= 10000),
   invited_at           timestamptz NOT NULL DEFAULT now(),
   responded_at         timestamptz,
@@ -119,19 +171,25 @@ CREATE TABLE public.recruiter_partnerships (
   -- second, redundant line of defense: a 'pending' row can never already
   -- carry a responder.
   CONSTRAINT recruiter_partnerships_response_consistency CHECK (
-    (status = 'pending' AND responded_at IS NULL AND responded_by IS NULL) OR
-    (status <> 'pending' AND responded_at IS NOT NULL AND responded_by IS NOT NULL)
+    (status IN ('pending', 'withdrawn') AND responded_at IS NULL AND responded_by IS NULL) OR
+    (status IN ('accepted', 'declined', 'revoked') AND responded_at IS NOT NULL AND responded_by IS NOT NULL)
   )
 );
 
 -- Now that recruiter_partnerships exists, add the deferred policy
 -- letting a partnered organizer/provider read the recruiter's profile.
+-- Scoped to 'pending' (so the invited party can see who's inviting them
+-- before responding) and 'accepted' (ongoing partnership) only. Once a
+-- partnership is declined, withdrawn, or revoked, the relationship is
+-- over and visibility is revoked with it -- it does not persist forever
+-- off a dead row.
 CREATE POLICY recruiters_select_partner ON public.recruiters
   FOR SELECT TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM public.recruiter_partnerships rp
       WHERE rp.recruiter_id = recruiters.id
+        AND rp.status IN ('pending', 'accepted')
         AND (
           rp.organizer_id = auth.uid()
           OR EXISTS (SELECT 1 FROM public.service_providers sp WHERE sp.id = rp.provider_id AND sp.user_id = auth.uid())
@@ -258,6 +316,65 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.invite_recruiter_partnership(uuid, uuid, integer) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.invite_recruiter_partnership(uuid, uuid, integer) TO authenticated;
+
+-- 3b. Withdraw: callable ONLY by the recruiter who sent the invite, and
+-- ONLY while it is still 'pending'. -----------------------------------
+--
+-- Without this, a single mistaken invite (wrong target, wrong
+-- commission_split_bps) is permanent: revoke_recruiter_partnership only
+-- accepts 'accepted' rows, the invited organizer/provider has no reason
+-- to act on an invite they don't want, and the partial unique indexes
+-- above then block the recruiter from ever sending a corrected invite to
+-- that same organizer/provider again. withdraw_recruiter_invitation sets
+-- status = 'withdrawn' (never 'revoked', which is reserved for ending an
+-- already-accepted partnership -- see recruiter_partnerships_response_consistency
+-- above), which drops the row out of the partial unique indexes'
+-- WHERE status = 'pending' scope and immediately frees up a fresh invite.
+CREATE OR REPLACE FUNCTION public.withdraw_recruiter_invitation(p_partnership_id uuid)
+ RETURNS public.recruiter_partnerships
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_partnership public.recruiter_partnerships;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  SELECT * INTO v_partnership
+    FROM public.recruiter_partnerships
+   WHERE id = p_partnership_id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Partnership not found';
+  END IF;
+
+  -- Only the recruiter who sent this invitation may withdraw it -- never
+  -- the invited organizer/provider (they decline instead, via
+  -- respond_to_recruiter_invitation) and never an unrelated user.
+  IF v_partnership.recruiter_id <> v_uid THEN
+    RAISE EXCEPTION 'Not authorized to withdraw this invitation';
+  END IF;
+
+  IF v_partnership.status <> 'pending' THEN
+    RAISE EXCEPTION 'Only a pending invitation can be withdrawn (status=%)', v_partnership.status;
+  END IF;
+
+  UPDATE public.recruiter_partnerships
+     SET status = 'withdrawn', updated_at = now()
+   WHERE id = p_partnership_id
+  RETURNING * INTO v_partnership;
+
+  RETURN v_partnership;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.withdraw_recruiter_invitation(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.withdraw_recruiter_invitation(uuid) TO authenticated;
 
 -- 4. Accept/decline: callable ONLY by the organizer/provider side. -----
 --
@@ -400,3 +517,32 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.revoke_recruiter_partnership(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.revoke_recruiter_partnership(uuid) TO authenticated;
+
+-- 6. Known limitation: multi-account self-dealing. ---------------------
+--
+-- invite_recruiter_partnership and respond_to_recruiter_invitation both
+-- block a recruiter from naming THEIR OWN auth.uid() (or a
+-- service_providers row owned by it) as the organizer/provider side.
+-- That closes single-account self-approval, but nothing in this schema
+-- stops a recruiter from controlling a SECOND VENTS account -- creating
+-- an event (or a service_providers row) under it -- and partnering with
+-- that alt account instead. auth.uid() equality cannot see through
+-- separate accounts; this migration has no identity/KYC signal (shared
+-- payout destination, shared device, shared phone/bank account, etc.)
+-- that would.
+--
+-- This is NOT exploitable yet: Stage 1 computes and pays no commission,
+-- so an accepted partnership with a sock-puppet organizer currently has
+-- zero financial effect. It becomes a real control gap the moment Stage
+-- 2 adds commission computation/payout. Before that ships, Stage 2 needs
+-- one of:
+--   - Cross-referencing payout destinations (bank account / recipient
+--     code) between the recruiter and the organizer/provider side of
+--     accepted partnerships, flagging or blocking matches.
+--   - A manual review queue for partnerships above a commission/revenue
+--     threshold before the first payout.
+--   - Device/signup-fingerprint correlation at the admin layer (existing
+--     admin tooling elsewhere in this codebase may already have this;
+--     out of scope to wire up here).
+-- None of these are implemented in this migration -- recorded here so
+-- Stage 2 cannot ship payout logic without explicitly deciding on one.

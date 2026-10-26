@@ -6,8 +6,15 @@ import { join } from 'node:path';
 // "VENTS Earn" (recruiter/marketer partnerships). Static: reads the
 // literal migration SQL and asserts on its text, following the same
 // convention as platformFeeAllocation.security.test.ts /
-// walletRefundFeeLedger.security.test.ts. Does NOT execute SQL against a
-// live database.
+// walletRefundFeeLedger.security.test.ts. These tests do NOT execute SQL
+// against a live database -- they can confirm the right code is present,
+// not that it runs correctly. For actual execution against a real
+// Postgres engine (the authorization branches of withdraw_recruiter_invitation
+// / revoke_recruiter_partnership / admin_set_recruiter_status, and the
+// recruiters_select_partner RLS scoping, under real impersonated callers),
+// see scripts/local-pg-test/run-vents-earn-verification.sh -- that script
+// is the one that actually runs the SQL; everything in this file is a
+// static text check.
 //
 // Deferred to later stages (explicitly NOT covered here):
 //   - Commission ledger computation / payout logic (no such table/function
@@ -33,6 +40,18 @@ function respondFn(): string {
 
 function inviteFn(): string {
   return migration.match(/CREATE OR REPLACE FUNCTION public\.invite_recruiter_partnership\([\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+}
+
+function withdrawFn(): string {
+  return migration.match(/CREATE OR REPLACE FUNCTION public\.withdraw_recruiter_invitation\([\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+}
+
+function revokeFn(): string {
+  return migration.match(/CREATE OR REPLACE FUNCTION public\.revoke_recruiter_partnership\([\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+}
+
+function adminSetStatusFn(): string {
+  return migration.match(/CREATE OR REPLACE FUNCTION public\.admin_set_recruiter_status\([\s\S]*?\$function\$\s*;/)?.[0] ?? '';
 }
 
 describe('0193: scope discipline -- does not touch payment processing or migration 0192', () => {
@@ -122,8 +141,116 @@ describe('0193: organizer-XOR-provider modeling and response consistency are enf
     expect(migration).toMatch(/CONSTRAINT recruiter_partnerships_one_side_only CHECK \(\s*\(organizer_id IS NOT NULL AND provider_id IS NULL\) OR\s*\(organizer_id IS NULL AND provider_id IS NOT NULL\)\s*\)/);
   });
 
-  it('recruiter_partnerships_response_consistency prevents a pending row from carrying a responder', () => {
-    expect(migration).toMatch(/CONSTRAINT recruiter_partnerships_response_consistency CHECK \(\s*\(status = 'pending' AND responded_at IS NULL AND responded_by IS NULL\) OR/);
+  it('recruiter_partnerships_response_consistency prevents a pending or withdrawn row from carrying a responder, and requires one for accepted/declined/revoked', () => {
+    expect(migration).toMatch(/CONSTRAINT recruiter_partnerships_response_consistency CHECK \(\s*\(status IN \('pending', 'withdrawn'\) AND responded_at IS NULL AND responded_by IS NULL\) OR\s*\(status IN \('accepted', 'declined', 'revoked'\) AND responded_at IS NOT NULL AND responded_by IS NOT NULL\)\s*\)/);
+  });
+
+  it("status enum includes 'withdrawn' as distinct from 'revoked'", () => {
+    expect(migration).toMatch(/status\s+text NOT NULL DEFAULT 'pending' CHECK \(status IN \('pending', 'accepted', 'declined', 'revoked', 'withdrawn'\)\)/);
+  });
+});
+
+describe('0193: withdraw_recruiter_invitation closes the pending-invite deadlock (PR #47 review finding #1)', () => {
+  it('exists, is SECURITY DEFINER, and search_path-locked', () => {
+    const fn = withdrawFn();
+    expect(fn).not.toBe('');
+    expect(fn).toMatch(/SECURITY DEFINER/);
+    expect(fn).toMatch(/SET search_path TO ''/);
+  });
+
+  it('authorizes only recruiter_id -- never the invited organizer/provider, never an unrelated caller', () => {
+    const fn = withdrawFn();
+    expect(fn).toMatch(/IF v_partnership\.recruiter_id\s*<>\s*v_uid THEN\s*\n\s*RAISE EXCEPTION 'Not authorized to withdraw this invitation'/);
+    // No reference to organizer_id or service_providers as a grant of
+    // authority anywhere in this function -- only recruiter_id gates it.
+    expect(fn).not.toMatch(/organizer_id\s*=\s*v_uid/);
+    expect(fn).not.toMatch(/service_providers/);
+  });
+
+  it('only a pending invitation can be withdrawn', () => {
+    const fn = withdrawFn();
+    expect(fn).toMatch(/IF v_partnership\.status\s*<>\s*'pending' THEN\s*\n\s*RAISE EXCEPTION 'Only a pending invitation can be withdrawn/);
+  });
+
+  it("sets status = 'withdrawn', never 'revoked' or 'declined' (keeps the two end-states distinct per the CHECK constraint)", () => {
+    const fn = withdrawFn();
+    expect(fn).toMatch(/SET status = 'withdrawn', updated_at = now\(\)/);
+  });
+
+  it('is granted to authenticated only, revoked from PUBLIC/anon', () => {
+    expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.withdraw_recruiter_invitation\(uuid\) FROM PUBLIC, anon;/);
+    expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.withdraw_recruiter_invitation\(uuid\) TO authenticated;/);
+  });
+
+  it('withdrawn rows fall outside both partial unique indexes (scoped to status=\'pending\'), so a corrected invite can be resent', () => {
+    // Already asserted above that both indexes are WHERE status = 'pending' --
+    // this test just makes the deadlock-fix connection explicit: a
+    // 'withdrawn' row can never collide with that partial index.
+    expect(migration).toMatch(/WHERE status = 'pending' AND organizer_id IS NOT NULL/);
+    expect(migration).toMatch(/WHERE status = 'pending' AND provider_id IS NOT NULL/);
+  });
+});
+
+describe('0193: revoke_recruiter_partnership authorization branches (PR #47 review finding #3)', () => {
+  it('is a party-or-admin check: recruiter, organizer, provider-side user, or is_admin()', () => {
+    const fn = revokeFn();
+    expect(fn).toMatch(/v_is_party\s*:=\s*\(v_uid\s*=\s*v_partnership\.recruiter_id\)/);
+    expect(fn).toMatch(/OR\s*\(v_partnership\.organizer_id\s*=\s*v_uid\)/);
+    expect(fn).toMatch(/sp\.user_id\s*=\s*v_uid/);
+    expect(fn).toMatch(/OR public\.is_admin\(\)/);
+  });
+
+  it('rejects a non-party, non-admin caller', () => {
+    const fn = revokeFn();
+    expect(fn).toMatch(/IF NOT v_is_party THEN\s*\n\s*RAISE EXCEPTION 'Not authorized to revoke this partnership'/);
+  });
+
+  it('only an accepted partnership can be revoked -- unchanged from the original review (preserves the existing flow)', () => {
+    const fn = revokeFn();
+    expect(fn).toMatch(/IF v_partnership\.status\s*<>\s*'accepted' THEN\s*\n\s*RAISE EXCEPTION 'Only an accepted partnership can be revoked/);
+  });
+});
+
+describe('0193: admin_set_recruiter_status -- real, admin-only moderation (PR #47 review finding #2)', () => {
+  it('exists, is SECURITY DEFINER, and search_path-locked', () => {
+    const fn = adminSetStatusFn();
+    expect(fn).not.toBe('');
+    expect(fn).toMatch(/SECURITY DEFINER/);
+    expect(fn).toMatch(/SET search_path TO ''/);
+  });
+
+  it('is gated on is_admin() internally, not merely on the EXECUTE grant', () => {
+    const fn = adminSetStatusFn();
+    expect(fn).toMatch(/IF NOT public\.is_admin\(\) THEN\s*\n\s*RAISE EXCEPTION 'Not authorized'/);
+  });
+
+  it('validates the target status against the same active/suspended enum as the table CHECK', () => {
+    const fn = adminSetStatusFn();
+    expect(fn).toMatch(/IF p_status NOT IN \('active', 'suspended'\) THEN/);
+  });
+
+  it('register_as_recruiter never writes status -- suspension/reinstatement is admin_set_recruiter_status-only', () => {
+    const registerFn = migration.match(/CREATE OR REPLACE FUNCTION public\.register_as_recruiter\([\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+    expect(registerFn).not.toMatch(/status\s*=/);
+  });
+
+  it('is granted to authenticated (authorization is enforced inside the function, matching is_admin() usage elsewhere in this file)', () => {
+    expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.admin_set_recruiter_status\(uuid, text\) TO authenticated;/);
+  });
+});
+
+describe('0193: recruiters_select_partner is scoped to live partnerships only (PR #47 review finding #4)', () => {
+  it("only grants partner visibility while status is 'pending' or 'accepted', not forever", () => {
+    const policy = migration.match(/CREATE POLICY recruiters_select_partner ON public\.recruiters[\s\S]*?;/)?.[0] ?? '';
+    expect(policy).not.toBe('');
+    expect(policy).toMatch(/rp\.status IN \('pending', 'accepted'\)/);
+  });
+});
+
+describe('0193: multi-account self-dealing limitation is documented for Stage 2 (PR #47 review finding #5)', () => {
+  it('records the sock-puppet-account gap and the controls Stage 2 must decide on before payout ships', () => {
+    expect(migration).toMatch(/Known limitation: multi-account self-dealing/);
+    expect(migration).toMatch(/becomes a real control gap the moment Stage\s*\n-- 2 adds commission computation\/payout/);
   });
 });
 
