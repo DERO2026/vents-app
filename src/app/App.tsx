@@ -80,6 +80,7 @@ const AdminConsoleShell = lazy(() =>
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
+import { RepresentativesScreen } from './components/RepresentativesScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
@@ -3802,6 +3803,11 @@ export default function App() {
               }
               onOpenEarnings={() => navigateTo('wallet')}
             />
+          )}
+
+          {/* ── VENTS REPRESENTATIVES (recruiter partnership frontend) ── */}
+          {screen === 'representatives' && (
+            <RepresentativesScreen onBack={goBack} currentUser={currentUser} />
           )}
 
           {/* ── TICKET REFUND (attendee side) ── */}
