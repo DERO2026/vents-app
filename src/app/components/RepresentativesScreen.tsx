@@ -39,6 +39,17 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
+  // The target's role is resolved on selection, not carried on
+  // UserSearchResult (that type is shared with UserAutocomplete/checkout
+  // and ticket-transfer flows -- adding a role field there would be an
+  // unnecessary shared-type change for a resolution this screen alone
+  // needs). 'both' prefers organizer, matching the previously-working
+  // path; a UI toggle to let the recruiter pick instead was considered
+  // but kept out to stay minimal, since a genuine both-roles target is
+  // expected to be rare.
+  const [targetRole, setTargetRole] = useState<'organizer' | 'provider' | 'both' | 'neither' | null>(null);
+  const [targetProviderId, setTargetProviderId] = useState<string | null>(null);
+  const [resolvingTarget, setResolvingTarget] = useState(false);
 
   const [incoming, setIncoming] = useState<Partnership[]>([]);
   const [team, setTeam] = useState<Partnership[]>([]);
@@ -46,6 +57,37 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   const [listsError, setListsError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!inviteTarget) {
+      setTargetRole(null);
+      setTargetProviderId(null);
+      return;
+    }
+    void resolveTargetRole(inviteTarget.id);
+  }, [inviteTarget]);
+
+  // Resolves whether a search result is an organizer (has at least one
+  // event with organizer_id = their user id), a service provider (has a
+  // service_providers row keyed by user_id), neither, or both -- the
+  // backend's invite function needs the TARGET's service_providers.id,
+  // not their raw user id, for the provider path.
+  async function resolveTargetRole(userId: string) {
+    setResolvingTarget(true);
+    const [organizerRes, providerRes] = await Promise.all([
+      supabase.from('events').select('id').eq('organizer_id', userId).maybeSingle(),
+      supabase.from('service_providers').select('id').eq('user_id', userId).maybeSingle(),
+    ]);
+    const isOrganizer = !organizerRes.error && !!organizerRes.data;
+    const isProvider = !providerRes.error && !!providerRes.data;
+    setTargetProviderId(providerRes.data?.id ?? null);
+    if (isOrganizer && isProvider) setTargetRole('both');
+    else if (isOrganizer) setTargetRole('organizer');
+    else if (isProvider) setTargetRole('provider');
+    else setTargetRole('neither');
+    setResolvingTarget(false);
+  }
 
   useEffect(() => {
     void checkRecruiterStatus();
@@ -100,6 +142,10 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
   async function handleSendInvite() {
     if (!inviteTarget) return;
+    if (targetRole === 'neither' || targetRole === null) {
+      setInviteError('This user is not an organizer or a service provider.');
+      return;
+    }
     const bps = Math.round(splitPercent * 100);
     if (bps < 0 || bps > 1000) {
       setInviteError('Commission split must be between 0% and 10%.');
@@ -107,11 +153,14 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     }
     setInviteBusy(true);
     setInviteError(null);
-    // The invite call itself determines whether the target is an organizer
-    // or a service provider; the backend rejects an invalid target.
+    // provider_id must be the target's service_providers.id (resolved by
+    // resolveTargetRole), never their raw user id -- that is the exact
+    // bug this fix closes. organizer_id is the target's own user id,
+    // since events.organizer_id references it directly.
+    const wantsProvider = targetRole === 'provider';
     const { error } = await supabase.rpc('invite_recruiter_partnership', {
-      p_organizer_id: inviteTarget.id,
-      p_provider_id: null,
+      p_organizer_id: wantsProvider ? null : inviteTarget.id,
+      p_provider_id: wantsProvider ? targetProviderId : null,
       p_commission_split_bps: bps,
     });
     setInviteBusy(false);
@@ -166,34 +215,52 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     setLoadingLists(false);
   }
 
+  function withRowBusyGuard(id: string, run: () => Promise<void>) {
+    if (busyIds.has(id)) return;
+    setBusyIds((prev) => new Set(prev).add(id));
+    void run().finally(() => {
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    });
+  }
+
   async function handleRespond(id: string, accept: boolean) {
-    setActionError(null);
-    const { error } = await supabase.rpc('respond_to_recruiter_invitation', { p_partnership_id: id, p_accept: accept });
-    if (error) {
-      setActionError(error.message);
-      return;
-    }
-    void loadPartnerships();
+    withRowBusyGuard(id, async () => {
+      setActionError(null);
+      const { error } = await supabase.rpc('respond_to_recruiter_invitation', { p_partnership_id: id, p_accept: accept });
+      if (error) {
+        setActionError(error.message);
+        return;
+      }
+      await loadPartnerships();
+    });
   }
 
   async function handleWithdraw(id: string) {
-    setActionError(null);
-    const { error } = await supabase.rpc('withdraw_recruiter_invitation', { p_partnership_id: id });
-    if (error) {
-      setActionError(error.message);
-      return;
-    }
-    void loadPartnerships();
+    withRowBusyGuard(id, async () => {
+      setActionError(null);
+      const { error } = await supabase.rpc('withdraw_recruiter_invitation', { p_partnership_id: id });
+      if (error) {
+        setActionError(error.message);
+        return;
+      }
+      await loadPartnerships();
+    });
   }
 
   async function handleRevoke(id: string) {
-    setActionError(null);
-    const { error } = await supabase.rpc('revoke_recruiter_partnership', { p_partnership_id: id });
-    if (error) {
-      setActionError(error.message);
-      return;
-    }
-    void loadPartnerships();
+    withRowBusyGuard(id, async () => {
+      setActionError(null);
+      const { error } = await supabase.rpc('revoke_recruiter_partnership', { p_partnership_id: id });
+      if (error) {
+        setActionError(error.message);
+        return;
+      }
+      await loadPartnerships();
+    });
   }
 
   return (
@@ -241,20 +308,30 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
           {inviteTarget && (
             <div data-testid="invite-form">
               <p>Inviting {inviteTarget.username || inviteTarget.fullName}</p>
-              <label>
-                Agreed commission split (%)
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  step={0.5}
-                  value={splitPercent}
-                  onChange={(e) => setSplitPercent(Number(e.target.value))}
-                />
-              </label>
-              <button onClick={handleSendInvite} disabled={inviteBusy}>
-                {inviteBusy ? 'Sending...' : 'Send Invitation'}
-              </button>
+              {resolvingTarget && <p>Checking organizer/provider status...</p>}
+              {!resolvingTarget && targetRole === 'neither' && (
+                <p role="alert" data-testid="invite-ineligible">
+                  This user is not an organizer or a registered service provider, so they cannot be invited.
+                </p>
+              )}
+              {!resolvingTarget && targetRole && targetRole !== 'neither' && (
+                <>
+                  <label>
+                    Agreed commission split (%)
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      step={0.5}
+                      value={splitPercent}
+                      onChange={(e) => setSplitPercent(Number(e.target.value))}
+                    />
+                  </label>
+                  <button onClick={handleSendInvite} disabled={inviteBusy}>
+                    {inviteBusy ? 'Sending...' : 'Send Invitation'}
+                  </button>
+                </>
+              )}
               {inviteError && <p role="alert">{inviteError}</p>}
             </div>
           )}
@@ -271,8 +348,12 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
           {incoming.map((p) => (
             <div key={p.id} data-testid="invitation-row">
               <span>Partnership request · agreed split {(p.commission_split_bps / 100).toFixed(1)}%</span>
-              <button onClick={() => handleRespond(p.id, true)}>Accept</button>
-              <button onClick={() => handleRespond(p.id, false)}>Decline</button>
+              <button onClick={() => handleRespond(p.id, true)} disabled={busyIds.has(p.id)}>
+                {busyIds.has(p.id) ? 'Working...' : 'Accept'}
+              </button>
+              <button onClick={() => handleRespond(p.id, false)} disabled={busyIds.has(p.id)}>
+                {busyIds.has(p.id) ? 'Working...' : 'Decline'}
+              </button>
             </div>
           ))}
           {!loadingLists && incoming.length === 0 && <p>No pending invitations.</p>}
@@ -286,8 +367,16 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
           {team.map((p) => (
             <div key={p.id} data-testid="team-row">
               <span>Status: {p.status} · agreed split {(p.commission_split_bps / 100).toFixed(1)}%</span>
-              {p.status === 'pending' && <button onClick={() => handleWithdraw(p.id)}>Withdraw</button>}
-              {p.status === 'accepted' && <button onClick={() => handleRevoke(p.id)}>End Partnership</button>}
+              {p.status === 'pending' && (
+                <button onClick={() => handleWithdraw(p.id)} disabled={busyIds.has(p.id)}>
+                  {busyIds.has(p.id) ? 'Working...' : 'Withdraw'}
+                </button>
+              )}
+              {p.status === 'accepted' && (
+                <button onClick={() => handleRevoke(p.id)} disabled={busyIds.has(p.id)}>
+                  {busyIds.has(p.id) ? 'Working...' : 'End Partnership'}
+                </button>
+              )}
             </div>
           ))}
           {!loadingLists && team.length === 0 && <p>You have no partnerships yet.</p>}

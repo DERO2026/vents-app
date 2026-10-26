@@ -210,6 +210,23 @@ expect_count "filtering by the resolved service_providers.id correctly surfaces 
 expect_ok "a user with no service_providers row can run the same resolve-then-filter query without erroring" \
   "SELECT count(*) FROM public.recruiter_partnerships WHERE status='pending' AND (organizer_id='$UNRELATED' OR provider_id=(SELECT id FROM public.service_providers WHERE user_id='$UNRELATED'));"
 
+echo "== Finding #4 (this pass): inviting a service provider was structurally impossible =="
+echo "-- Before: the UI's old call shape always sent the target's raw user id as p_organizer_id --"
+expect_error "old broken call shape (provider's raw user id as p_organizer_id) is rejected" \
+  "Target organizer not found" \
+  "SET test.uid='$UNRELATED'; SELECT public.invite_recruiter_partnership('$PROVIDER_OWNER', NULL, 100);"
+echo "-- After: the fixed call shape resolves the target's service_providers.id first --"
+expect_ok "fixed call shape (resolved service_providers.id as p_provider_id) succeeds" \
+  "SET test.uid='$UNRELATED'; SELECT public.invite_recruiter_partnership(NULL, (SELECT id FROM public.service_providers WHERE user_id='$PROVIDER_OWNER'), 100);"
+expect_count "the resulting row is attributed to the correct provider, not the raw user id" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$UNRELATED' AND provider_id='$PROVIDER1' AND status='pending';" "1"
+echo "-- Regression guard: inviting an organizer via the fixed call shape still works --"
+expect_error "a user with no events row is not a valid organizer target" \
+  "Target organizer not found" \
+  "SET test.uid='$UNRELATED'; SELECT public.invite_recruiter_partnership('$ADMIN', NULL, 100);"
+expect_ok "a user with an events row as organizer is still a valid organizer-invite target" \
+  "SET test.uid='$RECRUITER2'; SELECT public.invite_recruiter_partnership('$ORGANIZER', NULL, 100);"
+
 echo "== Cleanup =="
 sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DB_NAME;"
 

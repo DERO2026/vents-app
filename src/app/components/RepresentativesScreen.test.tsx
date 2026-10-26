@@ -14,6 +14,12 @@ let ownProviderId: string | null = null;
 let partnershipsError: string | null = null;
 let lastOrFilter: string | null = null;
 let rpcResponses: Record<string, { data: any; error: any }> = {};
+// Target-role resolution (invite flow): which search-result id, if any,
+// has an events row (organizer) or a service_providers row (provider).
+let organizerUserIds: string[] = [];
+let providerByUserId: Record<string, string> = {};
+let incomingRows: any[] = [];
+let rpcDelayed: Record<string, any> = {};
 
 // A thenable that also exposes .maybeSingle() -- mirrors the real
 // supabase-js query builder, where `await qb.eq(...)` and
@@ -29,7 +35,7 @@ vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => ({
       select: () => ({
-        eq: () => {
+        eq: (column: string, value: string) => {
           if (table === 'recruiters') {
             // Only ever queried by id (the PK, which IS the user's auth
             // id) -- never by a non-existent user_id column.
@@ -40,7 +46,18 @@ vi.mock('../../lib/supabase', () => ({
             );
           }
           if (table === 'service_providers') {
-            return singleRowResult({ data: ownProviderId ? { id: ownProviderId } : null, error: null });
+            // Queried both for the current user's own id (the incoming-
+            // invitations filter) and for an invite TARGET's id (the
+            // target-role resolution) -- branch on which value was asked.
+            if (column === 'user_id' && value === 'u1') {
+              return singleRowResult({ data: ownProviderId ? { id: ownProviderId } : null, error: null });
+            }
+            const resolved = providerByUserId[value];
+            return singleRowResult({ data: resolved ? { id: resolved } : null, error: null });
+          }
+          if (table === 'events') {
+            const isOrganizer = organizerUserIds.includes(value);
+            return singleRowResult({ data: isOrganizer ? { id: 'ev-1' } : null, error: null });
           }
           if (table === 'recruiter_partnerships') {
             // The recruiter-side list: select('*').eq('recruiter_id', ...)
@@ -57,25 +74,27 @@ vi.mock('../../lib/supabase', () => ({
             eq: () =>
               partnershipsError
                 ? Promise.resolve({ data: null, error: { message: partnershipsError } })
-                : Promise.resolve({ data: [], error: null }),
+                : Promise.resolve({ data: incomingRows, error: null }),
           };
         },
       }),
     }),
     rpc: (name: string, args: any) => {
       rpcCalls.push({ name, args });
+      if (rpcDelayed[name]) {
+        return new Promise((resolve) => { rpcDelayed[name] = { resolve }; });
+      }
       return Promise.resolve(rpcResponses[name] ?? { data: null, error: null });
     },
   },
 }));
 
+let searchResults: { id: string; username: string; fullName: string; avatarUrl: null }[] = [
+  { id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null },
+];
+
 vi.mock('../../lib/userSearch', () => ({
-  searchUsers: (q: string) =>
-    Promise.resolve(
-      q.length >= 2
-        ? [{ id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null }]
-        : []
-    ),
+  searchUsers: (q: string) => Promise.resolve(q.length >= 2 ? searchResults : []),
 }));
 
 import { RepresentativesScreen } from './RepresentativesScreen';
@@ -92,6 +111,11 @@ beforeEach(() => {
   ownProviderId = null;
   partnershipsError = null;
   lastOrFilter = null;
+  organizerUserIds = ['org-1'];
+  providerByUserId = {};
+  incomingRows = [];
+  rpcDelayed = {};
+  searchResults = [{ id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null }];
   container = document.createElement('div');
   document.body.appendChild(container);
 });
@@ -255,6 +279,81 @@ describe('RepresentativesScreen', () => {
     });
     await flush();
     expect(container.textContent).toMatch(/network error/);
+  });
+
+  it('inviting a service-provider search result resolves their service_providers.id and sends p_provider_id, not their raw user id', async () => {
+    recruiterRowExists = true;
+    organizerUserIds = []; // not an organizer
+    providerByUserId = { 'prov-1': 'sp-99' };
+    searchResults = [{ id: 'prov-1', username: 'cleanco', fullName: 'Clean Co', avatarUrl: null }];
+    await mount();
+    const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+    await act(async () => { setter.call(input, 'clean'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    await flush();
+    const inviteBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Invite')!;
+    await act(async () => { inviteBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const sendBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Send Invitation')!;
+    expect(sendBtn).toBeTruthy();
+    await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
+    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 500 });
+  });
+
+  it('a search result that is neither an organizer nor a provider has no Send Invitation action, with a clear reason shown', async () => {
+    recruiterRowExists = true;
+    organizerUserIds = [];
+    providerByUserId = {};
+    searchResults = [{ id: 'nobody-1', username: 'justauser', fullName: 'Just A User', avatarUrl: null }];
+    await mount();
+    const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+    await act(async () => { setter.call(input, 'justa'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    await flush();
+    const inviteBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Invite')!;
+    await act(async () => { inviteBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    expect(container.querySelector('[data-testid="invite-ineligible"]')?.textContent).toMatch(/not an organizer or a registered service provider/);
+    expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent === 'Send Invitation')).toBe(false);
+    expect(rpcCalls.some((c) => c.name === 'invite_recruiter_partnership')).toBe(false);
+  });
+
+  it('Accept disables while the response is in flight, and a failed response leaves the row intact with a visible error', async () => {
+    recruiterRowExists = true;
+    incomingRows = [{ id: 'p1', recruiter_id: 'r1', organizer_id: 'u1', provider_id: null, status: 'pending', commission_split_bps: 500, invited_at: '' }];
+    rpcDelayed['respond_to_recruiter_invitation'] = true;
+    await mount();
+    await act(async () => {
+      const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('Invitations'))!;
+      tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    const acceptBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Accept')!;
+    const declineBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Decline')!;
+    await act(async () => { acceptBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    // In flight: both of this row's buttons are disabled (a second click
+    // can't fire a duplicate RPC), and the row is still visible (no
+    // optimistic removal before the response comes back).
+    expect((acceptBtn as HTMLButtonElement).disabled).toBe(true);
+    expect((declineBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(container.querySelectorAll('[data-testid="invitation-row"]').length).toBe(1);
+
+    await act(async () => { rpcDelayed['respond_to_recruiter_invitation'].resolve({ data: null, error: { message: 'conflict' } }); });
+    await flush();
+
+    // Failure: error shown, row still intact (not silently removed),
+    // button re-enabled so the user can retry.
+    expect(container.textContent).toMatch(/conflict/);
+    expect(container.querySelectorAll('[data-testid="invitation-row"]').length).toBe(1);
+    expect((acceptBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('never renders a commission amount, earnings total, or payout control anywhere', async () => {
