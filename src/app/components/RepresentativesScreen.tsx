@@ -276,6 +276,17 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         </div>
       )}
 
+      {/* isRecruiter starts null (checkRecruiterStatus hasn't resolved yet)
+          and previously rendered nothing in that state -- on a slow
+          connection this looked identical to the blank-screen failure mode
+          reported in production. An explicit loading row makes the
+          "still checking" and "actually broken" states visually distinct. */}
+      {isRecruiter === null && !statusError && (
+        <div style={{ padding: 16 }} data-testid="representatives-loading">
+          <p>Loading...</p>
+        </div>
+      )}
+
       {isRecruiter === false && (
         <div style={{ padding: 16 }}>
           <p>Become a VENTS Representative to invite organizers and service providers into a partnership.</p>

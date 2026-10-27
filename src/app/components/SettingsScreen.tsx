@@ -2001,6 +2001,15 @@ export function SettingsScreen({
           <SettingRow icon={Mail} label="Email & Phone" onPress={() => setSubScreen('profile')} />
           <Divider />
           <SettingRow icon={Link2} label="Connected Accounts" onPress={() => setSubScreen('connected-accounts')} />
+          <Divider />
+          {/* Moved out of PAYMENTS: Representatives is a role/identity
+              a user takes on (recruiter), not a payment destination --
+              nothing here involves money yet (commission computation and
+              payout are intentionally unbuilt). Account-level placement
+              also makes it visible to someone who has never registered as
+              a Representative before, same as every other row in this
+              section. */}
+          <SettingRow icon={Users} label="Representatives" onPress={() => onNavigate?.('representatives')} />
           {currentUser?.role !== 'organizer' && (
             <>
               <Divider />
@@ -2061,8 +2070,6 @@ export function SettingsScreen({
           <SettingRow icon={Wallet} label="Wallet & Cards" onPress={() => onNavigate?.('customer-wallet')} />
           <Divider />
           <SettingRow icon={Gift} label="Vents Cents" onPress={() => onNavigate?.('referral')} />
-          <Divider />
-          <SettingRow icon={Users} label="Representatives" onPress={() => onNavigate?.('representatives')} />
           <Divider />
           {/* No separate transaction-history screen exists -- the wallet
               screen already lists real transactions, so this is a second
