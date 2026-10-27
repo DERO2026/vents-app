@@ -6,6 +6,7 @@ import { EVENT_CARD_ASPECT, EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAsp
 import { computeSmartCropCached, cropFromFocus, type AreaPct } from '../../lib/smartCrop';
 import { fetchVisionFocus, type VisionFocus } from '../../lib/visionCrop';
 import { Sentry } from '../../lib/sentry';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 
 interface ImageCropperModalProps {
   imageSrc: string;
@@ -367,12 +368,12 @@ export function ImageCropperModal({
 
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, background: ventsColors.bg, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: 'calc(16px + env(safe-area-inset-top, 44px)) 16px 10px',
-        background: isFlyer ? 'transparent' : '#090514',
+        background: isFlyer ? 'transparent' : ventsColors.surface,
         borderBottom: isFlyer ? 'none' : '1px solid rgba(255,255,255,0.08)',
         position: isFlyer ? 'absolute' : 'relative', left: 0, right: 0, top: 0, zIndex: 3,
       }}>
@@ -380,7 +381,7 @@ export function ImageCropperModal({
         {/* No title for the flyer variant — matches Apple Photos' minimal crop
             header (Cancel/Done only); the spacer keeps Done pinned right. */}
         {isFlyer ? <span style={{ flex: 1 }} /> : (
-          <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flex: 1, textAlign: 'center' }}>{title}</span>
+          <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flex: 1, textAlign: 'center' }}>{title}</span>
         )}
         {isFlyer && (
           <button onClick={() => setShowHelp(true)} aria-label="Framing guide" style={{ ...floatBtn, marginRight: '8px' }}>
@@ -452,7 +453,7 @@ export function ImageCropperModal({
           warning) lives in the optional Guide sheet instead of sitting here. */}
       {isFlyer ? (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '8px 16px calc(10px + env(safe-area-inset-bottom, 8px))', background: 'linear-gradient(to top, rgba(2,0,5,0.92) 45%, transparent)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {error && <div style={{ color: '#EF4444', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
+          {error && <div style={{ color: ventsColors.error, fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
 
           {/* Slim zoom fallback — pinch is the primary gesture; this covers
               one-handed and non-touch use without adding a label row. */}
@@ -484,8 +485,8 @@ export function ImageCropperModal({
         </div>
       ) : (
         <div style={{ padding: '12px 16px', background: '#090514', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {error && <div style={{ color: '#EF4444', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>
+          {error && <div style={{ color: ventsColors.error, fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: ventsColors.ink3, fontSize: '12px', fontWeight: 600 }}>
             <span>Zoom</span><span>{Math.round(zoom * 100)}%</span>
           </div>
           <input type="range" value={zoom} min={1} max={3} step={0.1} aria-label="Zoom"
@@ -510,7 +511,7 @@ export function ImageCropperModal({
             style={{ width: '100%', maxHeight: '78%', overflowY: 'auto', background: '#0B0618', borderRadius: '22px 22px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 8px))', display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>Framing Guide</p>
+              <p style={{ margin: 0, color: ventsColors.ink1, fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>Framing Guide</p>
               <button onClick={() => setShowHelp(false)} aria-label="Close" style={floatBtn}><X size={18} /></button>
             </div>
 
@@ -568,11 +569,11 @@ async function renderAvatar(bmp: Bitmap, cropped: PixelCrop): Promise<Blob> {
 
 const floatBtn: React.CSSProperties = {
   background: 'rgba(20,14,36,0.6)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '999px',
-  width: '36px', height: '36px', color: '#EDEBFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)',
+  width: '36px', height: '36px', color: ventsColors.ink1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)',
 };
 const doneBtn: React.CSSProperties = {
   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '999px',
-  height: '36px', padding: '0 16px', color: '#fff', fontSize: '13px', fontWeight: 700,
+  height: '36px', padding: '0 16px', color: ventsColors.white, fontSize: '13px', fontWeight: 700,
   fontFamily: 'Manrope, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
 };
 // Essential toolbar icon button — generous hit target (44px+) for one-handed
@@ -582,8 +583,8 @@ function iconBtn(active: boolean): React.CSSProperties {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
     background: active ? 'rgba(167,139,250,0.18)' : 'transparent',
     border: 'none', borderRadius: '14px', padding: '6px 14px', minWidth: '56px', minHeight: '44px',
-    color: active ? '#DDD3FF' : '#EDEBFF', cursor: 'pointer',
+    color: active ? '#DDD3FF' : ventsColors.ink1, cursor: 'pointer',
   };
 }
 const iconBtnLabel: React.CSSProperties = { fontSize: '10px', fontWeight: 700 };
-const sectionLabel: React.CSSProperties = { margin: '0 0 8px', color: '#8B8FA8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' };
+const sectionLabel: React.CSSProperties = { margin: '0 0 8px', color: ventsColors.ink3, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' };

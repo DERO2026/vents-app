@@ -60,6 +60,7 @@ import { AdminServiceBookingsScreen } from '../src/app/components/admin/AdminSer
 import { AdminOrganizerRequestsScreen } from '../src/app/components/admin/AdminOrganizerRequestsScreen';
 import { AdminProviderRequestsScreen } from '../src/app/components/admin/AdminProviderRequestsScreen';
 import App from '../src/app/App';
+import { ImageCropperModal } from '../src/app/components/ImageCropperModal';
 
 // Shared fixture admin identity for every Admin Console harness route below
 // -- a full Admin (Root+Admin tier), matching the "Full admin view" the
@@ -475,10 +476,45 @@ const SCREENS: Record<string, () => JSX.Element> = {
   promotions: () => (
     <PromotionsScreen onBack={() => {}} currentUser={FIXTURE_USER} onPromoteEvent={() => {}} />
   ),
+
+  // Stage 9: ImageCropperModal.tsx. ?variant=flyer|avatar selects the
+  // mode; ?cropperError=1 feeds a corrupt image so the decode fails on
+  // Done, exercising the error-state styling.
+  imagecropper: () => (
+    <ImageCropperModal
+      imageSrc={cropperError ? 'data:image/png;base64,not-a-real-image' : CROPPER_SAMPLE_IMAGE}
+      onCropComplete={() => {}}
+      onClose={() => {}}
+      variant={cropperVariant}
+      title={cropperVariant === 'avatar' ? 'Crop Photo' : 'Crop Flyer'}
+    />
+  ),
 };
+
+// Stage 9: ImageCropperModal.tsx. A synthetic landscape "flyer" SVG (gradient
+// + title block) stands in for an organizer's uploaded poster -- large enough
+// to exercise the flyer variant's smart-crop/safe-area/zoom-to-fit UI.
+const CROPPER_SAMPLE_IMAGE =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#7B2FBE"/>
+          <stop offset="1" stop-color="#1A1724"/>
+        </linearGradient>
+      </defs>
+      <rect width="1600" height="1000" fill="url(#g)"/>
+      <circle cx="1250" cy="260" r="220" fill="rgba(255,255,255,0.12)"/>
+      <text x="800" y="480" font-size="110" font-family="sans-serif" fill="#fff" text-anchor="middle" font-weight="700">LAGOS MUSIC FEST</text>
+      <text x="800" y="580" font-size="48" font-family="sans-serif" fill="#EDEAF5" text-anchor="middle">Dec 12 · Eko Atlantic</text>
+    </svg>`
+  );
 
 const params = new URLSearchParams(window.location.search);
 const screenKey = params.get('screen') || 'welcome';
+const cropperVariant = params.get('variant') === 'flyer' ? 'flyer' : 'avatar';
+const cropperError = params.get('cropperError') === '1';
 const Screen = SCREENS[screenKey];
 
 createRoot(document.getElementById('root')!).render(
