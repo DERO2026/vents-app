@@ -8,30 +8,27 @@ import { join } from 'node:path';
 // invite_recruiter_partnership / respond_to_recruiter_invitation (0193,
 // carried into 0196) inserted type 'recruiter_invitation' /
 // 'recruiter_invitation_response', which the constraint (0005) rejects.
-// 0197 switches both to 'social'.
+// 0197 switches both to 'social'. The same failure in admin_send_announcement
+// (0191, 'announcement') is fixed by 0198, which adds 'announcement' to the
+// constraint and drops the dead send_event_reminders() ('event_reminder').
 //
 // Static: parses the migration SQL. It checks that the LATEST definition of
-// every function (across all migrations, in order) only inserts literal
-// notification types the constraint allows. Real execution against the
-// constraint lives in scripts/local-pg-test/run-recruiter-invite-target-verification.sh
-// and run-vents-earn-verification.sh (whose schema now carries the
-// production constraint verbatim).
+// every function still defined after all migrations (in order, honouring
+// DROP FUNCTION) only inserts literal notification types the LATEST
+// notifications_type_check allows. There is deliberately no exceptions list:
+// a function inserting a new type must extend the constraint, or use an
+// existing type, in the same change. Real execution against the constraint
+// lives in scripts/local-pg-test/run-recruiter-invite-target-verification.sh,
+// run-vents-earn-verification.sh and run-notification-type-verification.sh
+// (whose schemas carry the production constraint verbatim).
 
 const dir = join(__dirname, '..', '..', 'supabase', 'migrations');
+// notifications_type_check as 0005 created it and production enforced it
+// until 0198. Later definitions may add values but must keep all of these.
+const ORIGINAL_TYPES = ['booking', 'broadcast', 'event_update', 'message', 'promo', 'reminder', 'sale', 'social'];
 let allowed: Set<string>;
+let constraintHistory: { file: string; types: string[] }[];
 let latestBodies: Map<string, { file: string; body: string }>;
-
-// Pre-existing violations, not introduced or fixed here; listed so any NEW
-// violation fails this test.
-//   - send_event_reminders (0004): 'event_reminder'. No caller (superseded by
-//     run_event_reminder_sweep, which uses 'reminder'); project_admin only.
-//   - admin_send_announcement (0191): 'announcement' for the organizers /
-//     service_providers audiences -- live, and rejected by the constraint
-//     exactly like the recruiter types were. Needs its own fix.
-const KNOWN_PREEXISTING: Record<string, string[]> = {
-  send_event_reminders: ['event_reminder'],
-  admin_send_announcement: ['announcement'],
-};
 
 // Splits `s` on commas at parenthesis depth 0, ignoring commas inside
 // single-quoted literals.
@@ -108,29 +105,53 @@ function notificationTypeExpressions(body: string): string[] {
   return out;
 }
 
-beforeAll(() => {
-  const m0005 = readFileSync(join(dir, '0005_primary_unique_check_constraints.sql'), 'utf8');
-  const check = m0005.match(/ADD CONSTRAINT notifications_type_check CHECK \(\(type = ANY \(ARRAY\[(.*?)\]\)\)\);/)?.[1] ?? '';
-  allowed = new Set([...check.matchAll(/'([a-z_]+)'::text/g)].map((x) => x[1]));
+const migrationFiles = () => readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
 
+beforeAll(() => {
+  constraintHistory = [];
   latestBodies = new Map();
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+  for (const file of migrationFiles()) {
     const sql = readFileSync(join(dir, file), 'utf8');
-    for (const fm of sql.matchAll(/CREATE OR REPLACE FUNCTION (?:public\.)?(\w+)\([\s\S]*?\$(\w*)\$([\s\S]*?)\$\2\$/gi)) {
-      latestBodies.set(fm[1], { file, body: fm[3] });
+    for (const cm of sql.matchAll(/ADD CONSTRAINT notifications_type_check CHECK \(\(type = ANY \(ARRAY\[(.*?)\]\)\)\);/g)) {
+      constraintHistory.push({ file, types: [...cm[1].matchAll(/'([a-z_]+)'::text/g)].map((x) => x[1]) });
     }
+    // Replay CREATE OR REPLACE / DROP FUNCTION in file order, so a function
+    // a later migration drops is no longer checked.
+    const events: { at: number; apply: () => void }[] = [];
+    for (const fm of sql.matchAll(/CREATE OR REPLACE FUNCTION (?:public\.)?(\w+)\([\s\S]*?\$(\w*)\$([\s\S]*?)\$\2\$/gi)) {
+      events.push({ at: fm.index!, apply: () => latestBodies.set(fm[1], { file, body: fm[3] }) });
+    }
+    for (const dm of sql.matchAll(/^DROP FUNCTION (?:IF EXISTS )?(?:public\.)?(\w+)\(/gim)) {
+      events.push({ at: dm.index!, apply: () => latestBodies.delete(dm[1]) });
+    }
+    events.sort((a, b) => a.at - b.at).forEach((e) => e.apply());
   }
+  allowed = new Set(constraintHistory[constraintHistory.length - 1]?.types ?? []);
 });
 
 describe('notifications_type_check', () => {
-  it('is the 8-value constraint production enforces', () => {
-    expect([...allowed].sort()).toEqual(['booking', 'broadcast', 'event_update', 'message', 'promo', 'reminder', 'sale', 'social']);
+  it('0005 created it with the original eight values', () => {
+    expect(constraintHistory[0].file).toBe('0005_primary_unique_check_constraints.sql');
+    expect([...constraintHistory[0].types].sort()).toEqual(ORIGINAL_TYPES);
   });
 
-  it('no migration ever relaxes or drops it', () => {
-    for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
+  it('the latest definition (0198) is the original eight plus \'announcement\', and nothing else', () => {
+    expect(constraintHistory[constraintHistory.length - 1].file).toBe('0198_notifications_type_check_allow_announcement.sql');
+    expect([...allowed].sort()).toEqual([...ORIGINAL_TYPES, 'announcement'].sort());
+  });
+
+  it('every redefinition keeps all original values (it is only ever extended)', () => {
+    for (const { file, types } of constraintHistory) {
+      for (const t of ORIGINAL_TYPES) expect(types, `${file} dropped '${t}'`).toContain(t);
+    }
+  });
+
+  it('it is never dropped without being re-added later in the same migration', () => {
+    for (const file of migrationFiles()) {
       const sql = readFileSync(join(dir, file), 'utf8');
-      expect(sql, file).not.toMatch(/DROP CONSTRAINT (IF EXISTS )?notifications_type_check/i);
+      const drop = sql.search(/DROP CONSTRAINT (IF EXISTS )?notifications_type_check/i);
+      if (drop === -1) continue;
+      expect(sql.slice(drop), file).toMatch(/ADD CONSTRAINT notifications_type_check CHECK/);
     }
   });
 });
@@ -155,7 +176,19 @@ describe('every function\'s latest definition inserts only allowed notification 
     }
   });
 
-  it('all literal types across every function\'s latest definition are allowed (known pre-existing exceptions aside)', () => {
+  it('admin_send_announcement\'s role-scoped \'announcement\' inserts are now allowed (0191, fixed by 0198)', () => {
+    const latest = latestBodies.get('admin_send_announcement')!;
+    expect(latest.file).toBe('0191_admin_send_announcement.sql');
+    expect(notificationTypeExpressions(latest.body).sort()).toEqual(["'announcement'", "'announcement'", "'broadcast'"]);
+    expect(allowed.has('announcement')).toBe(true);
+  });
+
+  it('send_event_reminders() (inserted the rejected \'event_reminder\') is dropped by 0198', () => {
+    expect(latestBodies.has('send_event_reminders')).toBe(false);
+    expect(allowed.has('event_reminder')).toBe(false);
+  });
+
+  it('all literal types across every function\'s latest definition are allowed -- no exceptions', () => {
     const violations: string[] = [];
     let literalCount = 0;
     for (const [fn, { file, body }] of latestBodies) {
@@ -163,10 +196,26 @@ describe('every function\'s latest definition inserts only allowed notification 
         const lit = expr.match(/^'([a-z_]+)'$/)?.[1];
         if (!lit) continue; // a parameter or expression (e.g. notify_user's p_type) -- not statically checkable
         literalCount++;
-        if (!allowed.has(lit) && !(KNOWN_PREEXISTING[fn] ?? []).includes(lit)) violations.push(`${fn} (${file}): '${lit}'`);
+        if (!allowed.has(lit)) violations.push(`${fn} (${file}): '${lit}'`);
       }
     }
     expect(literalCount).toBeGreaterThan(30); // the parser actually found the inserts
     expect(violations).toEqual([]);
+  });
+});
+
+describe('frontend notification types match the constraint', () => {
+  const components = join(__dirname, '..', 'app', 'components');
+
+  it('the Notification.type union in types.ts lists exactly the allowed types', () => {
+    const src = readFileSync(join(components, 'types.ts'), 'utf8');
+    const union = src.match(/export interface Notification \{[\s\S]*?\n\s*type: ([^;]+);/)?.[1] ?? '';
+    expect([...union.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]).sort()).toEqual([...allowed].sort());
+  });
+
+  it('NotificationsScreen TYPE_COLORS has a colour for exactly the allowed types', () => {
+    const src = readFileSync(join(components, 'NotificationsScreen.tsx'), 'utf8');
+    const body = src.match(/const TYPE_COLORS: Record<string, string> = \{([\s\S]*?)\};/)?.[1] ?? '';
+    expect([...body.matchAll(/^\s*(\w+):/gm)].map((x) => x[1]).sort()).toEqual([...allowed].sort());
   });
 });

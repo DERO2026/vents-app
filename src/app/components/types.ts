@@ -223,7 +223,7 @@ export interface NotificationPushData {
 
 export interface Notification {
   id: string;
-  type: 'reminder' | 'booking' | 'promo' | 'social' | 'broadcast' | 'message' | 'sale' | 'event_update';
+  type: 'reminder' | 'booking' | 'promo' | 'social' | 'broadcast' | 'message' | 'sale' | 'event_update' | 'announcement';
   title: string;
   body: string;
   time: string;
