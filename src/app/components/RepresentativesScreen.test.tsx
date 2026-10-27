@@ -10,6 +10,12 @@ import { createRoot, Root } from 'react-dom/client';
 const rpcCalls: { name: string; args: any }[] = [];
 let recruiterRowExists = false;
 let recruiterStatusError: string | null = null;
+// Distinct from recruiterStatusError (a Supabase-returned {error} field):
+// this simulates the query itself THROWING/rejecting -- a network failure
+// or client-side exception, not a declared error -- which is the specific
+// failure mode a bare `await` with no try/catch would leave unhandled.
+let recruiterStatusThrows = false;
+let targetRoleThrows = false;
 let ownProviderId: string | null = null;
 let partnershipsError: string | null = null;
 let lastOrFilter: string | null = null;
@@ -39,6 +45,9 @@ vi.mock('../../lib/supabase', () => ({
           if (table === 'recruiters') {
             // Only ever queried by id (the PK, which IS the user's auth
             // id) -- never by a non-existent user_id column.
+            if (recruiterStatusThrows) {
+              return { then: () => { throw new Error('network unreachable'); }, maybeSingle: () => Promise.reject(new Error('network unreachable')) };
+            }
             return singleRowResult(
               recruiterStatusError
                 ? { data: null, error: { message: recruiterStatusError } }
@@ -52,10 +61,16 @@ vi.mock('../../lib/supabase', () => ({
             if (column === 'user_id' && value === 'u1') {
               return singleRowResult({ data: ownProviderId ? { id: ownProviderId } : null, error: null });
             }
+            if (targetRoleThrows) {
+              return { then: () => { throw new Error('network unreachable'); }, maybeSingle: () => Promise.reject(new Error('network unreachable')) };
+            }
             const resolved = providerByUserId[value];
             return singleRowResult({ data: resolved ? { id: resolved } : null, error: null });
           }
           if (table === 'events') {
+            if (targetRoleThrows) {
+              return { then: () => { throw new Error('network unreachable'); }, maybeSingle: () => Promise.reject(new Error('network unreachable')) };
+            }
             const isOrganizer = organizerUserIds.includes(value);
             return singleRowResult({ data: isOrganizer ? { id: 'ev-1' } : null, error: null });
           }
@@ -108,6 +123,8 @@ beforeEach(() => {
   rpcResponses = {};
   recruiterRowExists = false;
   recruiterStatusError = null;
+  recruiterStatusThrows = false;
+  targetRoleThrows = false;
   ownProviderId = null;
   partnershipsError = null;
   lastOrFilter = null;
@@ -142,6 +159,25 @@ async function mount() {
 }
 
 describe('RepresentativesScreen', () => {
+  // The actual production "black screen": every prior round's tests here
+  // only asserted on `container.textContent`, which passes even when text
+  // is rendered in literally invisible ink -- a real headless-browser
+  // screenshot showed the DOM/text/layout were all correct, but every
+  // element inherited the app shell's `body { color: #000 }` with no
+  // override, rendering solid black on the app's #060A14 background. This
+  // asserts the actual fix: an explicit, non-black color set on the
+  // screen's root container (CSS `color` is inherited, so one override
+  // here covers every descendant -- no per-element color was ever needed
+  // or added elsewhere in this component).
+  it('sets an explicit, visible (non-black) text color on its root container', async () => {
+    await mount();
+    const root = container.querySelector('[data-testid="representatives-screen"]') as HTMLElement;
+    expect(root).toBeTruthy();
+    const color = root.style.color;
+    expect(color).toBeTruthy();
+    expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+  });
+
   it('prompts registration when the user is not yet a recruiter', async () => {
     await mount();
     expect(container.textContent).toContain('Become a Representative');
@@ -177,6 +213,43 @@ describe('RepresentativesScreen', () => {
     // Must not silently fall through to the registration prompt as if the
     // user were definitively not a recruiter.
     expect(container.textContent).not.toContain('Become a Representative');
+  });
+
+  it('a thrown exception in the recruiter-status check (not a declared Supabase error) resolves to a visible error, not a permanently blank/loading screen', async () => {
+    // This is the specific gap the fix closes: checkRecruiterStatus()
+    // previously had no try/catch, so a REJECTED promise (as opposed to a
+    // resolved promise carrying a Supabase {error} field, already covered
+    // above) would be an unhandled rejection that never updates isRecruiter
+    // -- the component would stay stuck on its initial loading state
+    // forever, indistinguishable from a true hang, with no visible
+    // indication anything went wrong and nothing for either React error
+    // boundary to catch (it never throws during render).
+    recruiterStatusThrows = true;
+    await mount();
+    expect(container.textContent).toMatch(/network unreachable/);
+    expect(container.querySelector('[data-testid="representatives-loading"]')).toBeNull();
+    expect(container.textContent).not.toContain('Become a Representative');
+  });
+
+  it('a thrown exception while resolving an invite target\'s organizer/provider role shows a visible error instead of hanging on "Checking..." forever', async () => {
+    recruiterRowExists = true;
+    targetRoleThrows = true;
+    await mount();
+    await act(async () => {
+      container.querySelector('input')!.dispatchEvent(new Event('focus'));
+    });
+    const input = container.querySelector('input') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+    await act(async () => {
+      setter.call(input, 'eventpro');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+    const inviteBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Invite');
+    await act(async () => { inviteBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    expect(container.textContent).toMatch(/network unreachable/);
+    expect(container.textContent).not.toContain('Checking organizer/provider status...');
   });
 
   it('an existing recruiter (recruiters.id = auth id) is detected correctly and the prompt does not render', async () => {

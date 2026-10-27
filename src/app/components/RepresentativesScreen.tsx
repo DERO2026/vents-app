@@ -75,18 +75,30 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   // not their raw user id, for the provider path.
   async function resolveTargetRole(userId: string) {
     setResolvingTarget(true);
-    const [organizerRes, providerRes] = await Promise.all([
-      supabase.from('events').select('id').eq('organizer_id', userId).maybeSingle(),
-      supabase.from('service_providers').select('id').eq('user_id', userId).maybeSingle(),
-    ]);
-    const isOrganizer = !organizerRes.error && !!organizerRes.data;
-    const isProvider = !providerRes.error && !!providerRes.data;
-    setTargetProviderId(providerRes.data?.id ?? null);
-    if (isOrganizer && isProvider) setTargetRole('both');
-    else if (isOrganizer) setTargetRole('organizer');
-    else if (isProvider) setTargetRole('provider');
-    else setTargetRole('neither');
-    setResolvingTarget(false);
+    try {
+      const [organizerRes, providerRes] = await Promise.all([
+        supabase.from('events').select('id').eq('organizer_id', userId).maybeSingle(),
+        supabase.from('service_providers').select('id').eq('user_id', userId).maybeSingle(),
+      ]);
+      const isOrganizer = !organizerRes.error && !!organizerRes.data;
+      const isProvider = !providerRes.error && !!providerRes.data;
+      setTargetProviderId(providerRes.data?.id ?? null);
+      if (isOrganizer && isProvider) setTargetRole('both');
+      else if (isOrganizer) setTargetRole('organizer');
+      else if (isProvider) setTargetRole('provider');
+      else setTargetRole('neither');
+    } catch (err) {
+      // A thrown exception here (network failure, client-side error) is
+      // NOT the same as a Supabase-returned `{error}` field above -- it
+      // would otherwise be an unhandled promise rejection that never
+      // updates targetRole/resolvingTarget, leaving the invite form stuck
+      // on "Checking organizer/provider status..." forever with no visible
+      // failure. Surface it the same way a declared Supabase error would be.
+      setInviteError(err instanceof Error ? err.message : 'Failed to check this user.');
+      setTargetRole('neither');
+    } finally {
+      setResolvingTarget(false);
+    }
   }
 
   useEffect(() => {
@@ -101,13 +113,28 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   // public.users(id) directly) -- there is no separate user_id column.
   async function checkRecruiterStatus() {
     setStatusError(null);
-    const { data, error } = await supabase.from('recruiters').select('id').eq('id', currentUser.id).maybeSingle();
-    if (error) {
-      setStatusError(error.message);
+    try {
+      const { data, error } = await supabase.from('recruiters').select('id').eq('id', currentUser.id).maybeSingle();
+      if (error) {
+        setStatusError(error.message);
+        setIsRecruiter(null);
+        return;
+      }
+      setIsRecruiter(!!data);
+    } catch (err) {
+      // This is the one check that runs unconditionally on mount, before
+      // the user has done anything. A thrown exception here (not a
+      // Supabase-returned `{error}`, which is already handled above) is an
+      // unhandled rejection that the caller (`void checkRecruiterStatus()`
+      // in a useEffect with no .catch) would otherwise swallow entirely --
+      // isRecruiter stays null forever and the screen is stuck on its
+      // loading state indefinitely, with nothing visible changing and no
+      // error reaching either React error boundary (this never throws
+      // during render). Surfacing it here is what turns "stuck forever"
+      // into "a loading state that resolves to a visible error."
+      setStatusError(err instanceof Error ? err.message : 'Could not check Representative status.');
       setIsRecruiter(null);
-      return;
     }
-    setIsRecruiter(!!data);
   }
 
   async function handleRegister() {
@@ -264,7 +291,20 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   }
 
   return (
-    <div data-testid="representatives-screen" style={{ minHeight: '100vh' }}>
+    // Root text color is set explicitly here because every descendant below
+    // relies on CSS inheritance for it (no element in this component sets
+    // its own `color`). Without this, the app's global `body { color: #000 }`
+    // base style wins: every heading/paragraph/button renders literally
+    // black-on-near-black (the app shell's #060A14 background), producing a
+    // layout-correct, data-correct, zero-console-error screen that is
+    // nonetheless completely invisible to every user -- confirmed by a real
+    // headless-browser render where the DOM/text content was all present and
+    // correct but the captured screenshot was solid black. This was the
+    // actual root cause of the reported "black screen," distinct from (and
+    // undiagnosable by) the stale-cache, CSP, network-failure, and
+    // currentUser-guard theories tested and eliminated in prior rounds, all
+    // of which only checked DOM/text presence, never rendered color.
+    <div data-testid="representatives-screen" style={{ minHeight: '100vh', color: '#F0F0FF' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16 }}>
         <button onClick={onBack} aria-label="Back"><ArrowLeft /></button>
         <h1>Representatives</h1>
