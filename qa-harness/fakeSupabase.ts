@@ -255,7 +255,12 @@ const FIXTURES: Record<string, Row[]> = {
       start_date: new Date(Date.now() + 3 * 86400000).toISOString(),
       end_date: new Date(Date.now() + 10 * 86400000).toISOString(),
       created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-      events: { id: 'evt-2', title: 'Comedy Night Abuja', image_url: null, event_date: new Date(Date.now() + 14 * 86400000).toISOString() },
+      // A data: URI, not an external host -- this sandbox's outbound
+      // network is blocked for everything but Supabase/Vercel, so a real
+      // remote image URL would just render as a broken image in a
+      // screenshot. This still exercises the real <img src=...> thumbnail
+      // code path exactly as a live events.image_url would.
+      events: { id: 'evt-2', title: 'Comedy Night Abuja', image_url: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzdCMkZCRSIvPjwvc3ZnPg==', event_date: new Date(Date.now() + 14 * 86400000).toISOString() },
     },
     {
       id: 'promo-3', event_id: 'evt-3', organizer_id: 'org-1', plan_type: 'trending', status: 'active',

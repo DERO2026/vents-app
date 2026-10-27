@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ventsColors } from '../../lib/ventsDesignTokens';
-import { ArrowLeft, TrendingUp, Star, Megaphone, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ventsColors, ventsRadii, ventsSpacing } from '../../lib/ventsDesignTokens';
+import { ArrowLeft, TrendingUp, Star, Megaphone, Clock, RefreshCw, AlertCircle, Layers, Sparkles } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 
@@ -85,6 +85,24 @@ function planIcon(plan: PromotionPlanType) {
   return Megaphone;
 }
 
+// Plan-type identity is deliberately a SEPARATE color axis from
+// STATUS_META below -- previously the plan icon chip just reused
+// whatever color the row's current status happened to be, so two
+// different promotion types with the same status (e.g. both "Active")
+// were only distinguishable by squinting at a tiny icon glyph. Trending
+// and Featured now carry their own fixed identity color regardless of
+// status, matching this engagement's standing "keep promotion types
+// visually distinct, don't make everything purple" rule from Stage 7.
+const PLAN_COLOR: Record<string, string> = {
+  trending: ventsColors.accent,
+  featured: '#FBBF24',
+  boosted: ventsColors.ink3,
+};
+
+function planColor(plan: PromotionPlanType): string {
+  return PLAN_COLOR[plan] ?? ventsColors.ink3;
+}
+
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -163,6 +181,22 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
     return () => clearInterval(id);
   }, []);
 
+  // Summary metrics -- computed entirely from the rows already fetched
+  // above (same deriveStatus used per-card below), not a new query or
+  // invented number. Mirrors the established metrics-grid hero pattern
+  // from OrganizerDashboard.tsx (icon chip + uppercase label + large
+  // value, 2-col mobile / 3-col desktop).
+  const metrics = useMemo(() => {
+    let active = 0;
+    let scheduled = 0;
+    for (const row of rows) {
+      const derived = deriveStatus(row, now);
+      if (derived === 'active') active += 1;
+      else if (derived === 'scheduled') scheduled += 1;
+    }
+    return { active, scheduled, total: rows.length };
+  }, [rows, now]);
+
   const sidebarItems = onNavigate
     ? [
         { key: 'overview', label: 'Overview', action: () => onNavigate('org-dashboard') },
@@ -177,6 +211,8 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
     <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <style>{`
         .promotions-cs-sidebar { display: none; }
+        .promotions-metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .promotions-cards-list { display: flex; flex-direction: column; gap: 12px; }
         @media (min-width: 900px) {
           .promotions-cs-shell { display: flex; align-items: flex-start; max-width: 1200px; width: 100%; margin: 0 auto; }
           .promotions-cs-sidebar {
@@ -188,6 +224,12 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
             font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent; background: none; text-align: left; width: 100%;
           }
           .promotions-cs-shell > main { max-width: none; margin: 0; }
+          /* Matches the established ManageEventsScreen.tsx desktop card-grid
+             breakpoints exactly (900px -> 2 col, 1300px -> 3 col). */
+          .promotions-cards-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; align-items: start; }
+        }
+        @media (min-width: 1300px) {
+          .promotions-cards-list { grid-template-columns: repeat(3, 1fr); }
         }
       `}</style>
 
@@ -236,7 +278,7 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
           </nav>
         )}
 
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px calc(32px + env(safe-area-inset-bottom, 0px))', maxWidth: '800px', width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px calc(32px + env(safe-area-inset-bottom, 0px))', maxWidth: '1100px', width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
           {loading ? (
             <div data-testid="promotions-loading" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '60px 0', color: ventsColors.ink2 }}>
               <RefreshCw size={22} style={{ animation: 'promotionsSpin 1s linear infinite' }} />
@@ -277,53 +319,112 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
               </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {rows.map((row) => {
-                const derived = deriveStatus(row, now);
-                const meta = STATUS_META[derived];
-                const Icon = planIcon(row.plan_type);
-                return (
+            <>
+              {/* Summary hero -- mirrors OrganizerDashboard.tsx's metrics-grid
+                  pattern (icon chip, uppercase label, large tabular value).
+                  All three numbers are derived from `rows`, already fetched
+                  above; nothing new is queried or invented. */}
+              <div className="promotions-metrics-grid" data-testid="promotions-metrics">
+                {([
+                  { key: 'active', label: 'Active now', value: metrics.active, icon: Sparkles, color: ventsColors.success },
+                  { key: 'scheduled', label: 'Scheduled', value: metrics.scheduled, icon: Clock, color: ventsColors.info },
+                  { key: 'total', label: 'Total promotions', value: metrics.total, icon: Layers, color: ventsColors.accent },
+                ] as const).map((m) => (
                   <div
-                    key={row.id}
-                    data-testid={`promotion-row-${row.id}`}
-                    style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px' }}
+                    key={m.key}
+                    data-testid={`promotions-metric-${m.key}`}
+                    style={{
+                      background: ventsColors.surface,
+                      border: `1px solid ${ventsColors.border}`,
+                      borderRadius: ventsRadii.lg,
+                      padding: '16px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                    }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${meta.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <Icon size={16} color={meta.color} />
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {row.events?.title || 'Event'}
-                          </p>
-                          <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>{planLabel(row.plan_type)}</p>
-                        </div>
-                      </div>
-                      <span
-                        data-testid={`promotion-status-${row.id}`}
-                        style={{ flexShrink: 0, fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px', background: meta.bg, color: meta.color, border: `1px solid ${meta.border}` }}
-                      >
-                        {meta.label}
-                      </span>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: `${m.color}1A`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
+                      <m.icon size={15} color={m.color} />
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', fontSize: '12px', color: ventsColors.ink2 }}>
-                      <span>{formatDate(row.start_date)} – {formatDate(row.end_date)}</span>
-                      {derived === 'active' && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: ventsColors.success }}>
-                          <Clock size={12} /> {formatRemaining(row.end_date, now)}
-                        </span>
-                      )}
-                      {derived === 'scheduled' && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: ventsColors.info }}>
-                          <Clock size={12} /> Starts {formatDate(row.start_date)}
-                        </span>
-                      )}
-                    </div>
+                    <span style={{ color: ventsColors.ink3, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>
+                      {m.label}
+                    </span>
+                    <span style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      {m.value}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+
+              <div className="promotions-cards-list">
+                {rows.map((row) => {
+                  const derived = deriveStatus(row, now);
+                  const meta = STATUS_META[derived];
+                  const Icon = planIcon(row.plan_type);
+                  const accent = planColor(row.plan_type);
+                  return (
+                    <div
+                      key={row.id}
+                      data-testid={`promotion-row-${row.id}`}
+                      style={{
+                        background: ventsColors.surface,
+                        border: `1px solid ${ventsColors.border}`,
+                        borderRadius: ventsRadii.lg,
+                        padding: ventsSpacing.cardPaddingLg,
+                        // A thin plan-colored left accent gives the card
+                        // itself an at-a-glance type identity, independent
+                        // of the status pill -- so Trending vs Featured
+                        // stays visually distinct from across the room, not
+                        // just on close inspection of a small icon glyph.
+                        borderLeft: `3px solid ${accent}`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                          {row.events?.image_url ? (
+                            <img
+                              src={row.events.image_url}
+                              alt=""
+                              style={{ width: '44px', height: '44px', borderRadius: ventsRadii.md, objectFit: 'cover', flexShrink: 0, border: `1px solid ${ventsColors.border}` }}
+                            />
+                          ) : (
+                            <div style={{ width: '44px', height: '44px', borderRadius: ventsRadii.md, background: `${accent}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Icon size={18} color={accent} />
+                            </div>
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {row.events?.title || 'Event'}
+                            </p>
+                            <p data-testid={`promotion-plan-${row.id}`} style={{ color: accent, fontSize: '12px', fontWeight: 700, margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Icon size={11} /> {planLabel(row.plan_type)}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          data-testid={`promotion-status-${row.id}`}
+                          style={{ flexShrink: 0, fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: ventsRadii.pill, background: meta.bg, color: meta.color, border: `1px solid ${meta.border}` }}
+                        >
+                          {meta.label}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', fontSize: '12px', color: ventsColors.ink2, paddingTop: '10px', borderTop: `1px solid ${ventsColors.divider}` }}>
+                        <span>{formatDate(row.start_date)} – {formatDate(row.end_date)}</span>
+                        {derived === 'active' && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: ventsColors.success, fontWeight: 600 }}>
+                            <Clock size={12} /> {formatRemaining(row.end_date, now)}
+                          </span>
+                        )}
+                        {derived === 'scheduled' && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: ventsColors.info, fontWeight: 600 }}>
+                            <Clock size={12} /> Starts {formatDate(row.start_date)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </main>
       </div>
