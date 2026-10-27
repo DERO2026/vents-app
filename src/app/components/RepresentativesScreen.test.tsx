@@ -159,6 +159,25 @@ async function mount() {
 }
 
 describe('RepresentativesScreen', () => {
+  // The actual production "black screen": every prior round's tests here
+  // only asserted on `container.textContent`, which passes even when text
+  // is rendered in literally invisible ink -- a real headless-browser
+  // screenshot showed the DOM/text/layout were all correct, but every
+  // element inherited the app shell's `body { color: #000 }` with no
+  // override, rendering solid black on the app's #060A14 background. This
+  // asserts the actual fix: an explicit, non-black color set on the
+  // screen's root container (CSS `color` is inherited, so one override
+  // here covers every descendant -- no per-element color was ever needed
+  // or added elsewhere in this component).
+  it('sets an explicit, visible (non-black) text color on its root container', async () => {
+    await mount();
+    const root = container.querySelector('[data-testid="representatives-screen"]') as HTMLElement;
+    expect(root).toBeTruthy();
+    const color = root.style.color;
+    expect(color).toBeTruthy();
+    expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+  });
+
   it('prompts registration when the user is not yet a recruiter', async () => {
     await mount();
     expect(container.textContent).toContain('Become a Representative');

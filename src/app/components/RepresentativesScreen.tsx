@@ -291,7 +291,20 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   }
 
   return (
-    <div data-testid="representatives-screen" style={{ minHeight: '100vh' }}>
+    // Root text color is set explicitly here because every descendant below
+    // relies on CSS inheritance for it (no element in this component sets
+    // its own `color`). Without this, the app's global `body { color: #000 }`
+    // base style wins: every heading/paragraph/button renders literally
+    // black-on-near-black (the app shell's #060A14 background), producing a
+    // layout-correct, data-correct, zero-console-error screen that is
+    // nonetheless completely invisible to every user -- confirmed by a real
+    // headless-browser render where the DOM/text content was all present and
+    // correct but the captured screenshot was solid black. This was the
+    // actual root cause of the reported "black screen," distinct from (and
+    // undiagnosable by) the stale-cache, CSP, network-failure, and
+    // currentUser-guard theories tested and eliminated in prior rounds, all
+    // of which only checked DOM/text presence, never rendered color.
+    <div data-testid="representatives-screen" style={{ minHeight: '100vh', color: '#F0F0FF' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16 }}>
         <button onClick={onBack} aria-label="Back"><ArrowLeft /></button>
         <h1>Representatives</h1>
