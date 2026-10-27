@@ -1,0 +1,32 @@
+-- Least-privilege column grants for public.direct_messages.
+--
+-- Prior state: `authenticated` (and `anon`, though RLS policies only name
+-- `authenticated` as an allowed role, so this was dormant for anon) held
+-- table-level UPDATE on every column, including body/sender_id/recipient_id/
+-- image_url/media_type/reply_to_id/event_id/duration_seconds/created_at/id.
+-- The existing `dm_update` RLS policy only scopes which ROWS a sender or
+-- recipient may touch (`auth.uid() = sender_id OR auth.uid() = recipient_id`
+-- on both USING and WITH CHECK) -- it does not restrict which COLUMNS a
+-- matching row's UPDATE may change. Row-level security and column-level
+-- grants are independent, composable restrictions in Postgres; RLS alone
+-- does not substitute for narrow grants.
+--
+-- The only two legitimate direct client-side UPDATE paths to this table
+-- (confirmed by reading ConversationScreen.tsx) are:
+--   1. The recipient marking their own incoming messages read: sets only
+--      `read_at`.
+--   2. The sender soft-deleting their own sent message: sets only
+--      `deleted_by_sender`.
+-- Every other write (insert of a new message, with body/sender_id/
+-- recipient_id/image_url/media_type/reply_to_id/event_id/duration_seconds)
+-- goes through the SECURITY DEFINER function `send_direct_message`, which
+-- runs as its defining owner and is unaffected by `authenticated`'s own
+-- grants. Nothing legitimate needs `authenticated` to UPDATE body,
+-- sender_id, recipient_id, image_url, media_type, reply_to_id, event_id,
+-- duration_seconds, created_at, or id directly.
+
+REVOKE UPDATE ON public.direct_messages FROM authenticated, anon;
+GRANT UPDATE (read_at, deleted_by_sender) ON public.direct_messages TO authenticated;
+-- anon is not named in any RLS policy on this table (dm_select/dm_update/
+-- dm_delete all specify `TO authenticated` only), so anon gets no UPDATE
+-- grant back at all -- it never had a legitimate path here.
