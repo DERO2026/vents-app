@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Real-execution verification for migration 0196 (Representatives invite
-# eligibility honours the Admin-granted Organizer capability).
+# Real-execution verification for migrations 0196 (Representatives invite
+# eligibility honours the Admin-granted Organizer capability) and 0197
+# (VENTS Earn notifications use a type notifications_type_check allows).
 #
 # Reproduces the production report -- a user with users.is_organizer =
 # true and users.is_service_provider = true (granted in the Admin
@@ -22,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 M0193="$REPO_ROOT/supabase/migrations/0193_vents_earn_foundation.sql"
 M0196="$REPO_ROOT/supabase/migrations/0196_recruiter_invite_target_uses_organizer_capability.sql"
+M0197="$REPO_ROOT/supabase/migrations/0197_vents_earn_notifications_use_valid_type.sql"
 DB_NAME="vents_local_pg_invite_target_test"
 PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME")
 
@@ -97,14 +99,31 @@ expect_error "0193 rejects a capability-granted organizer with no events (the de
   "SET test.uid='$RECRUITER'; SELECT public.invite_recruiter_partnership('$CAP_ORG', NULL, 10000);"
 
 "${PSQL[@]}" -q -f "$M0196" >/dev/null
-echo "== After 0196 =="
+echo "== After 0196 alone: reproduce the production Send Invitation failure =="
+expect_value "resolver: dero-shaped user is eligible on 0196" "$(target "$RECRUITER" "$CAP_ORG")" "true|"
+expect_error "0196 invite fails on the real notifications_type_check (type 'recruiter_invitation')" \
+  'violates check constraint "notifications_type_check"' \
+  "SET test.uid='$RECRUITER'; SELECT public.invite_recruiter_partnership('$CAP_ORG', NULL, 10000);"
+expect_value "the failed invite left nothing behind (no partnership, no notification)" \
+  "SELECT (SELECT count(*) FROM public.recruiter_partnerships) || '/' || (SELECT count(*) FROM public.notifications);" "0/0"
+
+"${PSQL[@]}" -q -f "$M0197" >/dev/null
+echo "== After 0196 + 0197 =="
 
 echo "-- Regression: the exact reported case --"
 expect_value "resolver: dero-shaped user is an organizer with no provider row" "$(target "$RECRUITER" "$CAP_ORG")" "true|"
 expect_ok "invite_recruiter_partnership accepts the dero-shaped user as organizer" \
   "SET test.uid='$RECRUITER'; SELECT public.invite_recruiter_partnership('$CAP_ORG', NULL, 10000);"
 expect_value "the pending partnership and the recipient notification exist" \
-  "SELECT (SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER' AND organizer_id='$CAP_ORG' AND status='pending') || '/' || (SELECT count(*) FROM public.notifications WHERE user_id='$CAP_ORG' AND type='recruiter_invitation');" "1/1"
+  "SELECT (SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER' AND organizer_id='$CAP_ORG' AND status='pending') || '/' || (SELECT count(*) FROM public.notifications WHERE user_id='$CAP_ORG' AND type='social' AND push_data ? 'partnershipId');" "1/1"
+expect_value "the invitation notification uses a type the constraint allows ('social')" \
+  "SELECT string_agg(type, ',') FROM public.notifications WHERE user_id='$CAP_ORG' AND push_data ? 'partnershipId';" "social"
+expect_ok "the invited organizer accepts (response notification must also satisfy the constraint)" \
+  "SET test.uid='$CAP_ORG'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER' AND organizer_id='$CAP_ORG' AND status='pending'), true);"
+expect_value "the recruiter's response notification uses 'social'" \
+  "SELECT string_agg(type, ',') FROM public.notifications WHERE user_id='$RECRUITER' AND push_data ? 'partnershipId';" "social"
+expect_ok "re-invite the same organizer (previous one accepted) to exercise the pending-uniqueness rule" \
+  "SET test.uid='$RECRUITER'; SELECT public.invite_recruiter_partnership('$CAP_ORG', NULL, 10000);"
 expect_error "a second pending invite to the same organizer is still blocked by 0193's uniqueness" \
   "duplicate key" \
   "SET test.uid='$RECRUITER'; SELECT public.invite_recruiter_partnership('$CAP_ORG', NULL, 10000);"
