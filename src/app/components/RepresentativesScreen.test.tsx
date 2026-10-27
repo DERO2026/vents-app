@@ -271,7 +271,7 @@ describe('RepresentativesScreen', () => {
     expect(container.querySelector('[data-testid="search-result"]')?.textContent).toContain('eventpro');
   });
 
-  it('sending an invite rejects a commission split above 10%', async () => {
+  it('the invite form has no commission-split input or slider -- the arrangement is fixed, not negotiated', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -282,20 +282,12 @@ describe('RepresentativesScreen', () => {
     await act(async () => { inviteBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
 
-    const splitInput = container.querySelector('input[type="number"]') as HTMLInputElement;
-    const setter2 = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(splitInput), 'value')!.set!;
-    await act(async () => { setter2.call(splitInput, '25'); splitInput.dispatchEvent(new Event('input', { bubbles: true })); });
-    await flush();
-
-    const sendBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Send Invitation')!;
-    await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-
-    expect(container.textContent).toMatch(/between 0% and 10%/);
-    expect(rpcCalls.some((c) => c.name === 'invite_recruiter_partnership')).toBe(false);
+    expect(container.querySelector('[data-testid="invite-form"] input[type="number"]')).toBeFalsy();
+    expect(container.textContent).not.toMatch(/5%/);
+    expect(container.textContent).not.toMatch(/[Cc]ommission split \(%\)/);
   });
 
-  it('sending a valid invite calls invite_recruiter_partnership with bps, not a percentage', async () => {
+  it('sending a valid invite always calls invite_recruiter_partnership with the fixed full commission (10000 bps), never a UI-derived value', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -311,7 +303,15 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 500 });
+    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
+  });
+
+  it('describes the commission arrangement as the full, fixed VENTS commission -- never "5%" or a negotiable split', async () => {
+    recruiterRowExists = false;
+    await mount();
+    expect(container.textContent).toMatch(/full commission/i);
+    expect(container.textContent).not.toMatch(/5%/);
+    expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
   });
 
   it('resolves the caller\'s own service_providers.id before filtering incoming provider-side invitations', async () => {
@@ -374,7 +374,7 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 500 });
+    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 10000 });
   });
 
   it('a search result that is neither an organizer nor a provider has no Send Invitation action, with a clear reason shown', async () => {
@@ -434,5 +434,224 @@ describe('RepresentativesScreen', () => {
     await mount();
     const text = container.textContent || '';
     expect(text).not.toMatch(/earned|payout|withdraw.*commission|\$\d/i);
+  });
+
+  // Mobile UI fix: the root-container color override is necessary but not
+  // sufficient -- a nested element setting its OWN `color` back to black
+  // (or omitting it where a wrapper breaks inheritance) would reintroduce
+  // the exact "data-correct, zero-errors, invisible text" failure mode on
+  // just that element. These assert every major state's visible text is
+  // explicitly non-black, not just the root.
+  describe('mobile UI: explicit non-black text in every state', () => {
+    const notBlack = (el: Element | null) => {
+      expect(el).toBeTruthy();
+      const color = (el as HTMLElement).style.color;
+      expect(color).toBeTruthy();
+      expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+    };
+
+    it('loading state: the "Loading..." text has an explicit non-black color', async () => {
+      // Checked before the mocked status-check promise resolves (no flush),
+      // since isRecruiter starts null and this is the one render pass where
+      // that's still true.
+      root = createRoot(container);
+      act(() => {
+        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+      });
+      const loading = container.querySelector('[data-testid="representatives-loading"] p');
+      notBlack(loading);
+    });
+
+    it('registration (empty/prompt) state: the prompt paragraph and button text have explicit non-black colors', async () => {
+      await mount();
+      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('Become a VENTS Representative'));
+      notBlack(prompt ?? null);
+      const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Become a Representative');
+      expect(btn).toBeTruthy();
+      notBlack(btn ?? null);
+    });
+
+    it('error state: a visible error message has an explicit non-black color', async () => {
+      recruiterStatusError = 'connection reset';
+      await mount();
+      const alert = container.querySelector('[role="alert"]');
+      notBlack(alert);
+    });
+
+    it('populated state: a search result row and its Invite button have explicit non-black colors', async () => {
+      recruiterRowExists = true;
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => {
+        setter.call(input, 'event');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]');
+      expect(row).toBeTruthy();
+      notBlack(row?.querySelector('span') ?? null);
+      notBlack(row?.querySelector('button') ?? null);
+    });
+
+    it('team/empty-list state: the "no partnerships" message has an explicit non-black color', async () => {
+      recruiterRowExists = true;
+      await mount();
+      const teamTab = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('My Team'))!;
+      await act(async () => { teamTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      const empty = Array.from(container.querySelectorAll('[data-testid="team-list"] p')).find((p) => p.textContent?.includes('no partnerships'));
+      notBlack(empty ?? null);
+    });
+  });
+
+  // The three sub-tabs must be visually distinguishable, not just
+  // semantically marked via aria-selected -- a real user scanning the
+  // screen needs a visible active-state cue, not just an accessibility
+  // attribute with no corresponding style difference.
+  it('the active tab has a visually distinct style from inactive tabs', async () => {
+    await mount();
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    expect(tabs).toHaveLength(3);
+    const findTab = tabs.find((t) => t.textContent?.includes('Find'))!;
+    const invitationsTab = tabs.find((t) => t.textContent?.includes('Invitations'))!;
+    expect((findTab as HTMLElement).getAttribute('aria-selected')).toBe('true');
+    expect((invitationsTab as HTMLElement).getAttribute('aria-selected')).toBe('false');
+    // The active tab's background must differ from an inactive tab's --
+    // this is the actual visual cue, not merely the aria attribute.
+    const activeBg = (findTab as HTMLElement).style.background;
+    const inactiveBg = (invitationsTab as HTMLElement).style.background;
+    expect(activeBg).toBeTruthy();
+    expect(activeBg).not.toBe(inactiveBg);
+  });
+
+  // Mobile viewport width: nothing in this component should be able to
+  // force horizontal overflow under realistic content -- a long username
+  // in a search result is the one place free-form external text flows
+  // into a fixed-width row next to a button, so it needs explicit
+  // overflow handling rather than a fixed pixel width.
+  // Mobile UI redesign: avatar-chip initials, skeleton loading, and empty
+  // states (approved design proposal). These are additive visual
+  // regression tests -- no RPC/eligibility/authorization logic involved.
+  describe('mobile UI redesign: initials, skeletons, empty states', () => {
+    it('search results and partnership rows show a two-letter initials avatar', async () => {
+      recruiterRowExists = true;
+      searchResults = [{ id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null }];
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, 'event'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]')!;
+      // "eventpro" has no space -> first two characters, uppercased.
+      expect(row.textContent).toContain('EV');
+    });
+
+    it('a two-word name produces initials from the first letter of each word', async () => {
+      recruiterRowExists = true;
+      searchResults = [{ id: 'org-1', username: '', fullName: 'Event Pro', avatarUrl: null } as any];
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, 'event'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]')!;
+      expect(row.textContent).toContain('EP');
+    });
+
+    it('a single very long username still produces a two-letter initials avatar, not an overflowing string', async () => {
+      recruiterRowExists = true;
+      searchResults = [{ id: 'long-1', username: 'premiumeventmanagementservicesltd_official_account_2026', fullName: '', avatarUrl: null } as any];
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, 'premium'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]')!;
+      expect(row.textContent).toContain('PR');
+      // Full name still present in the truncated span for accessibility/search.
+      expect(row.textContent).toContain('premiumeventmanagementservicesltd_official_account_2026');
+    });
+
+    it('shows a skeleton loading placeholder (not a bare "Loading..." string) while partnerships are being fetched', async () => {
+      recruiterRowExists = true;
+      await mount();
+      const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('My Team'))!;
+      // Synchronous act: setLoadingLists(true) runs synchronously at the
+      // start of loadPartnerships(), before any await -- so a sync click +
+      // sync render check catches the loading frame before the mocked
+      // query's promise has had a chance to resolve.
+      act(() => {
+        tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      const shimmerEls = Array.from(container.querySelectorAll('div')).filter(
+        (d) => (d as HTMLElement).style.animation?.includes('repScreenShimmer')
+      );
+      expect(shimmerEls.length).toBeGreaterThan(0);
+      await flush();
+    });
+
+    it('empty Find state (no search typed yet) shows guidance text', async () => {
+      recruiterRowExists = true;
+      await mount();
+      expect(container.textContent).toMatch(/Search to get started/i);
+    });
+
+    it('empty Invitations state shows a clear "no pending invitations" message', async () => {
+      recruiterRowExists = true;
+      await mount();
+      await act(async () => {
+        const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('Invitations'))!;
+        tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flush();
+      expect(container.textContent).toMatch(/No pending invitations/i);
+    });
+
+    it('empty My Team state shows guidance text and remains non-black', async () => {
+      recruiterRowExists = true;
+      await mount();
+      await act(async () => {
+        const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('My Team'))!;
+        tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flush();
+      expect(container.textContent).toMatch(/no partnerships/i);
+      const title = Array.from(container.querySelectorAll('[data-testid="team-list"] p')).find((p) =>
+        p.textContent?.toLowerCase().includes('no partnerships')
+      );
+      expect(title).toBeTruthy();
+      const color = (title as HTMLElement).style.color;
+      expect(color).toBeTruthy();
+      expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+    });
+
+    it('an error banner\'s role="alert" container itself has an explicit non-black color, not just its nested text', async () => {
+      recruiterStatusError = 'connection reset';
+      await mount();
+      const alert = container.querySelector('[role="alert"]') as HTMLElement;
+      expect(alert).toBeTruthy();
+      expect(alert.style.color).toBeTruthy();
+      expect(alert.style.color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+    });
+  });
+
+  it('a long username in a search result does not force a fixed width wider than its row (overflow-safe)', async () => {
+    recruiterRowExists = true;
+    await mount();
+    const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+    await act(async () => {
+      setter.call(input, 'event');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+    const span = container.querySelector('[data-testid="search-result"] span') as HTMLElement;
+    expect(span).toBeTruthy();
+    // No fixed pixel width; overflow is handled via ellipsis/truncation
+    // rather than letting the row grow wider than its mobile container.
+    expect(span.style.width).toBe('');
+    expect(span.style.overflow).toBe('hidden');
+    expect(span.style.whiteSpace).toBe('nowrap');
   });
 });
