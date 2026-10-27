@@ -28,6 +28,7 @@ const TYPE_COLORS: Record<string, string> = {
   message: ventsColors.info,
   sale: ventsColors.success,
   event_update: ventsColors.accent,
+  announcement: ventsColors.pending,
 };
 
 export function NotificationsScreen({
