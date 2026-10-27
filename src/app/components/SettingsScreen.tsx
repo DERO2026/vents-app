@@ -10,7 +10,7 @@ import {
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, Copy, ThumbsUp,
   Eye, EyeOff, Check, Clock, MessageSquare, User, Link2,
-  Mail, ArrowLeftRight, Moon, Wallet, Gift, Receipt, Info, ShieldCheck, Sparkles,
+  Mail, ArrowLeftRight, Moon, Wallet, Gift, Receipt, Info, ShieldCheck, Sparkles, Users,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import { compressImage } from '../../lib/compressImage';
@@ -2061,6 +2061,8 @@ export function SettingsScreen({
           <SettingRow icon={Wallet} label="Wallet & Cards" onPress={() => onNavigate?.('customer-wallet')} />
           <Divider />
           <SettingRow icon={Gift} label="Vents Cents" onPress={() => onNavigate?.('referral')} />
+          <Divider />
+          <SettingRow icon={Users} label="Representatives" onPress={() => onNavigate?.('representatives')} />
           <Divider />
           {/* No separate transaction-history screen exists -- the wallet
               screen already lists real transactions, so this is a second
