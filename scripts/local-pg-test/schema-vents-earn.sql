@@ -58,7 +58,11 @@ CREATE TABLE public.notifications (
   read       boolean DEFAULT false,
   icon       text,
   push_data  jsonb,
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  -- Verbatim from production (0005_primary_unique_check_constraints.sql).
+  -- Without it, 0193's invalid notification types passed locally and only
+  -- failed in production.
+  CONSTRAINT notifications_type_check CHECK ((type = ANY (ARRAY['reminder'::text, 'booking'::text, 'promo'::text, 'social'::text, 'broadcast'::text, 'message'::text, 'sale'::text, 'event_update'::text])))
 );
 
 DO $$ BEGIN

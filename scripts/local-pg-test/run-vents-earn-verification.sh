@@ -87,6 +87,15 @@ echo "== Applying minimal schema =="
 echo "== Applying migration under test =="
 "${PSQL[@]}" -f "$MIGRATION_FILE"
 
+# 0193 alone cannot create an invitation against the real
+# notifications_type_check (see 0197), so by default this replays the same
+# follow-ups production runs. FOLLOWUP_MIGRATIONS="" tests the file alone.
+FOLLOWUP_MIGRATIONS="${FOLLOWUP_MIGRATIONS-0196_recruiter_invite_target_uses_organizer_capability.sql 0197_vents_earn_notifications_use_valid_type.sql}"
+for m in $FOLLOWUP_MIGRATIONS; do
+  echo "== Applying follow-up migration $m =="
+  "${PSQL[@]}" -f "$REPO_ROOT/supabase/migrations/$m"
+done
+
 echo "== Seeding users/events/service_providers =="
 "${PSQL[@]}" <<SQL
 INSERT INTO public.users (id, role) VALUES
