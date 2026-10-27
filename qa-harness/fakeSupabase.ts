@@ -267,9 +267,48 @@ const FIXTURES: Record<string, Row[]> = {
   ],
 };
 
+// Parses the subset of the real PostgREST .or() filter-string mini-language
+// this codebase actually sends: a top-level comma-separated list of OR
+// branches, each either a bare `col.eq.val` term or an `and(col.eq.val,...)`
+// group of AND'd eq terms (exactly the shape every call site in this repo
+// uses, e.g. ConversationScreen.tsx's
+// `and(sender_id.eq.X,recipient_id.eq.Y),and(sender_id.eq.Y,recipient_id.eq.X)`).
+// Splits on top-level commas only (commas inside and(...) don't split
+// branches), not a general PostgREST parser -- sufficient for this fixture
+// harness, not meant to be reused outside it.
+function splitTopLevel(expr: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const c = expr[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === ',' && depth === 0) {
+      parts.push(expr.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(expr.slice(start));
+  return parts;
+}
+
+function evalEqTerm(term: string, row: Row): boolean {
+  const m = term.match(/^([^.]+)\.eq\.(.*)$/);
+  if (!m) return false; // unsupported operator in this subset -- fail closed, never match
+  const [, key, value] = m;
+  return String(row[key]) === value;
+}
+
+function evalOrBranch(branch: string, row: Row): boolean {
+  const andMatch = branch.match(/^and\((.*)\)$/);
+  if (andMatch) return splitTopLevel(andMatch[1]).every((term) => evalEqTerm(term, row));
+  return evalEqTerm(branch, row);
+}
+
 function chainable(table: string): any {
-  const state: { filters: Array<[string, any]>; inFilters: Array<[string, any[]]>; limit: number | null; head: boolean } = {
-    filters: [], inFilters: [], limit: null, head: false,
+  const state: { filters: Array<[string, any]>; inFilters: Array<[string, any[]]>; orExpr: string | null; limit: number | null; head: boolean } = {
+    filters: [], inFilters: [], orExpr: null, limit: null, head: false,
   };
   const api: any = {
     select: (_cols?: string, opts?: { head?: boolean }) => { if (opts?.head) state.head = true; return api; },
@@ -280,11 +319,11 @@ function chainable(table: string): any {
     lte: () => api,
     not: () => api,
     is: () => api,
-    // Real .or() takes a Postgrest filter string like "a.eq.1,b.eq.2" -- the
-    // fixture table is tiny, so this just passes every row through rather
-    // than parsing that mini-language; good enough for a QA render check,
-    // never used to assert on filtered results.
-    or: () => api,
+    // Real .or() takes a Postgrest filter string like
+    // "and(a.eq.1,b.eq.2),and(a.eq.2,b.eq.1)" -- parsed above (splitTopLevel
+    // + evalOrBranch) so fixture rows are genuinely filtered, not just
+    // passed through.
+    or: (expr: string) => { state.orExpr = expr; return api; },
     ilike: () => api,
     in: (k: string, values: any[]) => { state.inFilters.push([k, values]); return api; },
     order: () => api,
@@ -293,15 +332,25 @@ function chainable(table: string): any {
     single: () => resolveSingle(),
     maybeSingle: () => resolveSingle(),
     upsert: () => Promise.resolve({ data: null, error: null }),
+    update: () => api,
     then: (resolveFn: any, rejectFn?: any) => resolve().then(resolveFn, rejectFn),
   };
   function applyFilters(rows: Row[]) {
     return rows
       .filter((r) => state.filters.every(([k, v]) => r[k] === v))
-      .filter((r) => state.inFilters.every(([k, values]) => values.includes(r[k])));
+      .filter((r) => state.inFilters.every(([k, values]) => values.includes(r[k])))
+      .filter((r) => state.orExpr === null || splitTopLevel(state.orExpr!).some((branch) => evalOrBranch(branch, r)));
   }
   function resolve() {
     if (table === 'event_promotions' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('promotionsEmpty') === '1') {
+      return Promise.resolve({ data: [], error: null });
+    }
+    // Stage 10: ?inboxEmpty=1 forces InboxScreen/ConversationScreen's
+    // message/request-backed tables to [] for the empty-state screenshot.
+    if (
+      (table === 'direct_messages' || table === 'conversation_requests' || table === 'conversation_clears') &&
+      typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('inboxEmpty') === '1'
+    ) {
       return Promise.resolve({ data: [], error: null });
     }
     let rows = applyFilters(FIXTURES[table] || []);
