@@ -227,6 +227,59 @@ expect_error "a user with no events row is not a valid organizer target" \
 expect_ok "a user with an events row as organizer is still a valid organizer-invite target" \
   "SET test.uid='$RECRUITER2'; SELECT public.invite_recruiter_partnership('$ORGANIZER', NULL, 100);"
 
+echo "== respond_to_recruiter_invitation: decline path (p_accept=false), test-enumeration gap closed =="
+# Fresh, isolated actors so this section doesn't depend on or disturb any
+# fixture state set up/consumed by the sections above.
+RECRUITER3="00000000-0000-0000-0000-00000000a007"
+ORGANIZER2="00000000-0000-0000-0000-00000000a008"
+PROVIDER_OWNER2="00000000-0000-0000-0000-00000000a009"
+UNRELATED2="00000000-0000-0000-0000-00000000a00a"
+EVENT2="00000000-0000-0000-0000-00000000b003"
+PROVIDER2="00000000-0000-0000-0000-00000000b004"
+
+"${PSQL[@]}" <<SQL
+INSERT INTO public.users (id, role) VALUES
+  ('$RECRUITER3', 'user'), ('$ORGANIZER2', 'user'), ('$PROVIDER_OWNER2', 'user'), ('$UNRELATED2', 'user');
+INSERT INTO public.events (id, organizer_id, title) VALUES ('$EVENT2', '$ORGANIZER2', 'Test Event 2');
+INSERT INTO public.service_providers (id, user_id) VALUES ('$PROVIDER2', '$PROVIDER_OWNER2');
+SQL
+expect_ok "register recruiter 3" \
+  "SET test.uid='$RECRUITER3'; SELECT public.register_as_recruiter('R Three', NULL);"
+
+echo "-- Authorized decline (organizer side) --"
+expect_ok "recruiter3 invites organizer2" \
+  "SET test.uid='$RECRUITER3'; SELECT public.invite_recruiter_partnership('$ORGANIZER2', NULL, 500);"
+expect_error "the recruiter cannot decline their own invitation" "The recruiter cannot respond to their own invitation" \
+  "SET test.uid='$RECRUITER3'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='pending'), false);"
+expect_error "an unrelated user cannot decline someone else's invitation" "Not authorized to respond to this invitation" \
+  "SET test.uid='$UNRELATED2'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='pending'), false);"
+expect_ok "the organizer declines their own pending invitation" \
+  "SET test.uid='$ORGANIZER2'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='pending'), false);"
+expect_count "the declined row has status='declined'" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='declined';" "1"
+expect_count "responded_by is set to the organizer, not the recruiter" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='declined' AND responded_by='$ORGANIZER2' AND responded_at IS NOT NULL;" "1"
+
+echo "-- Decline on a non-pending row fails cleanly --"
+expect_error "declining an already-declined row fails (not pending anymore)" "Partnership is not pending (status=declined)" \
+  "SET test.uid='$ORGANIZER2'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='declined'), false);"
+
+echo "-- A declined row doesn't block a fresh invite (same terminal-state behavior as revoked/withdrawn) --"
+expect_ok "recruiter3 can send a fresh invite to organizer2 after the decline" \
+  "SET test.uid='$RECRUITER3'; SELECT public.invite_recruiter_partnership('$ORGANIZER2', NULL, 600);"
+expect_count "exactly one pending row now exists for (recruiter3, organizer2) alongside the declined one" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND organizer_id='$ORGANIZER2' AND status='pending';" "1"
+
+echo "-- Authorized decline (provider side), to confirm the provider branch behaves identically --"
+expect_ok "recruiter3 invites provider2" \
+  "SET test.uid='$RECRUITER3'; SELECT public.invite_recruiter_partnership(NULL, '$PROVIDER2', 500);"
+expect_error "an unrelated user cannot decline the provider-side invitation either" "Not authorized to respond to this invitation" \
+  "SET test.uid='$UNRELATED2'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND provider_id='$PROVIDER2' AND status='pending'), false);"
+expect_ok "the provider owner declines their own pending invitation" \
+  "SET test.uid='$PROVIDER_OWNER2'; SELECT public.respond_to_recruiter_invitation((SELECT id FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND provider_id='$PROVIDER2' AND status='pending'), false);"
+expect_count "the provider-side declined row has status='declined' and responded_by=provider owner" \
+  "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id='$RECRUITER3' AND provider_id='$PROVIDER2' AND status='declined' AND responded_by='$PROVIDER_OWNER2' AND responded_at IS NOT NULL;" "1"
+
 echo "== Cleanup =="
 sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DB_NAME;"
 
