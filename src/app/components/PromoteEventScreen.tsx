@@ -190,7 +190,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             </div>
           ))}
         </div>
-        <button onClick={onBack} style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '16px', padding: '15px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '16px', padding: '15px', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
           Back to Dashboard
         </button>
       </div>
@@ -222,7 +222,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         {/* Hero */}
         <div style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.2) 0%, rgba(79,70,229,0.15) 100%)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '20px', padding: '20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <TrendingUp size={24} color="#fff" />
+            <TrendingUp size={24} color={ventsColors.white} />
           </div>
           <div>
             <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Reach more people</p>
@@ -287,7 +287,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                     </p>
                   </div>
                   <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: isSelected ? `linear-gradient(135deg, ${p.color}, ${p.color}aa)` : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {isSelected && <CheckCircle size={14} color="#fff" />}
+                    {isSelected && <CheckCircle size={14} color={ventsColors.white} />}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -322,7 +322,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                   transition: 'all 0.2s ease',
                 }}
               >
-                <p style={{ color: isSelected ? '#fff' : ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>{d.label}</p>
+                <p style={{ color: isSelected ? ventsColors.white : ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>{d.label}</p>
                 <p style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
                   {formatPrice(plan.price[d.value])}
                 </p>
@@ -374,7 +374,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
-            color: '#fff',
+            color: ventsColors.white,
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Manrope, sans-serif',
@@ -388,12 +388,12 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         >
           {loading ? (
             <>
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: ventsColors.white, animation: 'spin 0.7s linear infinite' }} />
               Processing Payment...
             </>
           ) : (
             <>
-              <TrendingUp size={16} color="#fff" />
+              <TrendingUp size={16} color={ventsColors.white} />
               {plan.ctaVerb} Event for {formatPrice(price)}
             </>
           )}
