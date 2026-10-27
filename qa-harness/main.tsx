@@ -38,6 +38,7 @@ import { UserProfileScreen } from '../src/app/components/UserProfileScreen';
 import { CustomerWalletScreen } from '../src/app/components/CustomerWalletScreen';
 import { ExploreScreen } from '../src/app/components/ExploreScreen';
 import { ReferralScreen } from '../src/app/components/ReferralScreen';
+import { PromotionsScreen } from '../src/app/components/PromotionsScreen';
 import { AdminConsoleShell } from '../src/app/components/admin/AdminConsoleShell';
 import { AdminDashboard } from '../src/app/components/admin/AdminDashboard';
 import { AdminUsersList } from '../src/app/components/admin/AdminUsersList';
@@ -467,6 +468,13 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'admin-console-service-bookings': () => <AdminServiceBookingsScreen />,
   'admin-console-organizer-requests': () => <AdminOrganizerRequestsScreen isSuperAdmin />,
   'admin-console-provider-requests': () => <AdminProviderRequestsScreen isSuperAdmin />,
+
+  // Stage 8: PromotionsScreen.tsx. Populated state uses the fixture's
+  // event_promotions rows as-is (Active/Scheduled/Expired all present);
+  // ?promotionsEmpty=1 forces the empty state via fakeSupabase.ts.
+  promotions: () => (
+    <PromotionsScreen onBack={() => {}} currentUser={FIXTURE_USER} onPromoteEvent={() => {}} />
+  ),
 };
 
 const params = new URLSearchParams(window.location.search);
