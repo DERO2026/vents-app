@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import { ArrowLeft, UserPlus, Users, Search } from 'lucide-react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { ArrowLeft, UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { searchUsers, UserSearchResult } from '../../lib/userSearch';
 import { ventsColors, ventsTypography, ventsSpacing, ventsRadii, ventsStatusColors } from '../../lib/ventsDesignTokens';
@@ -19,6 +19,62 @@ interface Partnership {
   status: string;
   commission_split_bps: number;
   invited_at: string;
+  // select('*') already returns this column live; it just wasn't part of
+  // this interface's declared shape before. Used only for an optional
+  // relative-time subtitle on an accepted partnership -- never fabricated
+  // when absent.
+  responded_at?: string | null;
+}
+
+// Two-letter initials for the avatar chip -- "Event Pro" -> "EP",
+// "eventpro" (no space) -> "EV". Falls back to "?" for an empty string
+// (shouldn't happen in practice, since every result has a username or
+// fullName, but a pure function should never throw on empty input).
+function getInitials(name: string | null | undefined): string {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return '?';
+  const parts = trimmed.split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return trimmed.slice(0, 2).toUpperCase();
+}
+
+function relativeTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  const diffMs = Date.now() - then;
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? '1 month ago' : `${months} months ago`;
+}
+
+// One-time keyframes injection for the loading-skeleton shimmer -- React
+// inline styles can't express @keyframes, and this app has no existing
+// shimmer utility class to reuse (checked: no global stylesheet defines
+// one). Scoped to a single rule under a unique name so it can't collide
+// with anything else.
+function ShimmerKeyframes() {
+  return (
+    <style>{`@keyframes repScreenShimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}`}</style>
+  );
+}
+
+function SkeletonLine({ width, height = 12, radius = 6 }: { width: string; height?: number; radius?: number }) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        borderRadius: radius,
+        background: `linear-gradient(90deg, ${ventsColors.elevated}, rgba(255,255,255,0.08), ${ventsColors.elevated})`,
+        backgroundSize: '200% 100%',
+        animation: 'repScreenShimmer 1.6s infinite',
+      }}
+    />
+  );
 }
 
 // VENTS Representatives -- frontend for the recruiter/organizer-provider
@@ -314,8 +370,10 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     }
   };
 
+  const gradientPrimary = `linear-gradient(135deg, ${ventsColors.accent}, #7C4DEF)`;
+
   const primaryButtonStyle: CSSProperties = {
-    background: ventsColors.accent,
+    background: gradientPrimary,
     color: ventsColors.white,
     border: 'none',
     borderRadius: ventsRadii.md,
@@ -325,6 +383,11 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     ...ventsTypography.body,
     cursor: 'pointer',
     width: '100%',
+    boxShadow: '0 10px 24px -8px rgba(142,92,247,0.65)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   };
 
   const secondaryButtonStyle: CSSProperties = {
@@ -337,6 +400,20 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     fontFamily: ventsTypography.fontBody,
     ...ventsTypography.bodySecondary,
     cursor: 'pointer',
+  };
+
+  const pillButtonStyle: CSSProperties = {
+    background: ventsColors.glassBg,
+    color: ventsColors.ink1,
+    border: `1px solid ${ventsColors.glassBorder}`,
+    borderRadius: ventsRadii.pill,
+    padding: '0 16px',
+    minHeight: 36,
+    fontFamily: ventsTypography.fontBody,
+    ...ventsTypography.caption,
+    fontWeight: 700,
+    cursor: 'pointer',
+    flexShrink: 0,
   };
 
   const cardStyle: CSSProperties = {
@@ -353,7 +430,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     background: ventsColors.elevated,
     border: `1px solid ${ventsColors.border}`,
     borderRadius: ventsRadii.md,
-    padding: '12px 14px',
+    padding: '12px 14px 12px 42px',
     minHeight: ventsSpacing.minTouchTarget,
     color: ventsColors.ink1,
     fontFamily: ventsTypography.fontBody,
@@ -362,6 +439,94 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
   const errorTextStyle: CSSProperties = { color: ventsColors.error, ...ventsTypography.bodySecondary, margin: 0 };
   const mutedTextStyle: CSSProperties = { color: ventsColors.ink2, ...ventsTypography.bodySecondary, margin: 0 };
+
+  const avatarStyle = (size = 40): CSSProperties => ({
+    width: size,
+    height: size,
+    minWidth: size,
+    borderRadius: ventsRadii.pill,
+    background: 'linear-gradient(135deg, rgba(142,92,247,0.35), rgba(142,92,247,0.08))',
+    border: '1px solid rgba(142,92,247,0.3)',
+    color: ventsColors.accentSoft,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 800,
+    fontSize: size <= 32 ? 12 : 14,
+    flexShrink: 0,
+  });
+
+  // Error banner: icon + title + body, used for every top-level error
+  // surface (statusError/listsError/actionError). role="alert" preserved
+  // exactly where it already was.
+  function ErrorBanner({ title, body }: { title: string; body: string }) {
+    return (
+      <div
+        role="alert"
+        style={{
+          display: 'flex',
+          gap: ventsSpacing.unit[2],
+          alignItems: 'flex-start',
+          background: ventsStatusColors.error.bg,
+          border: '1px solid rgba(248,113,113,0.25)',
+          borderRadius: ventsRadii.md,
+          padding: ventsSpacing.unit[3],
+          marginBottom: ventsSpacing.unit[2],
+          color: ventsStatusColors.error.fg,
+        }}
+      >
+        <AlertCircle size={18} color={ventsColors.error} style={{ flexShrink: 0, marginTop: 1 }} />
+        <div>
+          <p style={{ ...ventsTypography.bodySecondary, fontWeight: 700, color: ventsStatusColors.error.fg, margin: 0 }}>{title}</p>
+          <p style={{ ...ventsTypography.caption, color: 'rgba(252,165,165,0.85)', margin: '2px 0 0' }}>{body}</p>
+        </div>
+      </div>
+    );
+  }
+
+  function EmptyState({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '48px 20px 32px' }}>
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: ventsRadii.pill,
+            background: ventsColors.glassBg,
+            border: `1px solid ${ventsColors.glassBorder}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: ventsSpacing.unit[3],
+            color: ventsColors.ink3,
+          }}
+        >
+          {icon}
+        </div>
+        <p style={{ ...ventsTypography.bodySecondary, fontWeight: 700, color: ventsColors.ink1, margin: '0 0 4px' }}>{title}</p>
+        <p style={{ ...ventsTypography.caption, color: ventsColors.ink3, margin: 0, maxWidth: 240, lineHeight: 1.5 }}>{body}</p>
+      </div>
+    );
+  }
+
+  function ListSkeleton() {
+    return (
+      <>
+        {[0, 1].map((i) => (
+          <div key={i} style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[3] }}>
+              <SkeletonLine width="40px" height={40} radius={ventsRadii.pill} />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <SkeletonLine width="70%" />
+                <SkeletonLine width="40%" height={9} />
+              </div>
+            </div>
+            <SkeletonLine width="100%" height={36} radius={ventsRadii.sm} />
+          </div>
+        ))}
+      </>
+    );
+  }
 
   return (
     // Root text color is set explicitly here because every descendant below
@@ -383,13 +548,14 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         minHeight: '100vh',
         width: '100%',
         boxSizing: 'border-box',
-        background: ventsColors.bg,
+        background: `radial-gradient(520px 320px at 85% -8%, rgba(142,92,247,0.14), transparent 60%), ${ventsColors.bg}`,
         color: ventsColors.ink1,
         fontFamily: ventsTypography.fontBody,
         paddingBottom: ventsSpacing.scrollBottomPadding,
         overflowX: 'hidden',
       }}
     >
+      <ShimmerKeyframes />
       <header
         style={{
           display: 'flex',
@@ -422,11 +588,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
       </header>
 
       <div style={{ padding: `0 ${ventsSpacing.pageMarginMobile}px` }}>
-        {statusError && (
-          <div style={cardStyle}>
-            <p role="alert" style={errorTextStyle}>Could not check Representative status: {statusError}</p>
-          </div>
-        )}
+        {statusError && <ErrorBanner title="Could not check Representative status" body={statusError} />}
 
         {/* isRecruiter starts null (checkRecruiterStatus hasn't resolved yet)
             and previously rendered nothing in that state -- on a slow
@@ -436,22 +598,95 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         {isRecruiter === null && !statusError && (
           <div style={cardStyle} data-testid="representatives-loading">
             <p style={mutedTextStyle}>Loading...</p>
+            <div style={{ marginTop: ventsSpacing.unit[2] }}>
+              <SkeletonLine width="60%" />
+            </div>
           </div>
         )}
 
         {isRecruiter === false && (
-          <div style={cardStyle}>
-            <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1, marginTop: 0 }}>
+          <div
+            style={{
+              borderRadius: ventsRadii.xl,
+              padding: '24px 20px',
+              marginBottom: ventsSpacing.unit[4],
+              position: 'relative',
+              overflow: 'hidden',
+              background: `linear-gradient(160deg, rgba(142,92,247,0.18), rgba(142,92,247,0.03) 55%), ${ventsColors.surface}`,
+              border: '1px solid rgba(142,92,247,0.28)',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                width: 180,
+                height: 180,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(142,92,247,0.35), transparent 70%)',
+                top: -70,
+                right: -60,
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(142,92,247,0.16)',
+                color: ventsColors.accentSoft,
+                ...ventsTypography.label,
+                padding: '6px 12px',
+                borderRadius: ventsRadii.pill,
+                marginBottom: ventsSpacing.unit[3],
+              }}
+            >
+              <Sparkles size={12} /> VENTS EARN
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.15, color: ventsColors.ink1, margin: `0 0 ${ventsSpacing.unit[2]}px` }}>
+              Become a VENTS Representative
+            </h2>
+            <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink2, margin: `0 0 ${ventsSpacing.unit[4]}px`, lineHeight: 1.55 }}>
               Become a VENTS Representative to invite organizers and service providers into a partnership. You earn VENTS&apos; full commission on revenue from events belonging to the organizer you recruit — fixed, not negotiated.
             </p>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: ventsSpacing.unit[2],
+                background: ventsColors.elevated,
+                border: `1px solid ${ventsColors.border}`,
+                borderRadius: ventsRadii.md,
+                padding: `${ventsSpacing.unit[2]}px ${ventsSpacing.unit[3]}px`,
+                marginBottom: ventsSpacing.unit[3],
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  minWidth: 54,
+                  background: gradientPrimary,
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                10%
+              </span>
+              <span style={{ ...ventsTypography.caption, color: ventsColors.ink2, lineHeight: 1.4 }}>
+                You earn VENTS&apos; full <strong style={{ color: ventsColors.ink1 }}>10% commission</strong> on revenue from events belonging to the organizer you recruit.
+              </span>
+            </div>
             <button
               onClick={handleRegister}
               disabled={registering}
               style={{ ...primaryButtonStyle, opacity: registering ? 0.6 : 1 }}
             >
+              <UserPlus size={16} />
               {registering ? 'Registering...' : 'Become a Representative'}
             </button>
-            {registerError && <p role="alert" style={{ ...errorTextStyle, marginTop: ventsSpacing.unit[2] }}>{registerError}</p>}
+            {registerError && <div style={{ marginTop: ventsSpacing.unit[2] }}><ErrorBanner title="Could not register" body={registerError} /></div>}
           </div>
         )}
 
@@ -485,13 +720,14 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                 gap: 6,
                 border: 'none',
                 borderRadius: ventsRadii.sm,
-                background: tab === t.id ? ventsColors.accent : 'transparent',
+                background: tab === t.id ? gradientPrimary : 'transparent',
                 color: tab === t.id ? ventsColors.white : ventsColors.ink2,
                 fontFamily: ventsTypography.fontBody,
                 ...ventsTypography.caption,
                 fontWeight: tab === t.id ? 800 : 600,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
+                boxShadow: tab === t.id ? '0 6px 16px -6px rgba(142,92,247,0.7)' : 'none',
               }}
             >
               {t.icon} {t.label}
@@ -501,12 +737,25 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
         {tab === 'find' && (
           <div>
-            <input
-              placeholder="Search by VENTS username"
-              value={query}
-              onChange={(e) => void handleSearch(e.target.value)}
-              style={{ ...inputStyle, marginBottom: ventsSpacing.unit[3] }}
-            />
+            <div style={{ position: 'relative', marginBottom: ventsSpacing.unit[3] }}>
+              <Search
+                size={17}
+                color={ventsColors.ink3}
+                style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              />
+              <input
+                placeholder="Search by VENTS username"
+                value={query}
+                onChange={(e) => void handleSearch(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            {query.trim().length >= 2 && results.length === 0 && (
+              <EmptyState icon={<Search size={22} />} title="No matches found" body="Try a different username or check the spelling." />
+            )}
+            {query.trim().length < 2 && results.length === 0 && !inviteTarget && (
+              <EmptyState icon={<Search size={22} />} title="Search to get started" body="Find an organizer or service provider by their VENTS username to send a partnership invitation." />
+            )}
             {results.map((r) => (
               <div
                 key={r.id}
@@ -519,73 +768,138 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                   gap: ventsSpacing.unit[2],
                 }}
               >
-                <span
-                  style={{
-                    ...ventsTypography.body,
-                    color: ventsColors.ink1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    minWidth: 0,
-                  }}
-                >
-                  {r.username || r.fullName}
-                </span>
-                <button onClick={() => setInviteTarget(r)} style={{ ...secondaryButtonStyle, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], minWidth: 0, flex: 1 }}>
+                  <div style={avatarStyle(40)}>{getInitials(r.username || r.fullName)}</div>
+                  <span
+                    style={{
+                      ...ventsTypography.body,
+                      color: ventsColors.ink1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      minWidth: 0,
+                    }}
+                  >
+                    {r.username || r.fullName}
+                  </span>
+                </div>
+                <button onClick={() => setInviteTarget(r)} style={pillButtonStyle}>
                   Invite
                 </button>
               </div>
             ))}
             {inviteTarget && (
-              <div data-testid="invite-form" style={{ ...cardStyle, background: ventsColors.elevated }}>
-                <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1, marginTop: 0 }}>
-                  Inviting <strong style={{ color: ventsColors.ink1 }}>{inviteTarget.username || inviteTarget.fullName}</strong>
-                </p>
-                {resolvingTarget && <p style={mutedTextStyle}>Checking organizer/provider status...</p>}
+              <div
+                data-testid="invite-form"
+                style={{
+                  ...cardStyle,
+                  background: ventsColors.elevated,
+                  border: '1px solid rgba(142,92,247,0.3)',
+                  borderRadius: ventsRadii.lg,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[3] }}>
+                  <div style={avatarStyle(32)}>{getInitials(inviteTarget.username || inviteTarget.fullName)}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ ...ventsTypography.caption, color: ventsColors.ink3, margin: 0 }}>Inviting</p>
+                    <p
+                      style={{
+                        ...ventsTypography.bodySecondary,
+                        fontWeight: 700,
+                        color: ventsColors.ink1,
+                        margin: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {inviteTarget.username || inviteTarget.fullName}
+                    </p>
+                  </div>
+                </div>
+                {resolvingTarget && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2] }}>
+                    <SkeletonLine width="100%" height={16} />
+                  </div>
+                )}
                 {!resolvingTarget && targetRole === 'neither' && (
-                  <p role="alert" data-testid="invite-ineligible" style={errorTextStyle}>
-                    This user is not an organizer or a registered service provider, so they cannot be invited.
-                  </p>
+                  <div
+                    role="alert"
+                    data-testid="invite-ineligible"
+                    style={{
+                      display: 'flex',
+                      gap: ventsSpacing.unit[2],
+                      alignItems: 'flex-start',
+                      background: ventsStatusColors.error.bg,
+                      border: '1px solid rgba(248,113,113,0.25)',
+                      borderRadius: ventsRadii.md,
+                      padding: ventsSpacing.unit[3],
+                      color: ventsStatusColors.error.fg,
+                    }}
+                  >
+                    <AlertCircle size={16} color={ventsColors.error} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <p style={{ ...ventsTypography.caption, color: ventsStatusColors.error.fg, margin: 0, lineHeight: 1.5 }}>
+                      This user is not an organizer or a registered service provider, so they cannot be invited.
+                    </p>
+                  </div>
                 )}
                 {!resolvingTarget && targetRole && targetRole !== 'neither' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: ventsSpacing.unit[3] }}>
-                    <p style={{ ...ventsTypography.label, color: ventsColors.ink2, margin: 0 }}>
-                      You will earn VENTS&apos; full commission on revenue from this organizer&apos;s events. This is fixed and not negotiable.
-                    </p>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: ventsSpacing.unit[2],
+                        alignItems: 'flex-start',
+                        background: 'rgba(142,92,247,0.08)',
+                        border: '1px solid rgba(142,92,247,0.2)',
+                        borderRadius: ventsRadii.sm,
+                        padding: ventsSpacing.unit[2],
+                      }}
+                    >
+                      <Sparkles size={14} color={ventsColors.accentSoft} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <p style={{ ...ventsTypography.label, color: ventsColors.ink2, margin: 0, textTransform: 'none', letterSpacing: 'normal', lineHeight: 1.5 }}>
+                        You will earn VENTS&apos; full commission on revenue from this organizer&apos;s events. This is fixed and not negotiable.
+                      </p>
+                    </div>
                     <button
                       onClick={handleSendInvite}
                       disabled={inviteBusy}
                       style={{ ...primaryButtonStyle, opacity: inviteBusy ? 0.6 : 1 }}
                     >
+                      <Send size={16} />
                       {inviteBusy ? 'Sending...' : 'Send Invitation'}
                     </button>
                   </div>
                 )}
-                {inviteError && <p role="alert" style={{ ...errorTextStyle, marginTop: ventsSpacing.unit[2] }}>{inviteError}</p>}
+                {inviteError && <div style={{ marginTop: ventsSpacing.unit[2] }}><ErrorBanner title="Could not send invitation" body={inviteError} /></div>}
               </div>
             )}
             {inviteSent && (
-              <p style={{ ...mutedTextStyle, color: ventsColors.success }}>
+              <p style={{ ...mutedTextStyle, color: ventsColors.success, marginTop: ventsSpacing.unit[2] }}>
                 Invitation sent — it becomes an official partnership only once accepted.
               </p>
             )}
           </div>
         )}
 
-        {actionError && (
-          <p role="alert" style={{ ...errorTextStyle, marginBottom: ventsSpacing.unit[2] }}>{actionError}</p>
-        )}
+        {actionError && <ErrorBanner title="Action failed" body={actionError} />}
 
         {tab === 'invitations' && (
           <div data-testid="invitations-list">
-            {loadingLists && <p style={mutedTextStyle}>Loading...</p>}
-            {listsError && <p role="alert" style={errorTextStyle}>{listsError}</p>}
-            {incoming.map((p) => {
+            {loadingLists && <ListSkeleton />}
+            {listsError && <ErrorBanner title="Could not load invitations" body={listsError} />}
+            {!loadingLists && incoming.map((p) => {
               const badge = statusBadge(p.status);
               const busy = busyIds.has(p.id);
               return (
                 <div key={p.id} data-testid="invitation-row" style={cardStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2], flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2] }}>
+                    <div style={avatarStyle(40)}>{getInitials(p.recruiter_id)}</div>
+                    <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                      <p style={{ ...ventsTypography.bodySecondary, fontWeight: 700, color: ventsColors.ink1, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        Wants to partner with you
+                      </p>
+                    </div>
                     <span
                       style={{
                         ...ventsTypography.label,
@@ -593,19 +907,30 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                         color: badge.fg,
                         borderRadius: ventsRadii.pill,
                         padding: '4px 10px',
+                        flexShrink: 0,
                       }}
                     >
                       {badge.label}
                     </span>
-                    <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1 }}>
-                      Partnership request · full VENTS commission
-                    </span>
+                  </div>
+                  <div
+                    style={{
+                      background: ventsColors.elevated,
+                      borderRadius: ventsRadii.sm,
+                      padding: '9px 12px',
+                      marginBottom: ventsSpacing.unit[2],
+                      ...ventsTypography.caption,
+                      fontWeight: 700,
+                      color: ventsColors.ink2,
+                    }}
+                  >
+                    Partnership request · <span style={{ color: ventsColors.accentSoft }}>full VENTS commission</span>
                   </div>
                   <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
                     <button
                       onClick={() => handleRespond(p.id, true)}
                       disabled={busy}
-                      style={{ ...primaryButtonStyle, flex: 1, opacity: busy ? 0.6 : 1 }}
+                      style={{ ...primaryButtonStyle, flex: 1, minHeight: 44, opacity: busy ? 0.6 : 1 }}
                     >
                       {busy ? 'Working...' : 'Accept'}
                     </button>
@@ -620,20 +945,37 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                 </div>
               );
             })}
-            {!loadingLists && incoming.length === 0 && <p style={mutedTextStyle}>No pending invitations.</p>}
+            {!loadingLists && incoming.length === 0 && !listsError && (
+              <EmptyState icon={<Inbox size={22} />} title="No pending invitations" body="When a recruiter wants to partner with you, their invitation will appear here." />
+            )}
           </div>
         )}
 
         {tab === 'team' && (
           <div data-testid="team-list">
-            {loadingLists && <p style={mutedTextStyle}>Loading...</p>}
-            {listsError && <p role="alert" style={errorTextStyle}>{listsError}</p>}
-            {team.map((p) => {
+            {loadingLists && <ListSkeleton />}
+            {listsError && <ErrorBanner title="Could not load your team" body={listsError} />}
+            {!loadingLists && team.map((p) => {
               const badge = statusBadge(p.status);
               const busy = busyIds.has(p.id);
+              const subtitle =
+                p.status === 'accepted'
+                  ? (relativeTime(p.responded_at) ? `Partner since ${relativeTime(p.responded_at)}` : 'Active partnership')
+                  : p.status === 'pending'
+                  ? (relativeTime(p.invited_at) ? `Invited ${relativeTime(p.invited_at)}` : 'Awaiting response')
+                  : p.status === 'declined'
+                  ? (relativeTime(p.responded_at) ? `Declined ${relativeTime(p.responded_at)}` : 'Declined')
+                  : null;
               return (
                 <div key={p.id} data-testid="team-row" style={cardStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2], flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2] }}>
+                    <div style={avatarStyle(40)}>{getInitials(p.organizer_id || p.provider_id || p.id)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ ...ventsTypography.bodySecondary, fontWeight: 700, color: ventsColors.ink1, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.organizer_id ? 'Organizer partnership' : 'Provider partnership'}
+                      </p>
+                      {subtitle && <p style={{ ...ventsTypography.caption, color: ventsColors.ink3, margin: 0 }}>{subtitle}</p>}
+                    </div>
                     <span
                       style={{
                         ...ventsTypography.label,
@@ -641,13 +983,24 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                         color: badge.fg,
                         borderRadius: ventsRadii.pill,
                         padding: '4px 10px',
+                        flexShrink: 0,
                       }}
                     >
                       {badge.label}
                     </span>
-                    <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1 }}>
-                      Full VENTS commission
-                    </span>
+                  </div>
+                  <div
+                    style={{
+                      background: ventsColors.elevated,
+                      borderRadius: ventsRadii.sm,
+                      padding: '9px 12px',
+                      marginBottom: ventsSpacing.unit[2],
+                      ...ventsTypography.caption,
+                      fontWeight: 700,
+                      color: ventsColors.ink2,
+                    }}
+                  >
+                    <span style={{ color: ventsColors.accentSoft }}>Full VENTS commission</span>
                   </div>
                   {p.status === 'pending' && (
                     <button
@@ -670,7 +1023,9 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                 </div>
               );
             })}
-            {!loadingLists && team.length === 0 && <p style={mutedTextStyle}>You have no partnerships yet.</p>}
+            {!loadingLists && team.length === 0 && !listsError && (
+              <EmptyState icon={<Users size={22} />} title="You have no partnerships yet" body="Search for an organizer or service provider in Find to send your first invitation." />
+            )}
           </div>
         )}
       </div>

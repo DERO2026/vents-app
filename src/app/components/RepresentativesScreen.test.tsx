@@ -530,6 +530,112 @@ describe('RepresentativesScreen', () => {
   // in a search result is the one place free-form external text flows
   // into a fixed-width row next to a button, so it needs explicit
   // overflow handling rather than a fixed pixel width.
+  // Mobile UI redesign: avatar-chip initials, skeleton loading, and empty
+  // states (approved design proposal). These are additive visual
+  // regression tests -- no RPC/eligibility/authorization logic involved.
+  describe('mobile UI redesign: initials, skeletons, empty states', () => {
+    it('search results and partnership rows show a two-letter initials avatar', async () => {
+      recruiterRowExists = true;
+      searchResults = [{ id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null }];
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, 'event'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]')!;
+      // "eventpro" has no space -> first two characters, uppercased.
+      expect(row.textContent).toContain('EV');
+    });
+
+    it('a two-word name produces initials from the first letter of each word', async () => {
+      recruiterRowExists = true;
+      searchResults = [{ id: 'org-1', username: '', fullName: 'Event Pro', avatarUrl: null } as any];
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, 'event'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]')!;
+      expect(row.textContent).toContain('EP');
+    });
+
+    it('a single very long username still produces a two-letter initials avatar, not an overflowing string', async () => {
+      recruiterRowExists = true;
+      searchResults = [{ id: 'long-1', username: 'premiumeventmanagementservicesltd_official_account_2026', fullName: '', avatarUrl: null } as any];
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, 'premium'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]')!;
+      expect(row.textContent).toContain('PR');
+      // Full name still present in the truncated span for accessibility/search.
+      expect(row.textContent).toContain('premiumeventmanagementservicesltd_official_account_2026');
+    });
+
+    it('shows a skeleton loading placeholder (not a bare "Loading..." string) while partnerships are being fetched', async () => {
+      recruiterRowExists = true;
+      await mount();
+      const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('My Team'))!;
+      // Synchronous act: setLoadingLists(true) runs synchronously at the
+      // start of loadPartnerships(), before any await -- so a sync click +
+      // sync render check catches the loading frame before the mocked
+      // query's promise has had a chance to resolve.
+      act(() => {
+        tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      const shimmerEls = Array.from(container.querySelectorAll('div')).filter(
+        (d) => (d as HTMLElement).style.animation?.includes('repScreenShimmer')
+      );
+      expect(shimmerEls.length).toBeGreaterThan(0);
+      await flush();
+    });
+
+    it('empty Find state (no search typed yet) shows guidance text', async () => {
+      recruiterRowExists = true;
+      await mount();
+      expect(container.textContent).toMatch(/Search to get started/i);
+    });
+
+    it('empty Invitations state shows a clear "no pending invitations" message', async () => {
+      recruiterRowExists = true;
+      await mount();
+      await act(async () => {
+        const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('Invitations'))!;
+        tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flush();
+      expect(container.textContent).toMatch(/No pending invitations/i);
+    });
+
+    it('empty My Team state shows guidance text and remains non-black', async () => {
+      recruiterRowExists = true;
+      await mount();
+      await act(async () => {
+        const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('My Team'))!;
+        tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flush();
+      expect(container.textContent).toMatch(/no partnerships/i);
+      const title = Array.from(container.querySelectorAll('[data-testid="team-list"] p')).find((p) =>
+        p.textContent?.toLowerCase().includes('no partnerships')
+      );
+      expect(title).toBeTruthy();
+      const color = (title as HTMLElement).style.color;
+      expect(color).toBeTruthy();
+      expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+    });
+
+    it('an error banner\'s role="alert" container itself has an explicit non-black color, not just its nested text', async () => {
+      recruiterStatusError = 'connection reset';
+      await mount();
+      const alert = container.querySelector('[role="alert"]') as HTMLElement;
+      expect(alert).toBeTruthy();
+      expect(alert.style.color).toBeTruthy();
+      expect(alert.style.color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+    });
+  });
+
   it('a long username in a search result does not force a fixed width wider than its row (overflow-safe)', async () => {
     recruiterRowExists = true;
     await mount();
