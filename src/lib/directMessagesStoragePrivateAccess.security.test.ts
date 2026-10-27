@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -144,5 +144,72 @@ describe('ConversationScreen.tsx: DM image key extraction and signed-URL usage',
   it('still stores the getPublicUrl()-shaped string as image_url when sending (unchanged persisted format, no data migration)', () => {
     expect(conversationScreenSrc).toMatch(/getPublicUrl\(key\)/);
     expect(conversationScreenSrc).toMatch(/p_image_url:\s*url/);
+  });
+
+  it('the resolution effect merges via mergeSignedImageUrls and never writes an inline fresh object on failure', () => {
+    expect(conversationScreenSrc).toMatch(/setSignedImageUrls\(prev\s*=>\s*mergeSignedImageUrls\(prev,\s*entries\)\)/);
+  });
+});
+
+// Regression test for a confirmed bug found during PR review: the signed-URL
+// resolution effect in ConversationScreen.tsx unconditionally called
+// setSignedImageUrls with a brand-new object on every run, even when every
+// createSignedUrl call failed (null url). Since a new object reference is
+// never === the previous one, React re-ran the effect indefinitely for any
+// message whose signing permanently fails (deleted object, network error),
+// re-requesting a signed URL on every single render forever. The fix
+// (mergeSignedImageUrls, imported from the real component module below --
+// not reimplemented here) must return the exact same `prev` reference when
+// nothing actually resolved, so React's reference-equality bailout stops
+// the loop.
+// ConversationScreen.tsx imports the real supabase client at module scope
+// (`import { supabase } from '../../lib/supabase'`), which throws at import
+// time without VITE_SUPABASE_URL/ANON_KEY set. mergeSignedImageUrls is a
+// pure function with no supabase dependency of its own -- this mock exists
+// solely to let the module load, following the same pattern used by
+// InboxScreen.tokenColors.test.tsx.
+vi.mock('./supabase', () => ({
+  supabase: { from: vi.fn(), rpc: vi.fn(), storage: { from: vi.fn() } },
+}));
+
+import { mergeSignedImageUrls } from '../app/components/ConversationScreen';
+
+describe('mergeSignedImageUrls: signed-URL resolution does not retry forever on failure', () => {
+  it('returns the SAME prev reference (not just an equal value) when every signing attempt failed', () => {
+    const prev = { 'msg-1': 'https://example.com/already-signed.jpg' };
+    const entries = [['msg-2', null], ['msg-3', null]] as const;
+    const result = mergeSignedImageUrls(prev, entries);
+    expect(result).toBe(prev); // reference equality -- this is what stops the effect loop
+  });
+
+  it('returns a new object (with the resolved entry merged in) when at least one signing attempt succeeded', () => {
+    const prev = { 'msg-1': 'https://example.com/already-signed.jpg' };
+    const entries = [['msg-2', 'https://example.com/newly-signed.jpg'], ['msg-3', null]] as const;
+    const result = mergeSignedImageUrls(prev, entries);
+    expect(result).not.toBe(prev);
+    expect(result).toEqual({
+      'msg-1': 'https://example.com/already-signed.jpg',
+      'msg-2': 'https://example.com/newly-signed.jpg',
+    });
+  });
+
+  it('returns the SAME prev reference when the resolved urls are identical to what is already stored (no-op re-resolution)', () => {
+    const prev = { 'msg-1': 'https://example.com/already-signed.jpg' };
+    const entries = [['msg-1', 'https://example.com/already-signed.jpg']] as const;
+    const result = mergeSignedImageUrls(prev, entries);
+    expect(result).toBe(prev);
+  });
+
+  it('simulates 5 consecutive failed resolution passes and confirms the map never changes (would be 5 distinct objects before the fix)', () => {
+    let state = {} as Record<string, string>;
+    const failingEntries = [['msg-x', null]] as const;
+    const seenReferences = new Set<Record<string, string>>();
+    for (let i = 0; i < 5; i++) {
+      state = mergeSignedImageUrls(state, failingEntries);
+      seenReferences.add(state);
+    }
+    // Before the fix, each pass produced a brand-new object -> 5 distinct
+    // references, which is exactly what kept re-triggering the effect.
+    expect(seenReferences.size).toBe(1);
   });
 });

@@ -50,6 +50,25 @@ function getDmImageKey(storedUrl: string): string {
   return storedUrl.slice(storedUrl.lastIndexOf('/') + 1);
 }
 
+// Merges freshly-resolved signed URLs into the existing map. Returns the
+// SAME `prev` reference (not a new object) when nothing actually resolved,
+// so React's reference-equality bailout stops the resolution effect below
+// from re-firing -- without this, a message whose signing permanently
+// fails (deleted object, network error) would retry createSignedUrl
+// forever on every render, since its id never leaves the effect's
+// "still unresolved" set.
+export function mergeSignedImageUrls(
+  prev: Record<string, string>,
+  entries: readonly (readonly [string, string | null])[]
+): Record<string, string> {
+  let changed = false;
+  const next = { ...prev };
+  entries.forEach(([id, url]) => {
+    if (url && next[id] !== url) { next[id] = url; changed = true; }
+  });
+  return changed ? next : prev;
+}
+
 export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack, onNavigateToProfile }: ConversationScreenProps) {
   const [messages, setMessages] = useState<DM[]>([]);
   const [pendingMessages, setPendingMessages] = useState<DM[]>([]);
@@ -269,11 +288,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         return [m.id, error ? null : data?.signedUrl || null] as const;
       }));
       if (cancelled) return;
-      setSignedImageUrls(prev => {
-        const next = { ...prev };
-        entries.forEach(([id, url]) => { if (url) next[id] = url; });
-        return next;
-      });
+      setSignedImageUrls(prev => mergeSignedImageUrls(prev, entries));
     })();
     return () => { cancelled = true; };
   }, [messages, signedImageUrls]);
