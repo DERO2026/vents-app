@@ -237,6 +237,34 @@ const FIXTURES: Record<string, Row[]> = {
       banned_until: new Date(Date.now() + 5 * 86400000).toISOString(), deleted_at: null, phone_number: '+2348010000006',
     },
   ],
+  // Stage 8 screenshot verification (PromotionsScreen.tsx) -- one Active
+  // (Trending), one Scheduled (Featured), and one Expired row so all three
+  // date-derived statuses are visible in the populated state at once.
+  // ?promotionsEmpty=1 forces this to [] for the empty-state screenshot,
+  // same pattern as ?eventsEmpty=1 for ManageEventsScreen below.
+  event_promotions: [
+    {
+      id: 'promo-1', event_id: 'evt-1', organizer_id: 'org-1', plan_type: 'trending', status: 'active',
+      start_date: new Date(Date.now() - 2 * 86400000).toISOString(),
+      end_date: new Date(Date.now() + 5 * 86400000).toISOString(),
+      created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+      events: { id: 'evt-1', title: 'Lagos Music Festival', image_url: null, event_date: new Date(Date.now() + 7 * 86400000).toISOString() },
+    },
+    {
+      id: 'promo-2', event_id: 'evt-2', organizer_id: 'org-1', plan_type: 'featured', status: 'active',
+      start_date: new Date(Date.now() + 3 * 86400000).toISOString(),
+      end_date: new Date(Date.now() + 10 * 86400000).toISOString(),
+      created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+      events: { id: 'evt-2', title: 'Comedy Night Abuja', image_url: null, event_date: new Date(Date.now() + 14 * 86400000).toISOString() },
+    },
+    {
+      id: 'promo-3', event_id: 'evt-3', organizer_id: 'org-1', plan_type: 'trending', status: 'active',
+      start_date: new Date(Date.now() - 20 * 86400000).toISOString(),
+      end_date: new Date(Date.now() - 13 * 86400000).toISOString(),
+      created_at: new Date(Date.now() - 20 * 86400000).toISOString(),
+      events: { id: 'evt-3', title: 'Tech Summit 2026', image_url: null, event_date: new Date(Date.now() + 30 * 86400000).toISOString() },
+    },
+  ],
 };
 
 function chainable(table: string): any {
@@ -273,6 +301,9 @@ function chainable(table: string): any {
       .filter((r) => state.inFilters.every(([k, values]) => values.includes(r[k])));
   }
   function resolve() {
+    if (table === 'event_promotions' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('promotionsEmpty') === '1') {
+      return Promise.resolve({ data: [], error: null });
+    }
     let rows = applyFilters(FIXTURES[table] || []);
     if (state.limit) rows = rows.slice(0, state.limit);
     if (state.head) return Promise.resolve({ data: null, error: null, count: rows.length });

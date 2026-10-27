@@ -208,7 +208,7 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
           data-testid="promotions-promote-new"
           style={{
             background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '12px',
-            padding: '9px 14px', color: '#fff', fontSize: '13px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer', flexShrink: 0,
+            padding: '9px 14px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer', flexShrink: 0,
           }}
         >
           + Promote
@@ -270,7 +270,7 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
                 data-testid="promotions-empty-cta"
                 style={{
                   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px',
-                  padding: '12px 22px', color: '#fff', fontSize: '14px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer', marginTop: '6px',
+                  padding: '12px 22px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer', marginTop: '6px',
                 }}
               >
                 Promote an event
