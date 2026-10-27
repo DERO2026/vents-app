@@ -742,7 +742,7 @@ export function EventDetailsScreen({
               cursor: 'pointer',
             }}
           >
-            <ArrowLeft size={18} color="#fff" />
+            <ArrowLeft size={18} color={ventsColors.white} />
           </button>
 
           {/* Share / Save / Report (top-right) */}
@@ -763,7 +763,7 @@ export function EventDetailsScreen({
                 cursor: 'pointer',
               }}
             >
-              <Share2 size={17} color="#fff" />
+              <Share2 size={17} color={ventsColors.white} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleCopyLink(); }}
@@ -782,7 +782,7 @@ export function EventDetailsScreen({
                 cursor: 'pointer',
               }}
             >
-              <LinkIcon size={17} color="#fff" />
+              <LinkIcon size={17} color={ventsColors.white} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
@@ -800,7 +800,7 @@ export function EventDetailsScreen({
                 cursor: 'pointer',
               }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : ventsColors.white} strokeWidth="2.5">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
@@ -821,14 +821,14 @@ export function EventDetailsScreen({
                   cursor: 'pointer',
                 }}
               >
-                <Flag size={17} color="#fff" />
+                <Flag size={17} color={ventsColors.white} />
               </button>
             )}
           </div>
 
           {/* Tap-to-expand hint (bottom-right) */}
           <div style={{ position: 'absolute', bottom: '16px', right: '16px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '4px 8px', pointerEvents: 'none' }}>
-            <span style={{ color: '#fff', fontSize: '10px' }}>Tap to expand</span>
+            <span style={{ color: ventsColors.white, fontSize: '10px' }}>Tap to expand</span>
           </div>
 
           {/* Category pill (bottom-left, inside the image) */}
@@ -924,7 +924,7 @@ export function EventDetailsScreen({
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ color: active ? '#fff' : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+                <span style={{ color: active ? ventsColors.white : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
               </button>
             );
           })}
@@ -987,7 +987,7 @@ export function EventDetailsScreen({
                 background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <Sparkles size={14} color="#fff" />
+                <Sparkles size={14} color={ventsColors.white} />
               </span>
               <span style={{ color: ventsColors.white, fontSize: '13.5px', fontWeight: 600 }}>
                 Ask VENTS AI to plan this night
@@ -1149,7 +1149,7 @@ export function EventDetailsScreen({
               overflow: 'hidden',
             }}
           >
-            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
+            <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>
               {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
             </span>
             {organizerProfile?.avatar_url && (
@@ -1167,7 +1167,7 @@ export function EventDetailsScreen({
                 {organizerProfile?.full_name || event.organizer}
               </span>
               {(event.organizerVerified || organizerProfile?.is_verified) && (
-                <CheckCircle size={14} fill={ventsColors.accent} color="#fff" />
+                <CheckCircle size={14} fill={ventsColors.accent} color={ventsColors.white} />
               )}
               <BadgeChip tier={organizerProfile?.vc_badge} />
             </div>
@@ -1215,8 +1215,8 @@ export function EventDetailsScreen({
                 boxShadow: '0 4px 20px rgba(123,47,190,0.4)',
               }}
             >
-              <ScanLine size={20} color="#fff" />
-              <span style={{ color: '#fff', fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
+              <ScanLine size={20} color={ventsColors.white} />
+              <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
             </button>
             {onOpenDoorManager && (
               <button
@@ -1409,7 +1409,7 @@ export function EventDetailsScreen({
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '10px',
-                      color: '#fff',
+                      color: ventsColors.white,
                       fontWeight: 700,
                       flexShrink: 0,
                     }}
@@ -1480,7 +1480,7 @@ export function EventDetailsScreen({
                           </button>
                           <span key={qty} style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
                           <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                            <Plus size={14} color="#fff" />
+                            <Plus size={14} color={ventsColors.white} />
                           </button>
                         </div>
                       </div>
@@ -1627,7 +1627,7 @@ export function EventDetailsScreen({
               border: 'none',
               borderRadius: '14px',
               padding: '14px',
-              color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
+              color: purchasesDisabled ? ventsColors.ink3 : canBook ? ventsColors.white : ventsColors.ink2,
               fontSize: '15px',
               fontWeight: 700,
               fontFamily: 'Manrope, sans-serif',
@@ -1698,7 +1698,7 @@ export function EventDetailsScreen({
                   width: '100%',
                 }}
               >
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: ventsColors.white, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="22" height="22" viewBox="0 0 24 24">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
                     <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -1726,7 +1726,7 @@ export function EventDetailsScreen({
                 }}
               >
                 <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: ventsColors.elevated, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <MapPin size={20} color="#fff" />
+                  <MapPin size={20} color={ventsColors.white} />
                 </div>
                 <div style={{ textAlign: 'left' }}>
                   <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Apple Maps</p>
@@ -1802,7 +1802,7 @@ export function EventDetailsScreen({
                 border: 'none',
                 borderRadius: '16px',
                 padding: '14px 28px',
-                color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
+                color: purchasesDisabled ? ventsColors.ink3 : canBook ? ventsColors.white : ventsColors.ink2,
                 fontSize: '16px',
                 fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif',
@@ -1836,7 +1836,7 @@ export function EventDetailsScreen({
           borderRadius: '10px',
           padding: '8px 16px',
           zIndex: 100,
-          color: '#fff',
+          color: ventsColors.white,
           fontSize: '13px',
           fontWeight: 600,
           boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
@@ -1844,7 +1844,7 @@ export function EventDetailsScreen({
           alignItems: 'center',
           gap: '6px',
         }}>
-          <CheckCircle size={14} color="#fff" />
+          <CheckCircle size={14} color={ventsColors.white} />
           Link copied to clipboard!
         </div>
       )}
@@ -1854,10 +1854,10 @@ export function EventDetailsScreen({
           position: 'absolute', top: '30px', left: '50%', transform: 'translateX(-50%)',
           background: 'rgba(239,68,68,0.95)', backdropFilter: 'blur(10px)',
           border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px 16px',
-          zIndex: 100, color: '#fff', fontSize: '13px', fontWeight: 600,
+          zIndex: 100, color: ventsColors.white, fontSize: '13px', fontWeight: 600,
           boxShadow: '0 4px 12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '6px',
         }}>
-          <AlertCircle size={14} color="#fff" />
+          <AlertCircle size={14} color={ventsColors.white} />
           Couldn't open calendar. Please try again.
         </div>
       )}
