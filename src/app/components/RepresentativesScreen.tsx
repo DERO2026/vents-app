@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeft, UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox } from 'lucide-react';
+import { ArrowLeft, UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { searchUsers, UserSearchResult } from '../../lib/userSearch';
 import { ventsColors, ventsTypography, ventsSpacing, ventsRadii, ventsStatusColors } from '../../lib/ventsDesignTokens';
@@ -7,6 +7,14 @@ import { ventsColors, ventsTypography, ventsSpacing, ventsRadii, ventsStatusColo
 interface RepresentativesScreenProps {
   onBack: () => void;
   currentUser: { id: string; role?: string; full_name?: string | null; username?: string };
+  // Set by App.tsx's shared notification router when a VENTS Earn
+  // notification (push_data.partnershipId) is tapped: the invitation the
+  // recipient received, or -- for the recruiter -- the accept/decline reply.
+  // The screen resolves which side of the partnership the current user is
+  // on, opens that tab and highlights the row. nonce re-fires the focus if
+  // the same notification is tapped again (same pattern as MyTicketsScreen's
+  // focusTicket).
+  focusPartnership?: { partnershipId: string; nonce: number } | null;
 }
 
 type SubTab = 'find' | 'invitations' | 'team';
@@ -25,6 +33,27 @@ interface Partnership {
   // when absent.
   responded_at?: string | null;
 }
+
+// The inviter, as public_profiles exposes them -- readable for every
+// recruiter regardless of partnership status (recruiters itself is only
+// readable to a partner while pending/accepted, per recruiters_select_partner).
+interface InviterProfile {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  is_verified: boolean | null;
+}
+
+// Wording for an invitation that was no longer pending when the recipient
+// responded -- respond_to_recruiter_invitation raises
+// 'Partnership is not pending (status=<status>)' in that case.
+const ALREADY_RESOLVED_WORDING: Record<string, string> = {
+  accepted: 'already accepted',
+  declined: 'already declined',
+  withdrawn: 'withdrawn by the Representative',
+  revoked: 'ended',
+};
 
 // Two-letter initials for the avatar chip -- "Event Pro" -> "EP",
 // "eventpro" (no space) -> "EV". Falls back to "?" for an empty string
@@ -83,8 +112,11 @@ function SkeletonLine({ width, height = 12, radius = 6 }: { width: string; heigh
 // or payout, since that logic is intentionally not built/approved yet.
 // Reached from Settings (not the bottom nav, which is already at 5 items)
 // since this is a secondary, opt-in role rather than a primary destination.
-export function RepresentativesScreen({ onBack, currentUser }: RepresentativesScreenProps) {
-  const [tab, setTab] = useState<SubTab>('find');
+export function RepresentativesScreen({ onBack, currentUser, focusPartnership }: RepresentativesScreenProps) {
+  // Opened from a partnership notification: start on Invitations (the
+  // common case -- the focus effect below switches to My Team if the
+  // current user turns out to be the recruiter) instead of flashing Find.
+  const [tab, setTab] = useState<SubTab>(focusPartnership ? 'invitations' : 'find');
   const [isRecruiter, setIsRecruiter] = useState<boolean | null>(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
@@ -118,6 +150,18 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   const [statusError, setStatusError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  // Synchronous mirror of busyIds: two taps delivered before React
+  // re-renders (and disables the button) both see the same stale busyIds
+  // state, so the duplicate-call guard must not rely on state alone.
+  const busyIdsRef = useRef<Set<string>>(new Set());
+  const [inviterProfiles, setInviterProfiles] = useState<Record<string, InviterProfile>>({});
+  const [respondNotice, setRespondNotice] = useState<{ id: string; status: 'accepted' | 'declined' } | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  // Bumped to re-run the partnerships load when a notification focuses a
+  // row on the tab that is already open (the [tab] effect wouldn't fire).
+  const [reloadSignal, setReloadSignal] = useState(0);
+  const consumedFocusNonceRef = useRef<number | null>(null);
+  const scrolledFocusIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!inviteTarget) {
@@ -179,7 +223,41 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
   useEffect(() => {
     if (tab === 'invitations' || tab === 'team') void loadPartnerships();
-  }, [tab]);
+  }, [tab, reloadSignal]);
+
+  // A tapped partnership notification: decide whether the current user is
+  // the recruiter (their reply notification -> My Team) or the invited
+  // organizer/provider (-> Invitations) from the row itself, which RLS
+  // already scopes to the parties. A row this user can't read (deleted, or
+  // not theirs) lands on Invitations with a clear message, never a blank.
+  useEffect(() => {
+    if (!focusPartnership) return;
+    if (consumedFocusNonceRef.current === focusPartnership.nonce) return;
+    consumedFocusNonceRef.current = focusPartnership.nonce;
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('recruiter_partnerships')
+          .select('id, recruiter_id')
+          .eq('id', focusPartnership.partnershipId)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data) {
+          setFocusedId(null);
+          setTab('invitations');
+          setActionError('This invitation is no longer available.');
+          return;
+        }
+        scrolledFocusIdRef.current = null;
+        setFocusedId(data.id);
+        setTab(data.recruiter_id === currentUser.id ? 'team' : 'invitations');
+      } catch (err) {
+        setTab('invitations');
+        setActionError(err instanceof Error ? err.message : 'Could not open this invitation.');
+      }
+      setReloadSignal((n) => n + 1);
+    })();
+  }, [focusPartnership]);
 
   // recruiters.id IS the user's auth id (the table's PK references
   // public.users(id) directly) -- there is no separate user_id column.
@@ -301,30 +379,65 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   async function loadPartnerships() {
     setLoadingLists(true);
     setListsError(null);
-    const providerId = await resolveOwnProviderId();
-    const recipientFilter = providerId
-      ? `organizer_id.eq.${currentUser.id},provider_id.eq.${providerId}`
-      : `organizer_id.eq.${currentUser.id}`;
-    const [recipientRes, recruiterRes] = await Promise.all([
-      supabase
-        .from('recruiter_partnerships')
-        .select('*')
-        .or(recipientFilter)
-        .eq('status', 'pending'),
-      supabase.from('recruiter_partnerships').select('*').eq('recruiter_id', currentUser.id),
-    ]);
-    if (recipientRes.error || recruiterRes.error) {
-      setListsError(recipientRes.error?.message || recruiterRes.error?.message || 'Failed to load partnerships.');
+    try {
+      const providerId = await resolveOwnProviderId();
+      const recipientFilter = providerId
+        ? `organizer_id.eq.${currentUser.id},provider_id.eq.${providerId}`
+        : `organizer_id.eq.${currentUser.id}`;
+      // Every status, not just pending: once the recipient accepts or
+      // declines, the invitation stays visible with its outcome instead of
+      // silently disappearing (and a notification tap on an already-answered
+      // invitation still has a row to land on).
+      const [recipientRes, recruiterRes] = await Promise.all([
+        supabase
+          .from('recruiter_partnerships')
+          .select('*')
+          .or(recipientFilter)
+          .order('invited_at', { ascending: false }),
+        supabase.from('recruiter_partnerships').select('*').eq('recruiter_id', currentUser.id),
+      ]);
+      if (recipientRes.error || recruiterRes.error) {
+        setListsError(recipientRes.error?.message || recruiterRes.error?.message || 'Failed to load partnerships.');
+      }
+      const received: Partnership[] = recipientRes.data || [];
+      setIncoming(received);
+      setTeam(recruiterRes.data || []);
+      await loadInviterProfiles(received.map((p) => p.recruiter_id));
+    } catch (err) {
+      setListsError(err instanceof Error ? err.message : 'Failed to load partnerships.');
+    } finally {
+      setLoadingLists(false);
     }
-    setIncoming(recipientRes.data || []);
-    setTeam(recruiterRes.data || []);
-    setLoadingLists(false);
+  }
+
+  // Best-effort: a failed profile lookup only costs the inviter's name
+  // (cards fall back to "A VENTS Representative"), never the invitation
+  // list or its Accept/Decline actions.
+  async function loadInviterProfiles(recruiterIds: string[]) {
+    const ids = Array.from(new Set(recruiterIds)).filter((id) => !inviterProfiles[id]);
+    if (ids.length === 0) return;
+    try {
+      const { data, error } = await supabase
+        .from('public_profiles')
+        .select('id, full_name, username, avatar_url, is_verified')
+        .in('id', ids);
+      if (error || !data) return;
+      setInviterProfiles((prev) => {
+        const next = { ...prev };
+        for (const row of data as InviterProfile[]) next[row.id] = row;
+        return next;
+      });
+    } catch {
+      // Name stays on the fallback label; nothing else depends on it.
+    }
   }
 
   function withRowBusyGuard(id: string, run: () => Promise<void>) {
-    if (busyIds.has(id)) return;
+    if (busyIdsRef.current.has(id)) return;
+    busyIdsRef.current.add(id);
     setBusyIds((prev) => new Set(prev).add(id));
     void run().finally(() => {
+      busyIdsRef.current.delete(id);
       setBusyIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -336,11 +449,42 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   async function handleRespond(id: string, accept: boolean) {
     withRowBusyGuard(id, async () => {
       setActionError(null);
-      const { error } = await supabase.rpc('respond_to_recruiter_invitation', { p_partnership_id: id, p_accept: accept });
+      setRespondNotice(null);
+      let data: unknown = null;
+      let error: { message: string } | null = null;
+      try {
+        ({ data, error } = await supabase.rpc('respond_to_recruiter_invitation', { p_partnership_id: id, p_accept: accept }));
+      } catch (err) {
+        error = { message: err instanceof Error ? err.message : 'Could not reach VENTS. Check your connection and try again.' };
+      }
       if (error) {
+        // Already answered elsewhere (another device, a double submit that
+        // reached the server first) or withdrawn by the recruiter: say so
+        // plainly and reload, so the card shows the real outcome instead
+        // of a stale Accept/Decline pair.
+        const alreadyResolved = /not pending \(status=(\w+)\)/i.exec(error.message);
+        if (alreadyResolved) {
+          const wording = ALREADY_RESOLVED_WORDING[alreadyResolved[1]] ?? `already ${alreadyResolved[1]}`;
+          setActionError(`This invitation was ${wording}.`);
+          await loadPartnerships();
+          return;
+        }
+        if (/Partnership not found/i.test(error.message)) {
+          setActionError('This invitation is no longer available.');
+          await loadPartnerships();
+          return;
+        }
         setActionError(error.message);
         return;
       }
+      // respond_to_recruiter_invitation returns the updated row; fall back
+      // to the requested outcome only if a client ever receives no row.
+      const row = (Array.isArray(data) ? data[0] : data) as Partnership | null;
+      const status: 'accepted' | 'declined' = (row?.status ?? (accept ? 'accepted' : 'declined')) === 'declined' ? 'declined' : 'accepted';
+      setIncoming((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status, responded_at: row?.responded_at ?? new Date().toISOString() } : p)),
+      );
+      setRespondNotice({ id, status });
       await loadPartnerships();
     });
   }
@@ -541,6 +685,125 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
           </div>
         ))}
       </>
+    );
+  }
+
+  // Who sent the invitation, by the recruiter's public profile. Never the
+  // raw recruiter_id (a UUID) -- that is what the card used to show.
+  function inviterName(recruiterId: string | undefined): string {
+    const prof = recruiterId ? inviterProfiles[recruiterId] : undefined;
+    return prof?.full_name?.trim() || (prof?.username ? `@${prof.username}` : '') || 'A VENTS Representative';
+  }
+
+  const pendingIncoming = incoming.filter((p) => p.status === 'pending');
+  const answeredIncoming = incoming.filter((p) => p.status !== 'pending');
+
+  // Scrolls the notification-focused row into view once, the first time it
+  // renders (a ref callback runs on every render, so remember the scroll).
+  const focusRowRef = (id: string) => (el: HTMLDivElement | null) => {
+    if (!el || id !== focusedId || scrolledFocusIdRef.current === id) return;
+    scrolledFocusIdRef.current = id;
+    el.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  };
+
+  function renderInvitationCard(p: Partnership) {
+    const badge = statusBadge(p.status);
+    const busy = busyIds.has(p.id);
+    const prof = inviterProfiles[p.recruiter_id];
+    const name = inviterName(p.recruiter_id);
+    const isPending = p.status === 'pending';
+    const when = isPending ? relativeTime(p.invited_at) : relativeTime(p.responded_at);
+    const outcome =
+      p.status === 'accepted' ? 'Accepted'
+      : p.status === 'declined' ? 'Declined'
+      : p.status === 'withdrawn' ? 'Withdrawn by the Representative'
+      : p.status === 'revoked' ? 'Partnership ended'
+      : badge.label;
+    const subtitle = isPending
+      ? (when ? `Invited you ${when}` : 'Invited you')
+      : (when ? `${outcome} ${when}` : outcome);
+    const focused = p.id === focusedId;
+    return (
+      <div
+        key={p.id}
+        ref={focusRowRef(p.id)}
+        data-testid="invitation-row"
+        data-status={p.status}
+        data-focused={focused ? 'true' : undefined}
+        style={{ ...cardStyle, ...(focused ? { border: `1px solid ${ventsColors.accent}`, boxShadow: '0 0 0 3px rgba(142,92,247,0.25)' } : {}) }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2] }}>
+          {prof?.avatar_url ? (
+            <img src={prof.avatar_url} alt="" style={{ ...avatarStyle(40), objectFit: 'cover', padding: 0 }} />
+          ) : (
+            <div style={avatarStyle(40)} aria-hidden="true">{prof ? getInitials(prof.full_name || prof.username) : <UserPlus size={16} />}</div>
+          )}
+          <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+            <p
+              data-testid="inviter-name"
+              style={{ ...ventsTypography.bodySecondary, fontWeight: 700, color: ventsColors.ink1, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {name}
+            </p>
+            {prof?.username && prof.full_name && (
+              <p style={{ ...ventsTypography.caption, color: ventsColors.ink3, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                @{prof.username}
+              </p>
+            )}
+            {/* Own line, allowed to wrap: on a 390px card the timing was
+                the part that got truncated when it shared the @username line. */}
+            <p data-testid="invitation-subtitle" style={{ ...ventsTypography.caption, color: ventsColors.ink3, margin: 0 }}>
+              {subtitle}
+            </p>
+          </div>
+          <span
+            data-testid="invitation-status"
+            style={{
+              ...ventsTypography.label,
+              background: badge.bg,
+              color: badge.fg,
+              borderRadius: ventsRadii.pill,
+              padding: '4px 10px',
+              flexShrink: 0,
+            }}
+          >
+            {badge.label}
+          </span>
+        </div>
+        <div
+          style={{
+            background: ventsColors.elevated,
+            borderRadius: ventsRadii.sm,
+            padding: '9px 12px',
+            marginBottom: isPending ? ventsSpacing.unit[2] : 0,
+            ...ventsTypography.caption,
+            fontWeight: 700,
+            color: ventsColors.ink2,
+          }}
+        >
+          {p.provider_id ? 'Service provider partnership' : 'Organizer partnership'} · <span style={{ color: ventsColors.accentSoft }}>full VENTS commission</span>
+        </div>
+        {isPending && (
+          <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
+            <button
+              onClick={() => handleRespond(p.id, true)}
+              disabled={busy}
+              aria-label={`Accept invitation from ${name}`}
+              style={{ ...primaryButtonStyle, flex: 1, minHeight: 44, opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? 'Working...' : 'Accept'}
+            </button>
+            <button
+              onClick={() => handleRespond(p.id, false)}
+              disabled={busy}
+              aria-label={`Decline invitation from ${name}`}
+              style={{ ...secondaryButtonStyle, flex: 1, opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? 'Working...' : 'Decline'}
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -927,69 +1190,51 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
         {actionError && <ErrorBanner title="Action failed" body={actionError} />}
 
+        {respondNotice && tab === 'invitations' && (
+          <div
+            role="status"
+            data-testid="respond-notice"
+            style={{
+              display: 'flex',
+              gap: ventsSpacing.unit[2],
+              alignItems: 'center',
+              background: respondNotice.status === 'accepted' ? ventsStatusColors.paid.bg : ventsColors.elevated,
+              border: `1px solid ${ventsColors.border}`,
+              borderRadius: ventsRadii.md,
+              padding: ventsSpacing.unit[3],
+              marginBottom: ventsSpacing.unit[2],
+              color: respondNotice.status === 'accepted' ? ventsStatusColors.paid.fg : ventsColors.ink2,
+              ...ventsTypography.bodySecondary,
+              fontWeight: 700,
+            }}
+          >
+            {respondNotice.status === 'accepted' ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+            {respondNotice.status === 'accepted'
+              ? `You're now partnered with ${inviterName(incoming.find((p) => p.id === respondNotice.id)?.recruiter_id)}.`
+              : `You declined ${inviterName(incoming.find((p) => p.id === respondNotice.id)?.recruiter_id)}'s invitation.`}
+          </div>
+        )}
+
         {tab === 'invitations' && (
           <div data-testid="invitations-list">
-            {loadingLists && <ListSkeleton />}
+            {loadingLists && incoming.length === 0 && <ListSkeleton />}
             {listsError && <ErrorBanner title="Could not load invitations" body={listsError} />}
-            {!loadingLists && incoming.map((p) => {
-              const badge = statusBadge(p.status);
-              const busy = busyIds.has(p.id);
-              return (
-                <div key={p.id} data-testid="invitation-row" style={cardStyle}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2] }}>
-                    <div style={avatarStyle(40)}>{getInitials(p.recruiter_id)}</div>
-                    <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
-                      <p style={{ ...ventsTypography.bodySecondary, fontWeight: 700, color: ventsColors.ink1, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        Wants to partner with you
-                      </p>
-                    </div>
-                    <span
-                      style={{
-                        ...ventsTypography.label,
-                        background: badge.bg,
-                        color: badge.fg,
-                        borderRadius: ventsRadii.pill,
-                        padding: '4px 10px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {badge.label}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      background: ventsColors.elevated,
-                      borderRadius: ventsRadii.sm,
-                      padding: '9px 12px',
-                      marginBottom: ventsSpacing.unit[2],
-                      ...ventsTypography.caption,
-                      fontWeight: 700,
-                      color: ventsColors.ink2,
-                    }}
-                  >
-                    Partnership request · <span style={{ color: ventsColors.accentSoft }}>full VENTS commission</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
-                    <button
-                      onClick={() => handleRespond(p.id, true)}
-                      disabled={busy}
-                      style={{ ...primaryButtonStyle, flex: 1, minHeight: 44, opacity: busy ? 0.6 : 1 }}
-                    >
-                      {busy ? 'Working...' : 'Accept'}
-                    </button>
-                    <button
-                      onClick={() => handleRespond(p.id, false)}
-                      disabled={busy}
-                      style={{ ...secondaryButtonStyle, flex: 1, opacity: busy ? 0.6 : 1 }}
-                    >
-                      {busy ? 'Working...' : 'Decline'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {!loadingLists && incoming.length === 0 && !listsError && (
+            {listsError && (
+              <button onClick={() => void loadPartnerships()} style={{ ...secondaryButtonStyle, width: '100%', marginBottom: ventsSpacing.unit[3] }}>
+                Try again
+              </button>
+            )}
+            {(!loadingLists || incoming.length > 0) && pendingIncoming.map((p) => renderInvitationCard(p))}
+            {!loadingLists && pendingIncoming.length === 0 && !listsError && (
               <EmptyState icon={<Inbox size={22} />} title="No pending invitations" body="When a recruiter wants to partner with you, their invitation will appear here." />
+            )}
+            {answeredIncoming.length > 0 && (
+              <>
+                <p style={{ ...ventsTypography.label, color: ventsColors.ink3, margin: `${ventsSpacing.unit[3]}px 0 ${ventsSpacing.unit[2]}px` }}>
+                  Past invitations
+                </p>
+                {answeredIncoming.map((p) => renderInvitationCard(p))}
+              </>
             )}
           </div>
         )}
@@ -1010,7 +1255,13 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                   ? (relativeTime(p.responded_at) ? `Declined ${relativeTime(p.responded_at)}` : 'Declined')
                   : null;
               return (
-                <div key={p.id} data-testid="team-row" style={cardStyle}>
+                <div
+                  key={p.id}
+                  ref={focusRowRef(p.id)}
+                  data-testid="team-row"
+                  data-focused={p.id === focusedId ? 'true' : undefined}
+                  style={{ ...cardStyle, ...(p.id === focusedId ? { border: `1px solid ${ventsColors.accent}`, boxShadow: '0 0 0 3px rgba(142,92,247,0.25)' } : {}) }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2] }}>
                     <div style={avatarStyle(40)}>{getInitials(p.organizer_id || p.provider_id || p.id)}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
