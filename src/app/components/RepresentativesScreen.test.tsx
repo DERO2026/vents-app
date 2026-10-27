@@ -178,6 +178,39 @@ describe('RepresentativesScreen', () => {
     expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
   });
 
+  // Production bug: the Representatives page didn't scroll. Root cause was
+  // layout, not an event handler or overlay -- the screen's root container
+  // only set minHeight:'100vh' with no overflowY, while its real ancestor
+  // (App.tsx's .phone-frame) is position:fixed/height:100dvh/overflow:hidden
+  // -- a fixed-height box that clips rather than scrolls. Content taller
+  // than one viewport was therefore simply unreachable. The fix restructures
+  // the root to the same height:100%+flex column / inner flex:1+overflowY:
+  // auto pattern already used correctly by InboxScreen.tsx: a fixed-height
+  // flex container whose header doesn't shrink and whose content area is
+  // the one actual scroll region.
+  it('root container fills its ancestor (no viewport-relative height) and is not itself a scroll-blocking box', async () => {
+    await mount();
+    const root = container.querySelector('[data-testid="representatives-screen"]') as HTMLElement;
+    expect(root.style.height).toBe('100%');
+    expect(root.style.minHeight).toBe('');
+    expect(root.style.display).toBe('flex');
+    expect(root.style.flexDirection).toBe('column');
+  });
+
+  it('has exactly one scrollable content region (overflowY: auto) that is the flex child below the header, not the root', async () => {
+    await mount();
+    const root = container.querySelector('[data-testid="representatives-screen"]') as HTMLElement;
+    expect(root.style.overflowY).toBe('');
+    const header = root.querySelector('header') as HTMLElement;
+    expect(header).toBeTruthy();
+    expect(header.style.flexShrink).toBe('0');
+    const scrollRegion = header.nextElementSibling as HTMLElement;
+    expect(scrollRegion).toBeTruthy();
+    // jsdom normalizes the `flex: 1` shorthand to its longhand expansion.
+    expect(scrollRegion.style.flex).toBe('1 1 0%');
+    expect(scrollRegion.style.overflowY).toBe('auto');
+  });
+
   it('prompts registration when the user is not yet a recruiter', async () => {
     await mount();
     expect(container.textContent).toContain('Become a Representative');

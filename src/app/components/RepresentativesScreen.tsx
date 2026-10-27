@@ -545,13 +545,14 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     <div
       data-testid="representatives-screen"
       style={{
-        minHeight: '100vh',
+        height: '100%',
         width: '100%',
         boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
         background: `radial-gradient(520px 320px at 85% -8%, rgba(142,92,247,0.14), transparent 60%), ${ventsColors.bg}`,
         color: ventsColors.ink1,
         fontFamily: ventsTypography.fontBody,
-        paddingBottom: ventsSpacing.scrollBottomPadding,
         overflowX: 'hidden',
       }}
     >
@@ -562,6 +563,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
           alignItems: 'center',
           gap: ventsSpacing.unit[2],
           padding: `${ventsSpacing.unit[3]}px ${ventsSpacing.pageMarginMobile}px`,
+          flexShrink: 0,
         }}
       >
         <button
@@ -587,7 +589,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         <h1 style={{ ...ventsTypography.heading, color: ventsColors.ink1, margin: 0 }}>Representatives</h1>
       </header>
 
-      <div style={{ padding: `0 ${ventsSpacing.pageMarginMobile}px` }}>
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: `0 ${ventsSpacing.pageMarginMobile}px ${ventsSpacing.scrollBottomPadding}px` }}>
         {statusError && <ErrorBanner title="Could not check Representative status" body={statusError} />}
 
         {/* isRecruiter starts null (checkRecruiterStatus hasn't resolved yet)
