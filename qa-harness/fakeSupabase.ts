@@ -315,6 +315,23 @@ const RPC_FIXTURES: Record<string, any> = {
       sold_count: 64, sold_quantity: 64, pending_count: 0, cancelled_count: 0, refunded_count: 0,
       revenue_kobo: 96000000, checked_in_count: 0, is_ended: false, is_sold_out: true,
     },
+    // Stage 6: rounding out status-badge coverage (ManageEventsScreen's
+    // STATUS_META has 4 states -- the rows above only ever exercised live
+    // and sold_out) with a draft and an ended row, same raw shape.
+    {
+      id: 'evt-4', title: 'Afrobeats Rooftop Session', description: null, location: 'Ikoyi, Lagos',
+      event_date: '2026-12-12T20:00:00Z', price: 10000, ticket_goal: 80, ticket_types: [],
+      status: 'draft', is_18_plus: false, created_at: new Date().toISOString(),
+      sold_count: 0, sold_quantity: 0, pending_count: 0, cancelled_count: 0, refunded_count: 0,
+      revenue_kobo: 0, checked_in_count: 0, is_ended: false, is_sold_out: false,
+    },
+    {
+      id: 'evt-5', title: 'Lagos Jazz Brunch', description: null, location: 'Victoria Island, Lagos',
+      event_date: '2026-01-10T12:00:00Z', price: 6000, ticket_goal: 50, ticket_types: [],
+      status: 'live', is_18_plus: false, created_at: new Date().toISOString(),
+      sold_count: 41, sold_quantity: 41, pending_count: 0, cancelled_count: 1, refunded_count: 0,
+      revenue_kobo: 24600000, checked_in_count: 41, is_ended: true, is_sold_out: false,
+    },
   ],
   // Drives SalesAnalyticsScreen (DT2 desktop) -- get_event_ticket_stats is
   // the same aggregate RPC OrganizerDashboard/ManageEventsScreen call.
@@ -405,6 +422,13 @@ export const supabase = {
         return { data: { ok: false, reason: 'not_active', message: 'This ticket was cancelled.' }, error: null };
       }
       return { data: { ok: false, reason: 'not_found', message: 'This ticket could not be validated.' }, error: null };
+    }
+    // Stage 6 screenshot verification needs both a populated and a
+    // genuinely empty "My Events" state from the same harness screen key --
+    // ?eventsEmpty=1 forces the one RPC that screen depends on to return no
+    // rows, without touching the fixture data every other screen relies on.
+    if (fn === 'get_organizer_events_overview' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('eventsEmpty') === '1') {
+      return { data: [], error: null };
     }
     return { data: RPC_FIXTURES[fn] ?? null, error: null };
   },
