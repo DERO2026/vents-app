@@ -435,4 +435,117 @@ describe('RepresentativesScreen', () => {
     const text = container.textContent || '';
     expect(text).not.toMatch(/earned|payout|withdraw.*commission|\$\d/i);
   });
+
+  // Mobile UI fix: the root-container color override is necessary but not
+  // sufficient -- a nested element setting its OWN `color` back to black
+  // (or omitting it where a wrapper breaks inheritance) would reintroduce
+  // the exact "data-correct, zero-errors, invisible text" failure mode on
+  // just that element. These assert every major state's visible text is
+  // explicitly non-black, not just the root.
+  describe('mobile UI: explicit non-black text in every state', () => {
+    const notBlack = (el: Element | null) => {
+      expect(el).toBeTruthy();
+      const color = (el as HTMLElement).style.color;
+      expect(color).toBeTruthy();
+      expect(color.replace(/\s/g, '')).not.toMatch(/^(#000(000)?|rgb\(0,0,0\)|black)$/i);
+    };
+
+    it('loading state: the "Loading..." text has an explicit non-black color', async () => {
+      // Checked before the mocked status-check promise resolves (no flush),
+      // since isRecruiter starts null and this is the one render pass where
+      // that's still true.
+      root = createRoot(container);
+      act(() => {
+        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+      });
+      const loading = container.querySelector('[data-testid="representatives-loading"] p');
+      notBlack(loading);
+    });
+
+    it('registration (empty/prompt) state: the prompt paragraph and button text have explicit non-black colors', async () => {
+      await mount();
+      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('Become a VENTS Representative'));
+      notBlack(prompt ?? null);
+      const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Become a Representative');
+      expect(btn).toBeTruthy();
+      notBlack(btn ?? null);
+    });
+
+    it('error state: a visible error message has an explicit non-black color', async () => {
+      recruiterStatusError = 'connection reset';
+      await mount();
+      const alert = container.querySelector('[role="alert"]');
+      notBlack(alert);
+    });
+
+    it('populated state: a search result row and its Invite button have explicit non-black colors', async () => {
+      recruiterRowExists = true;
+      await mount();
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => {
+        setter.call(input, 'event');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await flush();
+      const row = container.querySelector('[data-testid="search-result"]');
+      expect(row).toBeTruthy();
+      notBlack(row?.querySelector('span') ?? null);
+      notBlack(row?.querySelector('button') ?? null);
+    });
+
+    it('team/empty-list state: the "no partnerships" message has an explicit non-black color', async () => {
+      recruiterRowExists = true;
+      await mount();
+      const teamTab = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('My Team'))!;
+      await act(async () => { teamTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      const empty = Array.from(container.querySelectorAll('[data-testid="team-list"] p')).find((p) => p.textContent?.includes('no partnerships'));
+      notBlack(empty ?? null);
+    });
+  });
+
+  // The three sub-tabs must be visually distinguishable, not just
+  // semantically marked via aria-selected -- a real user scanning the
+  // screen needs a visible active-state cue, not just an accessibility
+  // attribute with no corresponding style difference.
+  it('the active tab has a visually distinct style from inactive tabs', async () => {
+    await mount();
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    expect(tabs).toHaveLength(3);
+    const findTab = tabs.find((t) => t.textContent?.includes('Find'))!;
+    const invitationsTab = tabs.find((t) => t.textContent?.includes('Invitations'))!;
+    expect((findTab as HTMLElement).getAttribute('aria-selected')).toBe('true');
+    expect((invitationsTab as HTMLElement).getAttribute('aria-selected')).toBe('false');
+    // The active tab's background must differ from an inactive tab's --
+    // this is the actual visual cue, not merely the aria attribute.
+    const activeBg = (findTab as HTMLElement).style.background;
+    const inactiveBg = (invitationsTab as HTMLElement).style.background;
+    expect(activeBg).toBeTruthy();
+    expect(activeBg).not.toBe(inactiveBg);
+  });
+
+  // Mobile viewport width: nothing in this component should be able to
+  // force horizontal overflow under realistic content -- a long username
+  // in a search result is the one place free-form external text flows
+  // into a fixed-width row next to a button, so it needs explicit
+  // overflow handling rather than a fixed pixel width.
+  it('a long username in a search result does not force a fixed width wider than its row (overflow-safe)', async () => {
+    recruiterRowExists = true;
+    await mount();
+    const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+    await act(async () => {
+      setter.call(input, 'event');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+    const span = container.querySelector('[data-testid="search-result"] span') as HTMLElement;
+    expect(span).toBeTruthy();
+    // No fixed pixel width; overflow is handled via ellipsis/truncation
+    // rather than letting the row grow wider than its mobile container.
+    expect(span.style.width).toBe('');
+    expect(span.style.overflow).toBe('hidden');
+    expect(span.style.whiteSpace).toBe('nowrap');
+  });
 });

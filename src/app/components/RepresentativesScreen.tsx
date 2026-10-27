@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { ArrowLeft, UserPlus, Users, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { searchUsers, UserSearchResult } from '../../lib/userSearch';
+import { ventsColors, ventsTypography, ventsSpacing, ventsRadii, ventsStatusColors } from '../../lib/ventsDesignTokens';
 
 interface RepresentativesScreenProps {
   onBack: () => void;
@@ -290,6 +291,72 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     });
   }
 
+  const statusBadge = (status: string): { bg: string; fg: string; label: string } => {
+    switch (status) {
+      case 'accepted':
+        return { bg: ventsStatusColors.paid.bg, fg: ventsStatusColors.paid.fg, label: 'Accepted' };
+      case 'pending':
+        return { bg: ventsStatusColors.pending.bg, fg: ventsStatusColors.pending.fg, label: 'Pending' };
+      case 'declined':
+        return { bg: ventsStatusColors.error.bg, fg: ventsStatusColors.error.fg, label: 'Declined' };
+      case 'revoked':
+        return { bg: ventsStatusColors.expired.bg, fg: ventsStatusColors.expired.fg, label: 'Revoked' };
+      case 'withdrawn':
+        return { bg: ventsStatusColors.transferred.bg, fg: ventsStatusColors.transferred.fg, label: 'Withdrawn' };
+      default:
+        return { bg: ventsStatusColors.info.bg, fg: ventsStatusColors.info.fg, label: status };
+    }
+  };
+
+  const primaryButtonStyle: CSSProperties = {
+    background: ventsColors.accent,
+    color: ventsColors.white,
+    border: 'none',
+    borderRadius: ventsRadii.md,
+    padding: '0 20px',
+    minHeight: ventsSpacing.minTouchTarget,
+    fontFamily: ventsTypography.fontBody,
+    ...ventsTypography.body,
+    cursor: 'pointer',
+    width: '100%',
+  };
+
+  const secondaryButtonStyle: CSSProperties = {
+    background: ventsColors.glassBg,
+    color: ventsColors.ink1,
+    border: `1px solid ${ventsColors.glassBorder}`,
+    borderRadius: ventsRadii.md,
+    padding: '0 16px',
+    minHeight: ventsSpacing.minTouchTarget,
+    fontFamily: ventsTypography.fontBody,
+    ...ventsTypography.bodySecondary,
+    cursor: 'pointer',
+  };
+
+  const cardStyle: CSSProperties = {
+    background: ventsColors.surface,
+    border: `1px solid ${ventsColors.border}`,
+    borderRadius: ventsRadii.lg,
+    padding: ventsSpacing.cardPaddingLg,
+    marginBottom: ventsSpacing.unit[3],
+  };
+
+  const inputStyle: CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    background: ventsColors.elevated,
+    border: `1px solid ${ventsColors.border}`,
+    borderRadius: ventsRadii.md,
+    padding: '12px 14px',
+    minHeight: ventsSpacing.minTouchTarget,
+    color: ventsColors.ink1,
+    fontFamily: ventsTypography.fontBody,
+    ...ventsTypography.body,
+  };
+
+  const errorTextStyle: CSSProperties = { color: ventsColors.error, ...ventsTypography.bodySecondary, margin: 0 };
+  const mutedTextStyle: CSSProperties = { color: ventsColors.ink2, ...ventsTypography.bodySecondary, margin: 0 };
+
   return (
     // Root text color is set explicitly here because every descendant below
     // relies on CSS inheritance for it (no element in this component sets
@@ -304,135 +371,312 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     // undiagnosable by) the stale-cache, CSP, network-failure, and
     // currentUser-guard theories tested and eliminated in prior rounds, all
     // of which only checked DOM/text presence, never rendered color.
-    <div data-testid="representatives-screen" style={{ minHeight: '100vh', color: '#F0F0FF' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16 }}>
-        <button onClick={onBack} aria-label="Back"><ArrowLeft /></button>
-        <h1>Representatives</h1>
+    <div
+      data-testid="representatives-screen"
+      style={{
+        minHeight: '100vh',
+        width: '100%',
+        boxSizing: 'border-box',
+        background: ventsColors.bg,
+        color: ventsColors.ink1,
+        fontFamily: ventsTypography.fontBody,
+        paddingBottom: ventsSpacing.scrollBottomPadding,
+        overflowX: 'hidden',
+      }}
+    >
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: ventsSpacing.unit[2],
+          padding: `${ventsSpacing.unit[3]}px ${ventsSpacing.pageMarginMobile}px`,
+        }}
+      >
+        <button
+          onClick={onBack}
+          aria-label="Back"
+          style={{
+            width: ventsSpacing.minTouchTarget,
+            height: ventsSpacing.minTouchTarget,
+            minWidth: ventsSpacing.minTouchTarget,
+            borderRadius: ventsRadii.pill,
+            background: ventsColors.glassBg,
+            border: `1px solid ${ventsColors.glassBorder}`,
+            color: ventsColors.ink1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <h1 style={{ ...ventsTypography.heading, color: ventsColors.ink1, margin: 0 }}>Representatives</h1>
       </header>
 
-      {statusError && (
-        <div style={{ padding: 16 }}>
-          <p role="alert">Could not check Representative status: {statusError}</p>
-        </div>
-      )}
+      <div style={{ padding: `0 ${ventsSpacing.pageMarginMobile}px` }}>
+        {statusError && (
+          <div style={cardStyle}>
+            <p role="alert" style={errorTextStyle}>Could not check Representative status: {statusError}</p>
+          </div>
+        )}
 
-      {/* isRecruiter starts null (checkRecruiterStatus hasn't resolved yet)
-          and previously rendered nothing in that state -- on a slow
-          connection this looked identical to the blank-screen failure mode
-          reported in production. An explicit loading row makes the
-          "still checking" and "actually broken" states visually distinct. */}
-      {isRecruiter === null && !statusError && (
-        <div style={{ padding: 16 }} data-testid="representatives-loading">
-          <p>Loading...</p>
-        </div>
-      )}
+        {/* isRecruiter starts null (checkRecruiterStatus hasn't resolved yet)
+            and previously rendered nothing in that state -- on a slow
+            connection this looked identical to the blank-screen failure mode
+            reported in production. An explicit loading row makes the
+            "still checking" and "actually broken" states visually distinct. */}
+        {isRecruiter === null && !statusError && (
+          <div style={cardStyle} data-testid="representatives-loading">
+            <p style={mutedTextStyle}>Loading...</p>
+          </div>
+        )}
 
-      {isRecruiter === false && (
-        <div style={{ padding: 16 }}>
-          <p>Become a VENTS Representative to invite organizers and service providers into a partnership.</p>
-          <button onClick={handleRegister} disabled={registering}>
-            {registering ? 'Registering...' : 'Become a Representative'}
-          </button>
-          {registerError && <p role="alert">{registerError}</p>}
-        </div>
-      )}
+        {isRecruiter === false && (
+          <div style={cardStyle}>
+            <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1, marginTop: 0 }}>
+              Become a VENTS Representative to invite organizers and service providers into a partnership.
+            </p>
+            <button
+              onClick={handleRegister}
+              disabled={registering}
+              style={{ ...primaryButtonStyle, opacity: registering ? 0.6 : 1 }}
+            >
+              {registering ? 'Registering...' : 'Become a Representative'}
+            </button>
+            {registerError && <p role="alert" style={{ ...errorTextStyle, marginTop: ventsSpacing.unit[2] }}>{registerError}</p>}
+          </div>
+        )}
 
-      <nav style={{ display: 'flex', gap: 8, padding: '0 16px' }}>
-        <button role="tab" aria-selected={tab === 'find'} onClick={() => setTab('find')}><Search size={16} /> Find</button>
-        <button role="tab" aria-selected={tab === 'invitations'} onClick={() => setTab('invitations')}><UserPlus size={16} /> Invitations</button>
-        <button role="tab" aria-selected={tab === 'team'} onClick={() => setTab('team')}><Users size={16} /> My Team</button>
-      </nav>
-
-      {tab === 'find' && (
-        <div style={{ padding: 16 }}>
-          <input
-            placeholder="Search by VENTS username"
-            value={query}
-            onChange={(e) => void handleSearch(e.target.value)}
-          />
-          {results.map((r) => (
-            <div key={r.id} data-testid="search-result" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>{r.username || r.fullName}</span>
-              <button onClick={() => setInviteTarget(r)}>Invite</button>
-            </div>
+        <nav
+          style={{
+            display: 'flex',
+            gap: ventsSpacing.unit[1],
+            background: ventsColors.surface,
+            border: `1px solid ${ventsColors.border}`,
+            borderRadius: ventsRadii.md,
+            padding: 4,
+            marginBottom: ventsSpacing.unit[3],
+          }}
+        >
+          {([
+            { id: 'find' as const, label: 'Find', icon: <Search size={16} /> },
+            { id: 'invitations' as const, label: 'Invitations', icon: <UserPlus size={16} /> },
+            { id: 'team' as const, label: 'My Team', icon: <Users size={16} /> },
+          ]).map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                flex: 1,
+                minHeight: ventsSpacing.minTouchTarget,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                border: 'none',
+                borderRadius: ventsRadii.sm,
+                background: tab === t.id ? ventsColors.accent : 'transparent',
+                color: tab === t.id ? ventsColors.white : ventsColors.ink2,
+                fontFamily: ventsTypography.fontBody,
+                ...ventsTypography.caption,
+                fontWeight: tab === t.id ? 800 : 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t.icon} {t.label}
+            </button>
           ))}
-          {inviteTarget && (
-            <div data-testid="invite-form">
-              <p>Inviting {inviteTarget.username || inviteTarget.fullName}</p>
-              {resolvingTarget && <p>Checking organizer/provider status...</p>}
-              {!resolvingTarget && targetRole === 'neither' && (
-                <p role="alert" data-testid="invite-ineligible">
-                  This user is not an organizer or a registered service provider, so they cannot be invited.
+        </nav>
+
+        {tab === 'find' && (
+          <div>
+            <input
+              placeholder="Search by VENTS username"
+              value={query}
+              onChange={(e) => void handleSearch(e.target.value)}
+              style={{ ...inputStyle, marginBottom: ventsSpacing.unit[3] }}
+            />
+            {results.map((r) => (
+              <div
+                key={r.id}
+                data-testid="search-result"
+                style={{
+                  ...cardStyle,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: ventsSpacing.unit[2],
+                }}
+              >
+                <span
+                  style={{
+                    ...ventsTypography.body,
+                    color: ventsColors.ink1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    minWidth: 0,
+                  }}
+                >
+                  {r.username || r.fullName}
+                </span>
+                <button onClick={() => setInviteTarget(r)} style={{ ...secondaryButtonStyle, flexShrink: 0 }}>
+                  Invite
+                </button>
+              </div>
+            ))}
+            {inviteTarget && (
+              <div data-testid="invite-form" style={{ ...cardStyle, background: ventsColors.elevated }}>
+                <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1, marginTop: 0 }}>
+                  Inviting <strong style={{ color: ventsColors.ink1 }}>{inviteTarget.username || inviteTarget.fullName}</strong>
                 </p>
-              )}
-              {!resolvingTarget && targetRole && targetRole !== 'neither' && (
-                <>
-                  <label>
-                    Agreed commission split (%)
-                    <input
-                      type="number"
-                      min={0}
-                      max={10}
-                      step={0.5}
-                      value={splitPercent}
-                      onChange={(e) => setSplitPercent(Number(e.target.value))}
-                    />
-                  </label>
-                  <button onClick={handleSendInvite} disabled={inviteBusy}>
-                    {inviteBusy ? 'Sending...' : 'Send Invitation'}
-                  </button>
-                </>
-              )}
-              {inviteError && <p role="alert">{inviteError}</p>}
-            </div>
-          )}
-          {inviteSent && <p>Invitation sent — it becomes an official partnership only once accepted.</p>}
-        </div>
-      )}
+                {resolvingTarget && <p style={mutedTextStyle}>Checking organizer/provider status...</p>}
+                {!resolvingTarget && targetRole === 'neither' && (
+                  <p role="alert" data-testid="invite-ineligible" style={errorTextStyle}>
+                    This user is not an organizer or a registered service provider, so they cannot be invited.
+                  </p>
+                )}
+                {!resolvingTarget && targetRole && targetRole !== 'neither' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: ventsSpacing.unit[3] }}>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: ventsSpacing.unit[0] }}>
+                      <span style={{ ...ventsTypography.label, color: ventsColors.ink2 }}>Agreed commission split (%)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        step={0.5}
+                        value={splitPercent}
+                        onChange={(e) => setSplitPercent(Number(e.target.value))}
+                        style={{ ...inputStyle, marginTop: ventsSpacing.unit[0] }}
+                      />
+                    </label>
+                    <button
+                      onClick={handleSendInvite}
+                      disabled={inviteBusy}
+                      style={{ ...primaryButtonStyle, opacity: inviteBusy ? 0.6 : 1 }}
+                    >
+                      {inviteBusy ? 'Sending...' : 'Send Invitation'}
+                    </button>
+                  </div>
+                )}
+                {inviteError && <p role="alert" style={{ ...errorTextStyle, marginTop: ventsSpacing.unit[2] }}>{inviteError}</p>}
+              </div>
+            )}
+            {inviteSent && (
+              <p style={{ ...mutedTextStyle, color: ventsColors.success }}>
+                Invitation sent — it becomes an official partnership only once accepted.
+              </p>
+            )}
+          </div>
+        )}
 
-      {actionError && <p role="alert">{actionError}</p>}
+        {actionError && (
+          <p role="alert" style={{ ...errorTextStyle, marginBottom: ventsSpacing.unit[2] }}>{actionError}</p>
+        )}
 
-      {tab === 'invitations' && (
-        <div style={{ padding: 16 }} data-testid="invitations-list">
-          {loadingLists && <p>Loading...</p>}
-          {listsError && <p role="alert">{listsError}</p>}
-          {incoming.map((p) => (
-            <div key={p.id} data-testid="invitation-row">
-              <span>Partnership request · agreed split {(p.commission_split_bps / 100).toFixed(1)}%</span>
-              <button onClick={() => handleRespond(p.id, true)} disabled={busyIds.has(p.id)}>
-                {busyIds.has(p.id) ? 'Working...' : 'Accept'}
-              </button>
-              <button onClick={() => handleRespond(p.id, false)} disabled={busyIds.has(p.id)}>
-                {busyIds.has(p.id) ? 'Working...' : 'Decline'}
-              </button>
-            </div>
-          ))}
-          {!loadingLists && incoming.length === 0 && <p>No pending invitations.</p>}
-        </div>
-      )}
+        {tab === 'invitations' && (
+          <div data-testid="invitations-list">
+            {loadingLists && <p style={mutedTextStyle}>Loading...</p>}
+            {listsError && <p role="alert" style={errorTextStyle}>{listsError}</p>}
+            {incoming.map((p) => {
+              const badge = statusBadge(p.status);
+              const busy = busyIds.has(p.id);
+              return (
+                <div key={p.id} data-testid="invitation-row" style={cardStyle}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2], flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        ...ventsTypography.label,
+                        background: badge.bg,
+                        color: badge.fg,
+                        borderRadius: ventsRadii.pill,
+                        padding: '4px 10px',
+                      }}
+                    >
+                      {badge.label}
+                    </span>
+                    <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1 }}>
+                      Partnership request · agreed split {(p.commission_split_bps / 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
+                    <button
+                      onClick={() => handleRespond(p.id, true)}
+                      disabled={busy}
+                      style={{ ...primaryButtonStyle, flex: 1, opacity: busy ? 0.6 : 1 }}
+                    >
+                      {busy ? 'Working...' : 'Accept'}
+                    </button>
+                    <button
+                      onClick={() => handleRespond(p.id, false)}
+                      disabled={busy}
+                      style={{ ...secondaryButtonStyle, flex: 1, opacity: busy ? 0.6 : 1 }}
+                    >
+                      {busy ? 'Working...' : 'Decline'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {!loadingLists && incoming.length === 0 && <p style={mutedTextStyle}>No pending invitations.</p>}
+          </div>
+        )}
 
-      {tab === 'team' && (
-        <div style={{ padding: 16 }} data-testid="team-list">
-          {loadingLists && <p>Loading...</p>}
-          {listsError && <p role="alert">{listsError}</p>}
-          {team.map((p) => (
-            <div key={p.id} data-testid="team-row">
-              <span>Status: {p.status} · agreed split {(p.commission_split_bps / 100).toFixed(1)}%</span>
-              {p.status === 'pending' && (
-                <button onClick={() => handleWithdraw(p.id)} disabled={busyIds.has(p.id)}>
-                  {busyIds.has(p.id) ? 'Working...' : 'Withdraw'}
-                </button>
-              )}
-              {p.status === 'accepted' && (
-                <button onClick={() => handleRevoke(p.id)} disabled={busyIds.has(p.id)}>
-                  {busyIds.has(p.id) ? 'Working...' : 'End Partnership'}
-                </button>
-              )}
-            </div>
-          ))}
-          {!loadingLists && team.length === 0 && <p>You have no partnerships yet.</p>}
-        </div>
-      )}
+        {tab === 'team' && (
+          <div data-testid="team-list">
+            {loadingLists && <p style={mutedTextStyle}>Loading...</p>}
+            {listsError && <p role="alert" style={errorTextStyle}>{listsError}</p>}
+            {team.map((p) => {
+              const badge = statusBadge(p.status);
+              const busy = busyIds.has(p.id);
+              return (
+                <div key={p.id} data-testid="team-row" style={cardStyle}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], marginBottom: ventsSpacing.unit[2], flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        ...ventsTypography.label,
+                        background: badge.bg,
+                        color: badge.fg,
+                        borderRadius: ventsRadii.pill,
+                        padding: '4px 10px',
+                      }}
+                    >
+                      {badge.label}
+                    </span>
+                    <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1 }}>
+                      Agreed split {(p.commission_split_bps / 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  {p.status === 'pending' && (
+                    <button
+                      onClick={() => handleWithdraw(p.id)}
+                      disabled={busy}
+                      style={{ ...secondaryButtonStyle, width: '100%', opacity: busy ? 0.6 : 1 }}
+                    >
+                      {busy ? 'Working...' : 'Withdraw'}
+                    </button>
+                  )}
+                  {p.status === 'accepted' && (
+                    <button
+                      onClick={() => handleRevoke(p.id)}
+                      disabled={busy}
+                      style={{ ...secondaryButtonStyle, width: '100%', opacity: busy ? 0.6 : 1 }}
+                    >
+                      {busy ? 'Working...' : 'End Partnership'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {!loadingLists && team.length === 0 && <p style={mutedTextStyle}>You have no partnerships yet.</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
