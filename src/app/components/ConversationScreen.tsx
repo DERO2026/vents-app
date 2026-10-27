@@ -38,6 +38,37 @@ type RequestStatus = 'loading' | 'accepted' | 'pending_incoming' | 'pending_outg
 
 const REACTION_EMOJI = ['❤️', '😂', '😮', '😢', '👍', '🙏'];
 
+// The direct_messages storage bucket is private (0195_direct_messages_storage_private_access.sql)
+// -- stored image_url values are getPublicUrl()-shaped strings used only
+// as a stable key reference (and as the join target for the storage
+// policy's participant check), not a directly-fetchable URL. Rendering an
+// existing image requires re-deriving the object key and requesting a
+// fresh short-lived signed URL.
+const DM_IMAGE_SIGNED_URL_TTL_SECONDS = 3600; // 1 hour -- long enough to cover a normal viewing/scroll session without re-signing on every render
+
+function getDmImageKey(storedUrl: string): string {
+  return storedUrl.slice(storedUrl.lastIndexOf('/') + 1);
+}
+
+// Merges freshly-resolved signed URLs into the existing map. Returns the
+// SAME `prev` reference (not a new object) when nothing actually resolved,
+// so React's reference-equality bailout stops the resolution effect below
+// from re-firing -- without this, a message whose signing permanently
+// fails (deleted object, network error) would retry createSignedUrl
+// forever on every render, since its id never leaves the effect's
+// "still unresolved" set.
+export function mergeSignedImageUrls(
+  prev: Record<string, string>,
+  entries: readonly (readonly [string, string | null])[]
+): Record<string, string> {
+  let changed = false;
+  const next = { ...prev };
+  entries.forEach(([id, url]) => {
+    if (url && next[id] !== url) { next[id] = url; changed = true; }
+  });
+  return changed ? next : prev;
+}
+
 export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack, onNavigateToProfile }: ConversationScreenProps) {
   const [messages, setMessages] = useState<DM[]>([]);
   const [pendingMessages, setPendingMessages] = useState<DM[]>([]);
@@ -60,6 +91,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<DM[]>([]);
   const [searching, setSearching] = useState(false);
+  const [signedImageUrls, setSignedImageUrls] = useState<Record<string, string>>({});
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
@@ -241,6 +273,25 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, otherUser?.id]);
+
+  // Resolve a fresh short-lived signed URL for every image message whose
+  // key we haven't already signed -- the stored image_url itself is not
+  // fetchable now that the bucket is private (see getDmImageKey above).
+  useEffect(() => {
+    const toResolve = messages.filter(m => m.image_url && !m.deleted_by_sender && !signedImageUrls[m.id]);
+    if (toResolve.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(toResolve.map(async (m) => {
+        const key = getDmImageKey(m.image_url!);
+        const { data, error } = await supabase.storage.from('direct_messages').createSignedUrl(key, DM_IMAGE_SIGNED_URL_TTL_SECONDS);
+        return [m.id, error ? null : data?.signedUrl || null] as const;
+      }));
+      if (cancelled) return;
+      setSignedImageUrls(prev => mergeSignedImageUrls(prev, entries));
+    })();
+    return () => { cancelled = true; };
+  }, [messages, signedImageUrls]);
 
   const sendTyping = useCallback(() => {
     const now = Date.now();
@@ -459,6 +510,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
       {lightboxUrl && (
         <div onClick={() => setLightboxUrl(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* lightboxUrl holds a resolved signed URL (set from signedImageUrls[m.id]), never the raw stored image_url. */}
           <img src={lightboxUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
         </div>
       )}
@@ -642,11 +694,15 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 {isDeleted ? (
                   <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, fontStyle: 'italic' }}>This message was deleted</p>
                 ) : m.image_url ? (
-                  <img
-                    src={m.image_url} alt="Sent image" loading="lazy" decoding="async"
-                    onClick={() => setLightboxUrl(m.image_url!)}
-                    style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '14px', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
-                  />
+                  signedImageUrls[m.id] ? (
+                    <img
+                      src={signedImageUrls[m.id]} alt="Sent image" loading="lazy" decoding="async"
+                      onClick={() => setLightboxUrl(signedImageUrls[m.id])}
+                      style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '14px', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
+                    />
+                  ) : (
+                    <div style={{ width: '200px', height: '140px', borderRadius: '14px', background: 'rgba(255,255,255,0.04)' }} />
+                  )
                 ) : (
                   <p style={{ color: ventsColors.ink1, fontSize: '14px', margin: 0, lineHeight: 1.45, wordBreak: 'break-word' }}>{m.body}</p>
                 )}
