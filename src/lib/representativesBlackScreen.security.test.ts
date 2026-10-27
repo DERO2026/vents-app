@@ -76,6 +76,38 @@ describe('vercel.json: index.html is never served from a stale cache', () => {
   });
 });
 
+// Round 2/3 investigation: the user reported the black screen PERSISTING
+// after the cache-header fix above shipped and was verified live. Rather
+// than assume that fix was wrong, this was re-investigated with actual
+// evidence: the real production bundle was built, served under the exact
+// live Content-Security-Policy header, and loaded in real headless
+// Chromium (not jsdom) -- zero CSP violations, the app booted normally.
+// RepresentativesScreen was also mounted in isolation in real Chromium
+// under total simulated network failure (every Supabase request failing)
+// -- with the try/catch hardening already on this branch, it rendered its
+// title, a visible loading state, and all three sub-tabs; it did not go
+// blank. Both of the component-level and CSP-level theories for a
+// *continuing* black screen are therefore ruled out by direct experiment,
+// not just reasoning. The CSP's connect-src must keep allowing the
+// Supabase REST/Realtime origins this screen depends on -- if that were
+// ever narrowed, every RPC call here would fail at the network layer
+// before the component's own error handling even gets a chance to run.
+describe('vercel.json: CSP keeps allowing what RepresentativesScreen depends on', () => {
+  let config: { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
+
+  beforeAll(() => {
+    config = JSON.parse(readFileSync(join(__dirname, '..', '..', 'vercel.json'), 'utf8'));
+  });
+
+  it("connect-src still allows the Supabase REST/Realtime origins RepresentativesScreen's RPC calls depend on", () => {
+    const rule = config.headers.find((h) => h.source === '/((?!embed/).*)');
+    const csp = rule?.headers.find((h) => h.key === 'Content-Security-Policy')?.value ?? '';
+    const connectSrc = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? '';
+    expect(connectSrc).toMatch(/https:\/\/\*\.supabase\.co/);
+    expect(connectSrc).toMatch(/wss:\/\/\*\.supabase\.co/);
+  });
+});
+
 describe('RepresentativesScreen: cannot fail silently into a blank screen', () => {
   let appSource: string;
   let screenSource: string;
