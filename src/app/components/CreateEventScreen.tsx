@@ -323,7 +323,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
           Your session needs a quick refresh. Go back and sign in again to continue creating your event.
         </p>
-        <button onClick={onBack} style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px', padding: '12px 28px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px', padding: '12px 28px', color: ventsColors.white, fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
           Go Back
         </button>
       </div>
@@ -374,7 +374,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             border: 'none',
             borderRadius: '14px',
             padding: '12px 28px',
-            color: '#fff',
+            color: ventsColors.white,
             fontSize: '15px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -1094,9 +1094,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     }}
                   >
                     {isDone ? (
-                      <Check size={13} color="#fff" />
+                      <Check size={13} color={ventsColors.white} />
                     ) : (
-                      <span style={{ color: isActive ? '#fff' : ventsColors.ink2, fontSize: '12px', fontWeight: 700 }}>
+                      <span style={{ color: isActive ? ventsColors.white : ventsColors.ink2, fontSize: '12px', fontWeight: 700 }}>
                         {s.num}
                       </span>
                     )}
@@ -1209,7 +1209,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                         border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)',
                         borderRadius: '20px',
                         padding: '7px 14px',
-                        color: sel ? '#fff' : ventsColors.ink2,
+                        color: sel ? ventsColors.white : ventsColors.ink2,
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -1294,8 +1294,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       gap: '4px',
                     }}
                   >
-                    <Camera size={12} color="#fff" />
-                    <span style={{ color: '#fff', fontSize: '11px', fontWeight: 600 }}>Change</span>
+                    <Camera size={12} color={ventsColors.white} />
+                    <span style={{ color: ventsColors.white, fontSize: '11px', fontWeight: 600 }}>Change</span>
                   </div>
                 </>
               ) : uploadingImage ? (
@@ -1359,7 +1359,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       onClick={() => removeGalleryImage(i)}
                       style={{ position: 'absolute', top: '3px', right: '3px', background: 'rgba(0,0,0,0.65)', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                     >
-                      <X size={11} color="#fff" />
+                      <X size={11} color={ventsColors.white} />
                     </button>
                   </div>
                 ))}
@@ -1828,7 +1828,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       width: '20px',
                       height: '20px',
                       borderRadius: '50%',
-                      background: '#fff',
+                      background: ventsColors.white,
                       top: '3px',
                       left: showPhone ? '21px' : '3px',
                       transition: 'left 0.2s',
@@ -1876,7 +1876,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   </div>
                 </div>
                 <div style={{ width: '44px', height: '26px', borderRadius: '13px', background: is18Plus ? ventsColors.error : ventsColors.elevated, position: 'relative', transition: 'background 0.2s' }}>
-                  <div style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: is18Plus ? '21px' : '3px' }} />
+                  <div style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: ventsColors.white, transition: 'left 0.2s', left: is18Plus ? '21px' : '3px' }} />
                 </div>
               </div>
               {is18Plus && (
@@ -2031,7 +2031,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
-            color: '#fff',
+            color: ventsColors.white,
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Manrope, sans-serif',
