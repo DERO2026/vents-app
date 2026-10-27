@@ -211,6 +211,27 @@ describe('RepresentativesScreen', () => {
     expect(scrollRegion.style.overflowY).toBe('auto');
   });
 
+  // Follow-up fix: PR #65 alone didn't resolve the scroll bug on real iOS
+  // Safari. WebKit has historically been stricter than other engines about
+  // the CSS flexbox spec's default `min-height: auto` on flex items, which
+  // lets a flex child grow past its `flex: 1` constraint to fit its content
+  // instead of being bounded and scrollable -- inside this screen's
+  // position:fixed/overflow:hidden ancestor (.phone-frame in App.tsx), that
+  // means content can render past the visible bounds and get clipped there
+  // rather than becoming reachable via scroll. minHeight: 0 is the standard
+  // fix for exactly this failure mode. overscrollBehavior: 'contain' closes
+  // a second, related iOS Safari issue where a touch gesture starting near
+  // this region's scroll boundary can chain to the outer page instead of
+  // staying contained in the intended scroll region.
+  it('the scroll region has minHeight: 0 and overscrollBehavior: contain (iOS Safari nested-scroll hardening)', async () => {
+    await mount();
+    const root = container.querySelector('[data-testid="representatives-screen"]') as HTMLElement;
+    const header = root.querySelector('header') as HTMLElement;
+    const scrollRegion = header.nextElementSibling as HTMLElement;
+    expect(scrollRegion.style.minHeight).toBe('0px');
+    expect(scrollRegion.style.overscrollBehavior).toBe('contain');
+  });
+
   it('prompts registration when the user is not yet a recruiter', async () => {
     await mount();
     expect(container.textContent).toContain('Become a Representative');

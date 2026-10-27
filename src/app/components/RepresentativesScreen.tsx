@@ -589,7 +589,32 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         <h1 style={{ ...ventsTypography.heading, color: ventsColors.ink1, margin: 0 }}>Representatives</h1>
       </header>
 
-      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: `0 ${ventsSpacing.pageMarginMobile}px ${ventsSpacing.scrollBottomPadding}px` }}>
+      <div
+        style={{
+          flex: 1,
+          // Flex items default to min-height: auto, which lets a flex child
+          // grow to its full content height instead of being constrained by
+          // `flex: 1` -- WebKit has historically been stricter than other
+          // engines about honoring this spec default in nested-scroll
+          // layouts like this one (a flex column inside a position:fixed,
+          // height:100dvh ancestor). Without an explicit minHeight: 0 here,
+          // overflowY: 'auto' has nothing to actually constrain against, so
+          // content taller than the viewport can render past the fixed
+          // ancestor's bounds and get clipped there instead of scrolling --
+          // this is the standard, zero-risk fix for exactly that failure
+          // mode, not a different behavior change.
+          minHeight: 0,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          // Without this, a touch gesture that starts near this region's
+          // scroll boundary can "chain" to the outer page/body instead of
+          // staying contained here -- on iOS Safari this reads as "the
+          // screen won't scroll" even though the region's own overflow is
+          // otherwise set up correctly.
+          overscrollBehavior: 'contain',
+          padding: `0 ${ventsSpacing.pageMarginMobile}px ${ventsSpacing.scrollBottomPadding}px`,
+        }}
+      >
         {statusError && <ErrorBanner title="Could not check Representative status" body={statusError} />}
 
         {/* isRecruiter starts null (checkRecruiterStatus hasn't resolved yet)
