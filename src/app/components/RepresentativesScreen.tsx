@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowLeft, UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { searchUsers, UserSearchResult } from '../../lib/userSearch';
@@ -106,6 +106,10 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
   const [targetRole, setTargetRole] = useState<'organizer' | 'provider' | 'both' | 'neither' | null>(null);
   const [targetProviderId, setTargetProviderId] = useState<string | null>(null);
   const [resolvingTarget, setResolvingTarget] = useState(false);
+  // Monotonic id of the latest resolveTargetRole call: a slower lookup for
+  // a previously-selected target must not overwrite the current target's
+  // eligibility.
+  const resolveSeq = useRef(0);
 
   const [incoming, setIncoming] = useState<Partnership[]>([]);
   const [team, setTeam] = useState<Partnership[]>([]);
@@ -117,6 +121,8 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
   useEffect(() => {
     if (!inviteTarget) {
+      resolveSeq.current++;
+      setResolvingTarget(false);
       setTargetRole(null);
       setTargetProviderId(null);
       return;
@@ -124,21 +130,30 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     void resolveTargetRole(inviteTarget.id);
   }, [inviteTarget]);
 
-  // Resolves whether a search result is an organizer (has at least one
-  // event with organizer_id = their user id), a service provider (has a
-  // service_providers row keyed by user_id), neither, or both -- the
+  // Resolves whether a search result is an invitable organizer and/or an
+  // approved service provider via get_recruiter_invite_target (0196), the
+  // same server-side predicate invite_recruiter_partnership enforces.
+  // Organizer means the Admin-granted users.is_organizer capability OR at
+  // least one event -- inferring it from events alone wrongly rejected
+  // capability-granted organizers with no events yet (and the old
+  // events `.maybeSingle()` errored for organizers with 2+ events). The
   // backend's invite function needs the TARGET's service_providers.id,
   // not their raw user id, for the provider path.
   async function resolveTargetRole(userId: string) {
+    const seq = ++resolveSeq.current;
     setResolvingTarget(true);
     try {
-      const [organizerRes, providerRes] = await Promise.all([
-        supabase.from('events').select('id').eq('organizer_id', userId).maybeSingle(),
-        supabase.from('service_providers').select('id').eq('user_id', userId).maybeSingle(),
-      ]);
-      const isOrganizer = !organizerRes.error && !!organizerRes.data;
-      const isProvider = !providerRes.error && !!providerRes.data;
-      setTargetProviderId(providerRes.data?.id ?? null);
+      const { data, error } = await supabase.rpc('get_recruiter_invite_target' as any, { p_user_id: userId });
+      if (seq !== resolveSeq.current) return;
+      if (error) throw new Error(error.message);
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { target_is_organizer: boolean | null; target_provider_id: string | null }
+        | null
+        | undefined;
+      const isOrganizer = row?.target_is_organizer === true;
+      const providerId = row?.target_provider_id ?? null;
+      const isProvider = !!providerId;
+      setTargetProviderId(providerId);
       if (isOrganizer && isProvider) setTargetRole('both');
       else if (isOrganizer) setTargetRole('organizer');
       else if (isProvider) setTargetRole('provider');
@@ -150,10 +165,11 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
       // updates targetRole/resolvingTarget, leaving the invite form stuck
       // on "Checking organizer/provider status..." forever with no visible
       // failure. Surface it the same way a declared Supabase error would be.
+      if (seq !== resolveSeq.current) return;
       setInviteError(err instanceof Error ? err.message : 'Failed to check this user.');
       setTargetRole('neither');
     } finally {
-      setResolvingTarget(false);
+      if (seq === resolveSeq.current) setResolvingTarget(false);
     }
   }
 

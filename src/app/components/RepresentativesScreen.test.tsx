@@ -20,10 +20,20 @@ let ownProviderId: string | null = null;
 let partnershipsError: string | null = null;
 let lastOrFilter: string | null = null;
 let rpcResponses: Record<string, { data: any; error: any }> = {};
-// Target-role resolution (invite flow): which search-result id, if any,
-// has an events row (organizer) or a service_providers row (provider).
+// Target-role resolution (invite flow), served by the mocked
+// get_recruiter_invite_target RPC: organizerUserIds stands for users the
+// server reports as invitable organizers (Admin-granted is_organizer or
+// any events row -- that predicate itself is exercised against real
+// Postgres in scripts/local-pg-test/run-vents-earn-verification.sh), and
+// providerByUserId for users with an approved service_providers row.
 let organizerUserIds: string[] = [];
 let providerByUserId: Record<string, string> = {};
+// Every table the component queried via supabase.from(...).
+let tablesQueried: string[] = [];
+// Target ids whose get_recruiter_invite_target response is held until the
+// test resolves it manually (stale-response ordering tests).
+let deferredTargets: Record<string, (v: any) => void> = {};
+let deferTargetIds: string[] = [];
 let incomingRows: any[] = [];
 let rpcDelayed: Record<string, any> = {};
 
@@ -39,7 +49,7 @@ function singleRowResult(result: { data: any; error: any }) {
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
-    from: (table: string) => ({
+    from: (table: string) => (tablesQueried.push(table), {
       select: () => ({
         eq: (column: string, value: string) => {
           if (table === 'recruiters') {
@@ -96,6 +106,19 @@ vi.mock('../../lib/supabase', () => ({
     }),
     rpc: (name: string, args: any) => {
       rpcCalls.push({ name, args });
+      if (name === 'get_recruiter_invite_target' && !rpcResponses[name] && !rpcDelayed[name]) {
+        if (targetRoleThrows) return Promise.reject(new Error('network unreachable'));
+        if (deferTargetIds.includes(args.p_user_id)) {
+          return new Promise((resolve) => { deferredTargets[args.p_user_id] = resolve; });
+        }
+        return Promise.resolve({
+          data: [{
+            target_is_organizer: organizerUserIds.includes(args.p_user_id),
+            target_provider_id: providerByUserId[args.p_user_id] ?? null,
+          }],
+          error: null,
+        });
+      }
       if (rpcDelayed[name]) {
         return new Promise((resolve) => { rpcDelayed[name] = { resolve }; });
       }
@@ -130,6 +153,9 @@ beforeEach(() => {
   lastOrFilter = null;
   organizerUserIds = ['org-1'];
   providerByUserId = {};
+  tablesQueried = [];
+  deferredTargets = {};
+  deferTargetIds = [];
   incomingRows = [];
   rpcDelayed = {};
   searchResults = [{ id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null }];
@@ -448,6 +474,114 @@ describe('RepresentativesScreen', () => {
     expect(container.querySelector('[data-testid="invite-ineligible"]')?.textContent).toMatch(/not an organizer or a registered service provider/);
     expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent === 'Send Invitation')).toBe(false);
     expect(rpcCalls.some((c) => c.name === 'invite_recruiter_partnership')).toBe(false);
+  });
+
+  // Regression for the production "dero" report: the account holds the
+  // Admin-granted Organizer AND Service Provider capabilities
+  // (users.is_organizer / is_service_provider = true) but has no events
+  // yet and no service_providers row. The old client inferred roles from
+  // those rows alone and showed "not an organizer or a registered service
+  // provider". Eligibility now comes from get_recruiter_invite_target,
+  // which reports the capability-granted organizer as invitable.
+  describe('invite eligibility comes from get_recruiter_invite_target', () => {
+    async function searchAndClickInvite(query: string, username?: string) {
+      const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!;
+      await act(async () => { setter.call(input, query); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      await flush();
+      const rows = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent === 'Invite');
+      const btn = username
+        ? rows.find((b) => b.parentElement?.textContent?.includes(username))!
+        : rows[0];
+      await act(async () => { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+    }
+
+    it('capability-granted organizer with no events and no service_providers row (the dero case) can be invited as an organizer', async () => {
+      recruiterRowExists = true;
+      // Server: is_organizer capability -> invitable organizer; the
+      // is_service_provider flag alone yields no approved provider row.
+      organizerUserIds = ['dero-uid'];
+      providerByUserId = {};
+      searchResults = [{ id: 'dero-uid', username: 'dero', fullName: 'Dero', avatarUrl: null }];
+      await mount();
+      await searchAndClickInvite('dero');
+
+      expect(rpcCalls.find((c) => c.name === 'get_recruiter_invite_target')?.args).toEqual({ p_user_id: 'dero-uid' });
+      // The activity-inference path is gone: no direct events/service_providers
+      // lookup decides the target's eligibility anymore.
+      expect(tablesQueried).not.toContain('events');
+      expect(container.querySelector('[data-testid="invite-ineligible"]')).toBeNull();
+
+      const sendBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Send Invitation')!;
+      expect(sendBtn).toBeTruthy();
+      await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
+        p_organizer_id: 'dero-uid', p_provider_id: null, p_commission_split_bps: 10000,
+      });
+    });
+
+    it('a user who is both an organizer and an approved provider is invited on the organizer side', async () => {
+      recruiterRowExists = true;
+      organizerUserIds = ['both-1'];
+      providerByUserId = { 'both-1': 'sp-both' };
+      searchResults = [{ id: 'both-1', username: 'both', fullName: 'Both', avatarUrl: null }];
+      await mount();
+      await searchAndClickInvite('both');
+      const sendBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Send Invitation')!;
+      await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
+        p_organizer_id: 'both-1', p_provider_id: null, p_commission_split_bps: 10000,
+      });
+    });
+
+    it('negative: server reports neither role (e.g. only a bare is_service_provider flag, no provider row) -> ineligible, no invite sent', async () => {
+      recruiterRowExists = true;
+      organizerUserIds = [];
+      providerByUserId = {};
+      searchResults = [{ id: 'flag-only', username: 'flagonly', fullName: 'Flag Only', avatarUrl: null }];
+      await mount();
+      await searchAndClickInvite('flag');
+      expect(container.querySelector('[data-testid="invite-ineligible"]')?.textContent).toMatch(/not an organizer or a registered service provider/);
+      expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent === 'Send Invitation')).toBe(false);
+      expect(rpcCalls.some((c) => c.name === 'invite_recruiter_partnership')).toBe(false);
+    });
+
+    it('negative: a declared RPC error is surfaced and never treated as eligible', async () => {
+      recruiterRowExists = true;
+      rpcResponses['get_recruiter_invite_target'] = { data: null, error: { message: 'Not authenticated' } };
+      await mount();
+      await searchAndClickInvite('eventpro');
+      expect(container.textContent).toMatch(/Not authenticated/);
+      expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent === 'Send Invitation')).toBe(false);
+    });
+
+    it('a slower eligibility response for a previously-selected user cannot overwrite the current target', async () => {
+      recruiterRowExists = true;
+      organizerUserIds = ['org-a'];
+      providerByUserId = {};
+      deferTargetIds = ['org-a'];
+      searchResults = [
+        { id: 'org-a', username: 'alpha', fullName: 'Alpha', avatarUrl: null },
+        { id: 'nobody-b', username: 'bravo', fullName: 'Bravo', avatarUrl: null },
+      ];
+      await mount();
+      await searchAndClickInvite('al', 'alpha'); // A's lookup is held in flight
+      const inviteB = Array.from(container.querySelectorAll('button'))
+        .filter((b) => b.textContent === 'Invite')
+        .find((b) => b.parentElement?.textContent?.includes('bravo'))!;
+      await act(async () => { inviteB.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      expect(container.querySelector('[data-testid="invite-ineligible"]')).toBeTruthy();
+
+      // A's (eligible) answer arrives late -- B must stay ineligible.
+      await act(async () => { deferredTargets['org-a']({ data: [{ target_is_organizer: true, target_provider_id: null }], error: null }); });
+      await flush();
+      expect(container.querySelector('[data-testid="invite-ineligible"]')).toBeTruthy();
+      expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent === 'Send Invitation')).toBe(false);
+    });
   });
 
   it('Accept disables while the response is in flight, and a failed response leaves the row intact with a visible error', async () => {
