@@ -271,7 +271,7 @@ describe('RepresentativesScreen', () => {
     expect(container.querySelector('[data-testid="search-result"]')?.textContent).toContain('eventpro');
   });
 
-  it('sending an invite rejects a commission split above 10%', async () => {
+  it('the invite form has no commission-split input or slider -- the arrangement is fixed, not negotiated', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -282,20 +282,12 @@ describe('RepresentativesScreen', () => {
     await act(async () => { inviteBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
 
-    const splitInput = container.querySelector('input[type="number"]') as HTMLInputElement;
-    const setter2 = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(splitInput), 'value')!.set!;
-    await act(async () => { setter2.call(splitInput, '25'); splitInput.dispatchEvent(new Event('input', { bubbles: true })); });
-    await flush();
-
-    const sendBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Send Invitation')!;
-    await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-
-    expect(container.textContent).toMatch(/between 0% and 10%/);
-    expect(rpcCalls.some((c) => c.name === 'invite_recruiter_partnership')).toBe(false);
+    expect(container.querySelector('[data-testid="invite-form"] input[type="number"]')).toBeFalsy();
+    expect(container.textContent).not.toMatch(/5%/);
+    expect(container.textContent).not.toMatch(/[Cc]ommission split \(%\)/);
   });
 
-  it('sending a valid invite calls invite_recruiter_partnership with bps, not a percentage', async () => {
+  it('sending a valid invite always calls invite_recruiter_partnership with the fixed full commission (10000 bps), never a UI-derived value', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -311,7 +303,15 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 500 });
+    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
+  });
+
+  it('describes the commission arrangement as the full, fixed VENTS commission -- never "5%" or a negotiable split', async () => {
+    recruiterRowExists = false;
+    await mount();
+    expect(container.textContent).toMatch(/full commission/i);
+    expect(container.textContent).not.toMatch(/5%/);
+    expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
   });
 
   it('resolves the caller\'s own service_providers.id before filtering incoming provider-side invitations', async () => {
@@ -374,7 +374,7 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 500 });
+    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 10000 });
   });
 
   it('a search result that is neither an organizer nor a provider has no Send Invitation action, with a clear reason shown', async () => {

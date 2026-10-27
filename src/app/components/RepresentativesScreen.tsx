@@ -35,7 +35,6 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserSearchResult[]>([]);
-  const [splitPercent, setSplitPercent] = useState(5);
   const [inviteTarget, setInviteTarget] = useState<UserSearchResult | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState(false);
@@ -168,15 +167,22 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     }
   }
 
+  // Commission is not negotiated through this screen: a Representative
+  // always earns the full, fixed VENTS commission (10000 bps = 100% of
+  // the recruiter's own designated commission share) on revenue from the
+  // organizer/provider they recruit -- there is no 0-10% slider, no
+  // partial split, and no "5%" default. FULL_COMMISSION_BPS is passed
+  // unconditionally; nothing in this component ever reads or sets a
+  // different value. (The underlying recruiter_partnerships.commission_split_bps
+  // column and its 0-10000 CHECK constraint are unchanged -- this is a
+  // UI/default-value correction, not a schema change: the column simply
+  // never receives anything other than the maximum value from this UI.)
+  const FULL_COMMISSION_BPS = 10000;
+
   async function handleSendInvite() {
     if (!inviteTarget) return;
     if (targetRole === 'neither' || targetRole === null) {
       setInviteError('This user is not an organizer or a service provider.');
-      return;
-    }
-    const bps = Math.round(splitPercent * 100);
-    if (bps < 0 || bps > 1000) {
-      setInviteError('Commission split must be between 0% and 10%.');
       return;
     }
     setInviteBusy(true);
@@ -189,7 +195,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
     const { error } = await supabase.rpc('invite_recruiter_partnership', {
       p_organizer_id: wantsProvider ? null : inviteTarget.id,
       p_provider_id: wantsProvider ? targetProviderId : null,
-      p_commission_split_bps: bps,
+      p_commission_split_bps: FULL_COMMISSION_BPS,
     });
     setInviteBusy(false);
     if (error) {
@@ -436,7 +442,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
         {isRecruiter === false && (
           <div style={cardStyle}>
             <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1, marginTop: 0 }}>
-              Become a VENTS Representative to invite organizers and service providers into a partnership.
+              Become a VENTS Representative to invite organizers and service providers into a partnership. You earn VENTS&apos; full commission on revenue from events belonging to the organizer you recruit — fixed, not negotiated.
             </p>
             <button
               onClick={handleRegister}
@@ -543,18 +549,9 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                 )}
                 {!resolvingTarget && targetRole && targetRole !== 'neither' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: ventsSpacing.unit[3] }}>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: ventsSpacing.unit[0] }}>
-                      <span style={{ ...ventsTypography.label, color: ventsColors.ink2 }}>Agreed commission split (%)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={10}
-                        step={0.5}
-                        value={splitPercent}
-                        onChange={(e) => setSplitPercent(Number(e.target.value))}
-                        style={{ ...inputStyle, marginTop: ventsSpacing.unit[0] }}
-                      />
-                    </label>
+                    <p style={{ ...ventsTypography.label, color: ventsColors.ink2, margin: 0 }}>
+                      You will earn VENTS&apos; full commission on revenue from this organizer&apos;s events. This is fixed and not negotiable.
+                    </p>
                     <button
                       onClick={handleSendInvite}
                       disabled={inviteBusy}
@@ -601,7 +598,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                       {badge.label}
                     </span>
                     <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1 }}>
-                      Partnership request · agreed split {(p.commission_split_bps / 100).toFixed(1)}%
+                      Partnership request · full VENTS commission
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
@@ -649,7 +646,7 @@ export function RepresentativesScreen({ onBack, currentUser }: RepresentativesSc
                       {badge.label}
                     </span>
                     <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1 }}>
-                      Agreed split {(p.commission_split_bps / 100).toFixed(1)}%
+                      Full VENTS commission
                     </span>
                   </div>
                   {p.status === 'pending' && (
