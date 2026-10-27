@@ -495,10 +495,21 @@ const SCREENS: Record<string, () => JSX.Element> = {
   // same user-2 fixture InboxScreen's "inbox" route lists as unread.
   // ?inboxEmpty=1 is handled upstream in fakeSupabase.ts for the inbox
   // route; this route always shows the populated thread (dm-1's sender).
+  //
+  // ?conversationPending=1 switches the thread partner to user-4, who has
+  // no direct_messages fixture rows but DOES have a genuine pending
+  // conversation_requests row addressed to org-1 (the FIXTURE_USER) --
+  // proves the harness's .or() fix actually filters (shows the banner here)
+  // rather than just suppressing it everywhere (as it incorrectly did
+  // before, surfacing user-4's unrelated pending row on the user-2 thread).
   conversation: () => (
     <ConversationScreen
       currentUser={FIXTURE_USER}
-      otherUser={{ id: 'user-2', name: 'Priya Nair' }}
+      otherUser={
+        new URLSearchParams(window.location.search).get('conversationPending') === '1'
+          ? { id: 'user-4', name: 'Ada Chukwu' }
+          : { id: 'user-2', name: 'Priya Nair' }
+      }
       onBack={() => {}}
     />
   ),
