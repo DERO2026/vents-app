@@ -23,7 +23,12 @@ $$ SELECT current_setting('test.uid', true)::uuid $$;
 
 CREATE TABLE public.users (
   id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  role text NOT NULL DEFAULT 'user'
+  role text NOT NULL DEFAULT 'user',
+  -- Admin Console capability flags (admin_set_organizer_capability /
+  -- admin_set_service_provider_capability) and soft delete; read by 0196.
+  is_organizer        boolean NOT NULL DEFAULT false,
+  is_service_provider boolean NOT NULL DEFAULT false,
+  deleted_at          timestamptz
 );
 
 CREATE OR REPLACE FUNCTION public.is_admin() RETURNS boolean LANGUAGE sql STABLE AS
@@ -40,7 +45,8 @@ CREATE TABLE public.events (
 
 CREATE TABLE public.service_providers (
   id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL
+  user_id uuid NOT NULL UNIQUE,
+  status  text NOT NULL DEFAULT 'approved'
 );
 
 CREATE TABLE public.notifications (
