@@ -4,6 +4,7 @@ import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 
 interface TicketSelectScreenProps {
   event: Event;
@@ -72,7 +73,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -112,7 +113,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
               borderRadius: '50%',
               width: '36px',
               height: '36px',
-              color: '#fff',
+              color: ventsColors.white,
               fontSize: '18px',
               cursor: 'pointer',
               display: 'flex',
@@ -156,7 +157,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             cursor: 'pointer',
           }}
         >
-          <ArrowLeft size={16} color="#F0F0FF" />
+          <ArrowLeft size={16} color={ventsColors.ink1} />
         </button>
         {/* Tap to expand */}
         <button
@@ -177,7 +178,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             cursor: 'pointer',
           }}
         >
-          <Maximize2 size={14} color="#F0F0FF" />
+          <Maximize2 size={14} color={ventsColors.ink1} />
         </button>
         {/* Event info overlay */}
         <div style={{ position: 'absolute', bottom: '12px', left: '16px', right: '16px' }}>
@@ -196,7 +197,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           >
             {event.category}
           </span>
-          <h1 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0, lineHeight: 1.2 }}>{event.title}</h1>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 800, margin: 0, lineHeight: 1.2 }}>{event.title}</h1>
           <p style={{ color: 'rgba(240,240,255,0.7)', fontSize: '12px', margin: '3px 0 0' }}>{event.date} · {event.venue}</p>
         </div>
       </div>
@@ -218,7 +219,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                 key={ticket.id}
                 onClick={() => { if (!soldOut) { haptics.light(); setSelectedId(ticket.id); } }}
                 style={{
-                  background: isSelected ? 'rgba(124,58,237,0.1)' : '#131629',
+                  background: isSelected ? 'rgba(124,58,237,0.1)' : ventsColors.elevated,
                   border: isSelected
                     ? '1.5px solid rgba(124,58,237,0.5)'
                     : '1px solid rgba(255,255,255,0.06)',
@@ -247,9 +248,9 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                           flexShrink: 0,
                         }}
                       >
-                        {isSelected && <CheckCircle size={12} color="#fff" />}
+                        {isSelected && <CheckCircle size={12} color={ventsColors.white} />}
                       </div>
-                      <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>
+                      <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>
                         {ticket.name}
                       </span>
                       {soldOut && (
@@ -307,7 +308,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                           width: '32px',
                           height: '32px',
                           borderRadius: '50%',
-                          background: ticketQty === 0 ? '#1A1D2E' : 'rgba(124,58,237,0.2)',
+                          background: ticketQty === 0 ? ventsColors.elevated : 'rgba(124,58,237,0.2)',
                           border: '1px solid rgba(255,255,255,0.1)',
                           display: 'flex',
                           alignItems: 'center',
@@ -318,7 +319,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                       >
                         <Minus size={14} color="#C4C9E0" />
                       </button>
-                      <span style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center' }}>
+                      <span style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center' }}>
                         {ticketQty}
                       </span>
                       <button
@@ -339,7 +340,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                           cursor: 'pointer',
                         }}
                       >
-                        <Plus size={14} color="#fff" />
+                        <Plus size={14} color={ventsColors.white} />
                       </button>
                     </div>
                   </div>
@@ -353,7 +354,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
         {canContinue && (
           <div
             style={{
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255,255,255,0.06)',
               borderRadius: '16px',
               padding: '14px',
@@ -367,13 +368,13 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                 <span style={{ color: '#C4C9E0', fontSize: '13px' }}>
                   {selected?.name} × {qty}
                 </span>
-                <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                   {formatPrice(subtotal)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Service fee (5%)</span>
-                <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                   {formatPrice(serviceFee)}
                 </span>
               </div>
@@ -385,7 +386,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                 }}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Total</span>
+                <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>Total</span>
                 <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                   {formatPrice(total)}
                 </span>
@@ -415,11 +416,11 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             width: '100%',
             background: canContinue
               ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
-              : '#1A1D2E',
+              : ventsColors.elevated,
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
-            color: canContinue ? '#fff' : '#8B8FA8',
+            color: canContinue ? ventsColors.white : '#8B8FA8',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Manrope, sans-serif',

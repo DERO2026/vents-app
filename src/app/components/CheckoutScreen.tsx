@@ -589,12 +589,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     return (
       <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 'calc(86px + env(safe-area-inset-top)) 20px calc(26px + env(safe-area-inset-bottom))', boxSizing: 'border-box' }}>
         <span style={{ width: '84px', height: '84px', borderRadius: '50%', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '34px', fontWeight: 800, color: '#F87171', flexShrink: 0 }}>!</span>
-        <h1 style={{ margin: '26px 0 0', fontSize: '27px', lineHeight: 1.15, letterSpacing: '-0.03em', fontWeight: 800, color: '#fff', textAlign: 'center' }}>Payment didn't go through</h1>
+        <h1 style={{ margin: '26px 0 0', fontSize: '27px', lineHeight: 1.15, letterSpacing: '-0.03em', fontWeight: 800, color: ventsColors.white, textAlign: 'center' }}>Payment didn't go through</h1>
         <p style={{ margin: '10px 0 0', fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', textAlign: 'center', maxWidth: '310px' }}>{paymentFailed}</p>
         <div style={{ width: '100%', marginTop: '30px', borderRadius: '20px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', padding: '6px 18px' }}>
           <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
             <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Attempted</span>
-            <span style={{ fontSize: '15px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: '#fff' }}>{formatPrice(total)}</span>
+            <span style={{ fontSize: '15px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: ventsColors.white }}>{formatPrice(total)}</span>
           </div>
           <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Method</span>
@@ -604,14 +604,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <div style={{ width: '100%', marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             onClick={() => { setPaymentFailed(null); handlePay(); }}
-            style={{ height: '56px', borderRadius: '16px', background: '#8E5CF7', border: 'none', fontSize: '17px', fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}
+            style={{ height: '56px', borderRadius: '16px', background: ventsColors.accent, border: 'none', fontSize: '17px', fontWeight: 700, color: ventsColors.white, cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}
           >
             Try again
           </button>
           {paymentMethod === 'paystack' && walletBalanceKobo !== null && (
             <button
               onClick={() => { setPaymentFailed(null); setPaymentMethod('wallet'); }}
-              style={{ height: '54px', borderRadius: '16px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', fontSize: '16px', fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+              style={{ height: '54px', borderRadius: '16px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', fontSize: '16px', fontWeight: 700, color: ventsColors.white, cursor: 'pointer' }}
             >
               Use a different method
             </button>
@@ -1064,7 +1064,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 border: 'none',
                 borderRadius: '100px',
                 padding: '0 24px',
-                color: '#fff',
+                color: ventsColors.white,
                 fontSize: '16px',
                 fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif',
@@ -1079,12 +1079,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             >
               {paymentLoading ? (
                 <>
-                  <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                  <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: ventsColors.white, animation: 'spin 0.7s linear infinite' }} />
                   Processing...
                 </>
               ) : (
                 <>
-                  <Lock size={16} color="#fff" />
+                  <Lock size={16} color={ventsColors.white} />
                   {total === 0
                     ? 'Get Free Ticket'
                     : payMode === 'someone-else'
@@ -1139,7 +1139,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
                 onClick={() => { setPaymentMethod('paystack'); setShowInsufficientSheet(false); }}
-                style={{ width: '100%', height: '54px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+                style={{ width: '100%', height: '54px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
               >
                 Pay {formatPrice(total)} by card instead
               </button>
