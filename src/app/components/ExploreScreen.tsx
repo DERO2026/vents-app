@@ -376,9 +376,9 @@ export function ExploreScreen({
                   borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
                 }}
               >
-                <span style={{ color: active ? '#fff' : ventsColors.ink1, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{f.label}</span>
+                <span style={{ color: active ? ventsColors.white : ventsColors.ink1, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{f.label}</span>
                 {!!f.count && (
-                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
+                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
                 )}
               </button>
             );
@@ -414,12 +414,12 @@ export function ExploreScreen({
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
                       >
                         <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
-                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flexWrap: 'wrap' }}>
                             <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{u.name}</span>
-                            {u.isVerified && <CheckCircle size={12} fill={ventsColors.accent} color="#fff" style={{ flexShrink: 0 }} />}
+                            {u.isVerified && <CheckCircle size={12} fill={ventsColors.accent} color={ventsColors.white} style={{ flexShrink: 0 }} />}
                             <span style={{ flexShrink: 0 }}><BadgeChip tier={u.vc_badge} /></span>
                             {badge && (
                               <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
@@ -449,7 +449,7 @@ export function ExploreScreen({
                     <MessageCircle size={15} color={ventsColors.accentSoft} />
                   </div>
                   <span style={{ flex: 1, textAlign: 'left', color: ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>Message Requests</span>
-                  <span style={{ background: ventsColors.accentSoft, color: '#fff', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
+                  <span style={{ background: ventsColors.accentSoft, color: ventsColors.white, fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
                   <ChevronRight size={16} color={ventsColors.ink2} />
                 </button>
               </div>
@@ -495,7 +495,7 @@ export function ExploreScreen({
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                       >
                         <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box', position: 'relative' }}>
-                          {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
+                          {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
                           {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: ventsColors.success, border: '2px solid #0A0612' }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -559,11 +559,11 @@ export function ExploreScreen({
                     gap: '12px',
                     padding: '12px 16px',
                     background: isHighlighted ? 'rgba(168,85,247,0.1)' : 'transparent',
-                    borderLeft: isHighlighted ? '2px solid #A855F7' : '2px solid transparent',
+                    borderLeft: isHighlighted ? `2px solid ${ventsColors.accent}` : '2px solid transparent',
                   }}
                 >
                   <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                    {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>{name[0]?.toUpperCase()}</span>}
+                    {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{name[0]?.toUpperCase()}</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0 }}>{name}</p>
@@ -581,7 +581,7 @@ export function ExploreScreen({
                     disabled={respondingId === r.requesterId}
                     style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
-                    <Check size={15} color="#fff" />
+                    <Check size={15} color={ventsColors.white} />
                   </button>
                 </div>
               );

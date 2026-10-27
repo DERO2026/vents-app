@@ -297,7 +297,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : ventsColors.white} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -412,7 +412,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
               <span style={{
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
-                color: isFree ? ventsColors.success : '#fff',
+                color: isFree ? ventsColors.success : ventsColors.white,
                 background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
@@ -514,7 +514,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
             }}
           >
-            <span style={{ color: '#fff', fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em' }}>
+            <span style={{ color: ventsColors.white, fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em' }}>
               {badgeText}
             </span>
           </div>
@@ -528,7 +528,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : ventsColors.white} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -625,7 +625,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
               <span style={{
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
-                color: isFree ? ventsColors.success : '#fff',
+                color: isFree ? ventsColors.success : ventsColors.white,
                 background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
@@ -776,7 +776,7 @@ function FeaturedCarousel({
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
             <span style={{
               background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-              border: '1px solid rgba(255,255,255,0.16)', color: '#fff',
+              border: '1px solid rgba(255,255,255,0.16)', color: ventsColors.white,
               fontFamily: "'JetBrains Mono', monospace", fontSize: '9px', fontWeight: 700,
               padding: '6px 10px', borderRadius: '8px', letterSpacing: '0.14em',
             }}>FEATURED</span>
@@ -796,7 +796,7 @@ function FeaturedCarousel({
                 <BadgeChip tier={event.organizerVcBadge} />
               </div>
             )}
-            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Manrope, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
+            <p style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Manrope, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
@@ -807,7 +807,7 @@ function FeaturedCarousel({
                   <span style={{
                     fontSize: '12px', fontWeight: 800, width: 'fit-content',
                     borderRadius: '20px', padding: '4px 12px',
-                    color: isFree ? ventsColors.success : '#fff',
+                    color: isFree ? ventsColors.success : ventsColors.white,
                     background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                     border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
                   }}>
@@ -1505,7 +1505,7 @@ export function HomeScreen({
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accent, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                          <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
+                          <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
                           {u.avatar_url && (
                             <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                           )}
@@ -1633,7 +1633,7 @@ export function HomeScreen({
                   border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <Sparkles size={13} color="#fff" />
+                <Sparkles size={13} color={ventsColors.white} />
               </button>
             )}
           </div>
@@ -1657,9 +1657,9 @@ export function HomeScreen({
                 style={{
                   position: 'absolute', top: '-4px', right: '-4px',
                   minWidth: '16px', height: '16px', padding: '0 4px',
-                  borderRadius: '9px', background: ventsColors.error, border: '2px solid #020005',
+                  borderRadius: '9px', background: ventsColors.error, border: `2px solid ${ventsColors.bg}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
+                  fontSize: '9px', fontWeight: 800, color: ventsColors.white, lineHeight: 1,
                 }}
               >
                 {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
@@ -1671,7 +1671,7 @@ export function HomeScreen({
               onClick={onCreatePress}
               style={{ width: '36px', height: '36px', borderRadius: '50%', background: ventsColors.accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}
             >
-              <Plus size={17} color="#fff" strokeWidth={2.5} />
+              <Plus size={17} color={ventsColors.white} strokeWidth={2.5} />
             </button>
           )}
         </div>
@@ -1737,7 +1737,7 @@ export function HomeScreen({
             <SlidersHorizontal size={12} color={hasActiveFilters ? ventsColors.accentSoft : ventsColors.ink2} />
             <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? ventsColors.ink1 : ventsColors.ink1, whiteSpace: 'nowrap' }}>Filters</span>
             {hasActiveFilters && (
-              <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: ventsColors.accentSoft, border: '2px solid #020005' }} />
+              <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: ventsColors.accentSoft, border: `2px solid ${ventsColors.bg}` }} />
             )}
           </button>
         </div>
@@ -2060,7 +2060,7 @@ export function HomeScreen({
                 footer buttons, same as the design). */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
               <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 800, letterSpacing: '-0.02em' }}>Filters</span>
-              <button onClick={clearFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontSize: '15px', fontWeight: 700, color: '#B79BFF' }}>
+              <button onClick={clearFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontSize: '15px', fontWeight: 700, color: ventsColors.accentSoft }}>
                 Reset
               </button>
             </div>
@@ -2085,8 +2085,8 @@ export function HomeScreen({
                         height: '38px', padding: '0 16px', borderRadius: '9999px', fontSize: '14px',
                         fontWeight: active ? 700 : 600, cursor: 'pointer',
                         border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
-                        background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
-                        color: active ? '#0B0812' : '#EDEAF5',
+                        background: active ? ventsColors.ink1 : 'rgba(255,255,255,0.07)',
+                        color: active ? ventsColors.bg : ventsColors.ink1,
                       }}
                     >
                       {cat.label}
@@ -2117,8 +2117,8 @@ export function HomeScreen({
                             height: '38px', padding: '0 16px', borderRadius: '9999px', fontSize: '14px',
                             fontWeight: active ? 700 : 600, cursor: 'pointer',
                             border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
-                            background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
-                            color: active ? '#0B0812' : '#EDEAF5',
+                            background: active ? ventsColors.ink1 : 'rgba(255,255,255,0.07)',
+                            color: active ? ventsColors.bg : ventsColors.ink1,
                           }}
                         >{st}</button>
                       );
@@ -2144,8 +2144,8 @@ export function HomeScreen({
                         flex: 1, height: '38px', borderRadius: '9999px', fontSize: '14px',
                         fontWeight: active ? 700 : 600, cursor: 'pointer',
                         border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
-                        background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
-                        color: active ? '#0B0812' : '#EDEAF5',
+                        background: active ? ventsColors.ink1 : 'rgba(255,255,255,0.07)',
+                        color: active ? ventsColors.bg : ventsColors.ink1,
                       }}
                     >{p === 'all' ? 'All' : p === 'free' ? 'Free' : 'Paid'}</button>
                   );
@@ -2160,14 +2160,14 @@ export function HomeScreen({
                 style={{
                   flex: 1, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
                   background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)',
-                  color: '#fff', cursor: 'pointer',
+                  color: ventsColors.white, cursor: 'pointer',
                 }}
               >Clear</button>
               <button
                 onClick={applyFilters}
                 style={{
                   flex: 2, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
-                  background: ventsColors.accent, border: 'none', color: '#fff', cursor: 'pointer',
+                  background: ventsColors.accent, border: 'none', color: ventsColors.white, cursor: 'pointer',
                   boxShadow: '0 12px 34px -14px rgba(142,92,247,1)',
                 }}
               >Show results</button>
