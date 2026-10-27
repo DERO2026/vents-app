@@ -109,6 +109,19 @@ const FIXTURES: Record<string, Row[]> = {
     { provider_id: 'sp-2', category: 'Beauty' },
   ],
   service_provider_ratings: [],
+  // RepresentativesScreen Invitations tab (recipient side): org-1 has one
+  // pending invitation from user-3 and one it already accepted from user-4.
+  recruiter_partnerships: [
+    {
+      id: 'rp-pending', recruiter_id: 'user-3', organizer_id: 'org-1', provider_id: null, status: 'pending',
+      commission_split_bps: 10000, invited_at: new Date(Date.now() - 2 * 3600000).toISOString(), responded_at: null,
+    },
+    {
+      id: 'rp-accepted', recruiter_id: 'user-4', organizer_id: 'org-1', provider_id: null, status: 'accepted',
+      commission_split_bps: 10000, invited_at: new Date(Date.now() - 9 * 86400000).toISOString(),
+      responded_at: new Date(Date.now() - 6 * 86400000).toISOString(),
+    },
+  ],
   public_profiles: [
     {
       id: 'user-2', full_name: 'Priya Nair', username: 'priya.n', avatar_url: null, vc_badge: null,

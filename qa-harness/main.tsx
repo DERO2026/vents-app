@@ -41,6 +41,7 @@ import { ExploreScreen } from '../src/app/components/ExploreScreen';
 import { ReferralScreen } from '../src/app/components/ReferralScreen';
 import { PromotionsScreen } from '../src/app/components/PromotionsScreen';
 import { AdminConsoleShell } from '../src/app/components/admin/AdminConsoleShell';
+import { RepresentativesScreen } from '../src/app/components/RepresentativesScreen';
 import { AdminDashboard } from '../src/app/components/admin/AdminDashboard';
 import { AdminUsersList } from '../src/app/components/admin/AdminUsersList';
 import { AdminUserDetail } from '../src/app/components/admin/AdminUserDetail';
@@ -208,6 +209,15 @@ const SCREENS: Record<string, () => JSX.Element> = {
   },
   inbox: () => (
     <InboxScreen currentUser={{ id: 'org-1' }} onBack={() => {}} onOpenConversation={() => {}} />
+  ),
+  // Opened as from a tapped invitation notification: Invitations tab, the
+  // pending invitation highlighted.
+  'representatives-invitations': () => (
+    <RepresentativesScreen
+      onBack={() => {}}
+      currentUser={{ id: 'org-1', role: 'user', full_name: 'Test Organizer', username: 'test.organizer' }}
+      focusPartnership={{ partnershipId: 'rp-pending', nonce: 1 }}
+    />
   ),
   notifications: () => (
     <NotificationsScreen currentUser={{ id: 'org-1' }} onBack={() => {}} />

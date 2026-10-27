@@ -214,6 +214,10 @@ export interface NotificationPushData {
   ticketId?: string;
   bookingId?: string;
   requestId?: string;
+  // VENTS Earn invitation / reply (invite_recruiter_partnership,
+  // respond_to_recruiter_invitation).
+  partnershipId?: string;
+  recruiterId?: string;
   [key: string]: string | undefined;
 }
 

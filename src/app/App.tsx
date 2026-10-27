@@ -376,6 +376,12 @@ export default function App() {
   // cards call), never a new ticket-detail screen. nonce forces the effect
   // to re-fire even if the same ticket is tapped again from a notification.
   const [myTicketsFocusTicket, setMyTicketsFocusTicket] = useState<{ ticketId: string; nonce: number } | null>(null);
+  // Set by the shared notification-routing function when a VENTS Earn
+  // notification (push_data.partnershipId: an invitation, or the reply to
+  // one) is tapped -- RepresentativesScreen resolves which side of the
+  // partnership the user is on and opens Invitations or My Team on that row.
+  // nonce re-fires the focus if the same notification is tapped again.
+  const [representativesFocus, setRepresentativesFocus] = useState<{ partnershipId: string; nonce: number } | null>(null);
   // The ticket a "Ticket refunded" notification's push_data.ticketId
   // points at -- routed to TicketRefundScreen, never MyTicketsScreen: a
   // refunded ticket's status is flipped to 'cancelled' the moment the
@@ -2396,6 +2402,18 @@ export default function App() {
         });
       return;
     }
+    if (data.partnershipId) {
+      // Real existing destination: RepresentativesScreen (Settings ->
+      // Representatives), never a new screen. Checked before the generic
+      // eventId/userId branches; the invitation's push_data also carries
+      // recruiterId, which must not be mistaken for a profile link.
+      // Accept/Decline still only happen through
+      // respond_to_recruiter_invitation on that screen.
+      setRepresentativesFocus({ partnershipId: data.partnershipId, nonce: Date.now() });
+      setScreenStack([]);
+      setScreen('representatives');
+      return;
+    }
     if (data.requestId && data.userId) {
       // Real existing destination: ExploreScreen's own Message Requests
       // overlay (the actual production Chats screen) -- never a second
@@ -2512,6 +2530,13 @@ export default function App() {
   // tap (via setPushActionHandler below) and an in-app NotificationsScreen
   // tap (passed down as a prop) ever call, so the two can never resolve the
   // same notification to two different destinations.
+  // A partnership focus belongs to the notification tap that set it: once
+  // the user leaves Representatives, drop it so opening the screen later
+  // from Settings doesn't re-focus (and re-scroll to) an old invitation.
+  useEffect(() => {
+    if (screen !== 'representatives') setRepresentativesFocus(null);
+  }, [screen]);
+
   const routeNotification = useCallback((data: Record<string, any>) => {
     pushActionRef.current(data);
   }, []);
@@ -3807,7 +3832,7 @@ export default function App() {
 
           {/* ── VENTS REPRESENTATIVES (recruiter partnership frontend) ── */}
           {screen === 'representatives' && (
-            <RepresentativesScreen onBack={goBack} currentUser={currentUser} />
+            <RepresentativesScreen onBack={goBack} currentUser={currentUser} focusPartnership={representativesFocus} />
           )}
 
           {/* ── TICKET REFUND (attendee side) ── */}

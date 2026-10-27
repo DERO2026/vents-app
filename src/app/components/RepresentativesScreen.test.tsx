@@ -36,6 +36,17 @@ let deferredTargets: Record<string, (v: any) => void> = {};
 let deferTargetIds: string[] = [];
 let incomingRows: any[] = [];
 let rpcDelayed: Record<string, any> = {};
+// public_profiles rows served for the inviter lookup (.in('id', [...])),
+// and the ids each lookup asked for.
+let profileRows: any[] = [];
+let profilesError: string | null = null;
+let profileLookups: string[][] = [];
+// recruiter_partnerships rows by id, for the notification-focus lookup
+// (.eq('id', ...).maybeSingle()).
+let partnershipById: Record<string, { id: string; recruiter_id: string } | null> = {};
+// RPC names whose call rejects outright (network failure), as opposed to
+// resolving with a Supabase {error}.
+let rpcThrows: string[] = [];
 
 // A thenable that also exposes .maybeSingle() -- mirrors the real
 // supabase-js query builder, where `await qb.eq(...)` and
@@ -84,6 +95,10 @@ vi.mock('../../lib/supabase', () => ({
             const isOrganizer = organizerUserIds.includes(value);
             return singleRowResult({ data: isOrganizer ? { id: 'ev-1' } : null, error: null });
           }
+          if (table === 'recruiter_partnerships' && column === 'id') {
+            // Notification focus: which side of this partnership am I on?
+            return singleRowResult({ data: partnershipById[value] ?? null, error: null });
+          }
           if (table === 'recruiter_partnerships') {
             // The recruiter-side list: select('*').eq('recruiter_id', ...)
             return partnershipsError
@@ -95,12 +110,22 @@ vi.mock('../../lib/supabase', () => ({
         or: (filter: string) => {
           lastOrFilter = filter;
           return {
-            // The recipient-side list: select('*').or(...).eq('status', 'pending')
-            eq: () =>
+            // The recipient-side list, every status:
+            // select('*').or(...).order('invited_at', { ascending: false })
+            order: () =>
               partnershipsError
                 ? Promise.resolve({ data: null, error: { message: partnershipsError } })
                 : Promise.resolve({ data: incomingRows, error: null }),
           };
+        },
+        in: (_column: string, ids: string[]) => {
+          // Inviter lookup: public_profiles.select(...).in('id', recruiterIds)
+          profileLookups.push(ids);
+          return Promise.resolve(
+            profilesError
+              ? { data: null, error: { message: profilesError } }
+              : { data: profileRows.filter((r) => ids.includes(r.id)), error: null },
+          );
         },
       }),
     }),
@@ -119,6 +144,7 @@ vi.mock('../../lib/supabase', () => ({
           error: null,
         });
       }
+      if (rpcThrows.includes(name)) return Promise.reject(new Error('network unreachable'));
       if (rpcDelayed[name]) {
         return new Promise((resolve) => { rpcDelayed[name] = { resolve }; });
       }
@@ -157,6 +183,11 @@ beforeEach(() => {
   deferredTargets = {};
   deferTargetIds = [];
   incomingRows = [];
+  profileRows = [];
+  profilesError = null;
+  profileLookups = [];
+  partnershipById = {};
+  rpcThrows = [];
   rpcDelayed = {};
   searchResults = [{ id: 'org-1', username: 'eventpro', fullName: 'Event Pro', avatarUrl: null }];
   container = document.createElement('div');
@@ -841,5 +872,248 @@ describe('RepresentativesScreen', () => {
     expect(span.style.width).toBe('');
     expect(span.style.overflow).toBe('hidden');
     expect(span.style.whiteSpace).toBe('nowrap');
+  });
+});
+
+// Recipient side of VENTS Earn: the organizer/provider who received a
+// Representative's invitation. Same mocked supabase as above -- no real RPC
+// is ever made and no real invitation is ever sent.
+describe('RepresentativesScreen: receiving an invitation', () => {
+  const pending = (over: Partial<Record<string, any>> = {}) => ({
+    id: 'p1', recruiter_id: 'r1', organizer_id: 'u1', provider_id: null, status: 'pending',
+    commission_split_bps: 10000, invited_at: new Date().toISOString(), responded_at: null, ...over,
+  });
+  const ada = { id: 'r1', full_name: 'Ada Obi', username: 'adarep', avatar_url: null, is_verified: false };
+
+  async function mountWith(focusPartnership?: { partnershipId: string; nonce: number } | null) {
+    root = createRoot(container);
+    act(() => {
+      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} />);
+    });
+    await flush();
+    await flush();
+  }
+
+  async function openInvitations() {
+    await act(async () => {
+      const tabBtn = Array.from(container.querySelectorAll('button[role="tab"]')).find((b) => b.textContent?.includes('Invitations'))!;
+      tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+    await flush();
+  }
+
+  const rows = () => Array.from(container.querySelectorAll('[data-testid="invitation-row"]')) as HTMLElement[];
+  const button = (label: string) => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === label) as HTMLButtonElement | undefined;
+  const respondCalls = () => rpcCalls.filter((c) => c.name === 'respond_to_recruiter_invitation');
+  async function click(el: Element) {
+    await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await flush();
+  }
+
+  it('names the inviter from public_profiles (name, @username, avatar) instead of the raw recruiter id', async () => {
+    incomingRows = [pending()];
+    profileRows = [{ ...ada, avatar_url: 'https://cdn.example/ada.png' }];
+    await mountWith();
+    await openInvitations();
+
+    expect(profileLookups).toEqual([['r1']]);
+    const row = rows()[0];
+    expect(row.querySelector('[data-testid="inviter-name"]')?.textContent).toBe('Ada Obi');
+    expect(row.textContent).toContain('@adarep');
+    expect(row.textContent).toMatch(/Invited you today/);
+    expect(row.querySelector('img')?.getAttribute('src')).toBe('https://cdn.example/ada.png');
+    expect(row.querySelector('[data-testid="invitation-status"]')?.textContent).toBe('Pending');
+    expect(row.textContent).not.toContain('r1');
+  });
+
+  it('a failed inviter lookup falls back to a generic label and still allows Accept', async () => {
+    incomingRows = [pending()];
+    profilesError = 'permission denied';
+    await mountWith();
+    await openInvitations();
+
+    expect(rows()[0].querySelector('[data-testid="inviter-name"]')?.textContent).toBe('A VENTS Representative');
+    // The old card's avatar showed initials of the recruiter UUID ("R1").
+    expect(rows()[0].textContent).not.toContain('R1');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(button('Accept')?.disabled).toBe(false);
+  });
+
+  it('Accept calls respond_to_recruiter_invitation(p_accept: true) and shows the accepted state with no further actions', async () => {
+    incomingRows = [pending()];
+    profileRows = [ada];
+    rpcResponses['respond_to_recruiter_invitation'] = { data: pending({ status: 'accepted', responded_at: new Date().toISOString() }), error: null };
+    await mountWith();
+    await openInvitations();
+
+    // The server now reports the row as accepted on the reload.
+    incomingRows = [pending({ status: 'accepted', responded_at: new Date().toISOString() })];
+    await click(button('Accept')!);
+
+    expect(respondCalls()).toEqual([{ name: 'respond_to_recruiter_invitation', args: { p_partnership_id: 'p1', p_accept: true } }]);
+    expect(container.querySelector('[data-testid="respond-notice"]')?.textContent).toBe("You're now partnered with Ada Obi.");
+    const row = rows()[0];
+    expect(row.getAttribute('data-status')).toBe('accepted');
+    expect(row.querySelector('[data-testid="invitation-status"]')?.textContent).toBe('Accepted');
+    expect(row.textContent).toMatch(/Accepted today/);
+    expect(button('Accept')).toBeUndefined();
+    expect(button('Decline')).toBeUndefined();
+    expect(container.textContent).toMatch(/No pending invitations/);
+    expect(container.textContent).toMatch(/Past invitations/);
+  });
+
+  it('Decline calls respond_to_recruiter_invitation(p_accept: false) and shows the declined state', async () => {
+    incomingRows = [pending()];
+    profileRows = [ada];
+    rpcResponses['respond_to_recruiter_invitation'] = { data: pending({ status: 'declined', responded_at: new Date().toISOString() }), error: null };
+    await mountWith();
+    await openInvitations();
+
+    incomingRows = [pending({ status: 'declined', responded_at: new Date().toISOString() })];
+    await click(button('Decline')!);
+
+    expect(respondCalls()).toEqual([{ name: 'respond_to_recruiter_invitation', args: { p_partnership_id: 'p1', p_accept: false } }]);
+    expect(container.querySelector('[data-testid="respond-notice"]')?.textContent).toBe("You declined Ada Obi's invitation.");
+    expect(rows()[0].querySelector('[data-testid="invitation-status"]')?.textContent).toBe('Declined');
+    expect(button('Accept')).toBeUndefined();
+  });
+
+  it('a double tap delivered before React re-renders sends exactly one response', async () => {
+    incomingRows = [pending()];
+    rpcDelayed['respond_to_recruiter_invitation'] = true;
+    await mountWith();
+    await openInvitations();
+
+    const accept = button('Accept')!;
+    const decline = button('Decline')!;
+    // Both clicks in one act(): the second one sees the same render (button
+    // not yet disabled, busyIds state not yet updated).
+    await act(async () => {
+      accept.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      accept.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      decline.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+    expect(respondCalls().length).toBe(1);
+    expect(respondCalls()[0].args.p_accept).toBe(true);
+
+    await act(async () => { rpcDelayed['respond_to_recruiter_invitation'].resolve({ data: pending({ status: 'accepted' }), error: null }); });
+    await flush();
+    expect(respondCalls().length).toBe(1);
+  });
+
+  it('an invitation already answered elsewhere says so plainly and reloads to the real state', async () => {
+    incomingRows = [pending()];
+    rpcResponses['respond_to_recruiter_invitation'] = { data: null, error: { message: 'Partnership is not pending (status=accepted)' } };
+    await mountWith();
+    await openInvitations();
+
+    incomingRows = [pending({ status: 'accepted', responded_at: new Date().toISOString() })];
+    await click(button('Decline')!);
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/This invitation was already accepted\./);
+    expect(rows()[0].getAttribute('data-status')).toBe('accepted');
+    expect(button('Accept')).toBeUndefined();
+    expect(container.querySelector('[data-testid="respond-notice"]')).toBeNull();
+  });
+
+  it('an invitation the Representative withdrew is explained, not shown as a raw database error', async () => {
+    incomingRows = [pending()];
+    rpcResponses['respond_to_recruiter_invitation'] = { data: null, error: { message: 'Partnership is not pending (status=withdrawn)' } };
+    await mountWith();
+    await openInvitations();
+
+    incomingRows = [pending({ status: 'withdrawn', responded_at: new Date().toISOString() })];
+    await click(button('Accept')!);
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/This invitation was withdrawn by the Representative\./);
+    expect(container.textContent).not.toMatch(/status=withdrawn/);
+    expect(rows()[0].querySelector('[data-testid="invitation-status"]')?.textContent).toBe('Withdrawn');
+  });
+
+  it('a network failure while responding shows an error, keeps the invitation pending and lets the user retry', async () => {
+    incomingRows = [pending()];
+    rpcThrows = ['respond_to_recruiter_invitation'];
+    await mountWith();
+    await openInvitations();
+    await click(button('Accept')!);
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/network unreachable/);
+    expect(rows()[0].getAttribute('data-status')).toBe('pending');
+    expect(button('Accept')?.disabled).toBe(false);
+  });
+
+  it('a list load failure offers Try again, which reloads the invitations', async () => {
+    partnershipsError = 'timeout';
+    await mountWith();
+    await openInvitations();
+    expect(container.textContent).toMatch(/Could not load invitations/);
+
+    partnershipsError = null;
+    incomingRows = [pending()];
+    await click(button('Try again')!);
+    expect(container.textContent).not.toMatch(/Could not load invitations/);
+    expect(rows().length).toBe(1);
+  });
+
+  it('lists pending invitations first and answered ones under Past invitations, without actions', async () => {
+    const old = new Date(Date.now() - 3 * 86400000).toISOString();
+    incomingRows = [
+      pending({ id: 'p-acc', status: 'accepted', responded_at: old }),
+      pending({ id: 'p-pen' }),
+      pending({ id: 'p-dec', status: 'declined', responded_at: old, provider_id: 'sp1', organizer_id: null }),
+    ];
+    await mountWith();
+    await openInvitations();
+
+    expect(rows().map((r) => r.getAttribute('data-status'))).toEqual(['pending', 'accepted', 'declined']);
+    expect(rows()[1].textContent).toMatch(/Accepted 3 days ago/);
+    expect(rows()[2].textContent).toMatch(/Declined 3 days ago/);
+    expect(rows()[2].textContent).toMatch(/Service provider partnership/);
+    expect(Array.from(container.querySelectorAll('button')).filter((b) => b.textContent === 'Accept').length).toBe(1);
+  });
+
+  describe('opened from a partnership notification', () => {
+    it('an invitation notification opens Invitations and highlights that invitation', async () => {
+      incomingRows = [pending({ id: 'p0' }), pending({ id: 'p1' })];
+      partnershipById = { p1: { id: 'p1', recruiter_id: 'r1' } };
+      await mountWith({ partnershipId: 'p1', nonce: 1 });
+
+      const selected = container.querySelector('button[role="tab"][aria-selected="true"]');
+      expect(selected?.textContent).toContain('Invitations');
+      expect(rows().find((r) => r.getAttribute('data-focused') === 'true')).toBe(rows()[1]);
+      expect(rows()[0].getAttribute('data-focused')).toBeNull();
+    });
+
+    it('the recruiter\'s reply notification (their own partnership) opens My Team instead', async () => {
+      partnershipById = { p9: { id: 'p9', recruiter_id: 'u1' } };
+      await mountWith({ partnershipId: 'p9', nonce: 1 });
+
+      const selected = container.querySelector('button[role="tab"][aria-selected="true"]');
+      expect(selected?.textContent).toContain('My Team');
+    });
+
+    it('a partnership the user cannot see lands on Invitations with a clear message, not a blank screen', async () => {
+      await mountWith({ partnershipId: 'gone', nonce: 1 });
+
+      const selected = container.querySelector('button[role="tab"][aria-selected="true"]');
+      expect(selected?.textContent).toContain('Invitations');
+      expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/This invitation is no longer available\./);
+    });
+
+    it('re-rendering with the same notification does not re-run the focus lookup', async () => {
+      partnershipById = { p1: { id: 'p1', recruiter_id: 'r1' } };
+      const focus = { partnershipId: 'p1', nonce: 7 };
+      await mountWith(focus);
+      const lookups = () => tablesQueried.filter((t) => t === 'recruiter_partnerships').length;
+      const before = lookups();
+      act(() => {
+        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={{ ...focus }} />);
+      });
+      await flush();
+      expect(lookups()).toBe(before);
+    });
   });
 });
