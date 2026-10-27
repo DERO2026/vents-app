@@ -293,6 +293,7 @@ function chainable(table: string): any {
     single: () => resolveSingle(),
     maybeSingle: () => resolveSingle(),
     upsert: () => Promise.resolve({ data: null, error: null }),
+    update: () => api,
     then: (resolveFn: any, rejectFn?: any) => resolve().then(resolveFn, rejectFn),
   };
   function applyFilters(rows: Row[]) {
@@ -302,6 +303,14 @@ function chainable(table: string): any {
   }
   function resolve() {
     if (table === 'event_promotions' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('promotionsEmpty') === '1') {
+      return Promise.resolve({ data: [], error: null });
+    }
+    // Stage 10: ?inboxEmpty=1 forces InboxScreen/ConversationScreen's
+    // message/request-backed tables to [] for the empty-state screenshot.
+    if (
+      (table === 'direct_messages' || table === 'conversation_requests' || table === 'conversation_clears') &&
+      typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('inboxEmpty') === '1'
+    ) {
       return Promise.resolve({ data: [], error: null });
     }
     let rows = applyFilters(FIXTURES[table] || []);

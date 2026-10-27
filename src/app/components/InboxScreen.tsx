@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 
 interface InboxScreenProps {
   currentUser: { id: string };
@@ -244,7 +245,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
   return (
     <div
-      style={{ background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
+      style={{ background: `radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, ${ventsColors.bg} 100%)`, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
       onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
       onTouchEnd={(e) => {
         if (pullStartY.current === null) return;
@@ -270,7 +271,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', padding: 0, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ArrowLeft size={18} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Manrope, sans-serif' }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Manrope, sans-serif' }}>
           Messages
         </h1>
       </div>
@@ -290,12 +291,12 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 background: tab === t ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
                 border: 'none', borderRadius: '100px', padding: '9px', cursor: 'pointer',
-                color: tab === t ? '#fff' : '#9CA0BC', fontSize: '13px', fontWeight: 700,
+                color: tab === t ? ventsColors.white : '#9CA0BC', fontSize: '13px', fontWeight: 700,
               }}
             >
               {t === 'messages' ? 'Messages' : 'Requests'}
               {t === 'requests' && requests.length > 0 && (
-                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : '#A855F7', color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
+                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
                   {requests.length}
                 </span>
               )}
@@ -318,13 +319,13 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         ) : loadError ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: '12px' }}>
             <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <MessageCircle size={28} color="#F87171" />
+              <MessageCircle size={28} color={ventsColors.error} />
             </div>
-            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>Couldn't load your messages</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, margin: 0 }}>Couldn't load your messages</p>
             <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>{loadError}</p>
             <button
               onClick={load}
-              style={{ marginTop: '4px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '10px 20px', color: '#F87171', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+              style={{ marginTop: '4px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '10px 20px', color: ventsColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
             >
               Retry
             </button>
@@ -335,7 +336,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(167,139,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <MessageCircle size={28} color="#A78BFA" />
               </div>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>No message requests</p>
+              <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, margin: 0 }}>No message requests</p>
               <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>
                 New conversations from people you haven't talked to yet show up here first.
               </p>
@@ -348,7 +349,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                     {r.avatarUrl ? <img src={r.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#D8B4FE', fontSize: '18px', fontWeight: 700 }}>{r.name[0]?.toUpperCase()}</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0 }}>{r.name}</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0 }}>{r.name}</p>
                     <p style={{ color: '#9CA0BC', fontSize: '12px', margin: '2px 0 0' }}>wants to message you · {timeAgo(r.createdAt)}</p>
                   </div>
                   <button
@@ -363,7 +364,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                     disabled={respondingId === r.requesterId}
                     style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
-                    <Check size={15} color="#fff" />
+                    <Check size={15} color={ventsColors.white} />
                   </button>
                 </div>
               ))}
@@ -374,7 +375,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
             <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(167,139,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <MessageCircle size={28} color="#A78BFA" />
             </div>
-            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>No messages yet</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, margin: 0 }}>No messages yet</p>
             <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>
               Message an organiser from an event page or their profile.
             </p>
@@ -396,7 +397,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px', gap: '8px' }}>
-                      <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.otherUserName}</span>
+                      <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.otherUserName}</span>
                       <span style={{ color: '#7C8199', fontSize: '11px', flexShrink: 0 }}>{timeAgo(t.lastAt)}</span>
                     </div>
                     <p style={{ color: t.unread > 0 ? '#E4E4F0' : '#8B8FA8', fontSize: '12.5px', fontWeight: t.unread > 0 ? 600 : 400, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -404,7 +405,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                     </p>
                   </div>
                   {t.unread > 0 && (
-                    <div style={{ background: '#A855F7', color: '#fff', fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ background: ventsColors.accent, color: ventsColors.white, fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {t.unread > 9 ? '9+' : t.unread}
                     </div>
                   )}
@@ -421,19 +422,19 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       {/* 3-dot action menu */}
       {menuThread && !confirmAction && (
         <div onClick={() => setMenuThread(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#090514', borderRadius: '24px 24px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '16px 0 calc(24px + env(safe-area-inset-bottom))' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: ventsColors.surface, borderRadius: '24px 24px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '16px 0 calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.12)', borderRadius: '2px', margin: '0 auto 16px' }} />
-            <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, padding: '0 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{menuThread.otherUserName}</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, padding: '0 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{menuThread.otherUserName}</p>
             {[
               { icon: <Eraser size={18} />, label: 'Clear Chat', color: '#A78BFA', action: () => setConfirmAction('clear') },
-              { icon: <Trash2 size={18} />, label: 'Delete Chat', color: '#EF4444', action: () => setConfirmAction('delete') },
-              { icon: <Ban size={18} />, label: 'Block User', color: '#EF4444', action: () => setConfirmAction('block') },
+              { icon: <Trash2 size={18} />, label: 'Delete Chat', color: ventsColors.error, action: () => setConfirmAction('delete') },
+              { icon: <Ban size={18} />, label: 'Block User', color: ventsColors.error, action: () => setConfirmAction('block') },
               { icon: <Share2 size={18} />, label: 'Share User', color: '#3B82F6', action: () => handleShare(menuThread) },
               { icon: <LinkIcon size={18} />, label: 'Copy Link', color: '#3B82F6', action: () => handleCopyLink(menuThread) },
             ].map((item) => (
               <button key={item.label} onClick={item.action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                 <span style={{ color: item.color, display: 'flex' }}>{item.icon}</span>
-                <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>{item.label}</span>
+                <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 500 }}>{item.label}</span>
               </button>
             ))}
           </div>
@@ -443,9 +444,9 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       {/* Confirmation step for destructive actions */}
       {menuThread && confirmAction && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '340px' }}>
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '340px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>
+              <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, margin: 0 }}>
                 {confirmAction === 'clear' ? 'Clear this chat?' : confirmAction === 'delete' ? 'Delete this chat?' : `Block ${menuThread.otherUserName}?`}
               </p>
               <button onClick={() => setConfirmAction(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -463,7 +464,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               <button onClick={() => setConfirmAction(null)} disabled={actionBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '11px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: '#EF4444', border: 'none', borderRadius: '12px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
+              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: ventsColors.error, border: 'none', borderRadius: '12px', padding: '11px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
                 {actionBusy ? 'Working…' : 'Confirm'}
               </button>
             </div>

@@ -576,7 +576,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           </p>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => respondToRequest('decline')} disabled={respondingRequest} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Decline</button>
-            <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '10px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
+            <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '10px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
           </div>
         </div>
       )}
@@ -743,7 +743,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <Send size={16} color={body.trim() ? '#fff' : ventsColors.ink3} />
+          <Send size={16} color={body.trim() ? ventsColors.white : ventsColors.ink3} />
         </button>
       </div>
     </div>

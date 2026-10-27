@@ -15,6 +15,7 @@ import { ServiceBookingsScreen } from '../src/app/components/ServiceBookingsScre
 import { MyTicketsScreen } from '../src/app/components/MyTicketsScreen';
 import { QRTicket } from '../src/app/components/QRTicket';
 import { InboxScreen } from '../src/app/components/InboxScreen';
+import { ConversationScreen } from '../src/app/components/ConversationScreen';
 import { NotificationsScreen } from '../src/app/components/NotificationsScreen';
 import { ManageProviderServicesScreen } from '../src/app/components/ManageProviderServicesScreen';
 import { CheckinScannerScreen } from '../src/app/components/CheckinScannerScreen';
@@ -487,6 +488,18 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onClose={() => {}}
       variant={cropperVariant}
       title={cropperVariant === 'avatar' ? 'Crop Photo' : 'Crop Flyer'}
+    />
+  ),
+
+  // Stage 10: ConversationScreen.tsx -- a one-to-one thread against the
+  // same user-2 fixture InboxScreen's "inbox" route lists as unread.
+  // ?inboxEmpty=1 is handled upstream in fakeSupabase.ts for the inbox
+  // route; this route always shows the populated thread (dm-1's sender).
+  conversation: () => (
+    <ConversationScreen
+      currentUser={FIXTURE_USER}
+      otherUser={{ id: 'user-2', name: 'Priya Nair' }}
+      onBack={() => {}}
     />
   ),
 };
