@@ -27,7 +27,6 @@ import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
 import { SkeletonCard } from './SkeletonCard';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
-import { AmbientGlow } from './shared/AmbientGlow';
 
 // Root admin account — same convention used in App.tsx / the Admin Console.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -413,7 +412,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
                 color: isFree ? ventsColors.success : ventsColors.white,
-                background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                background: isFree ? 'rgba(6,214,160,0.15)' : '#8E5CF7',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
                 {cta}
@@ -492,7 +491,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             if (parent && !parent.querySelector('.img-fallback')) {
               const fb = document.createElement('div');
               fb.className = 'img-fallback';
-              fb.style.cssText = 'width:100%;height:100%;background:linear-gradient(135deg,#1e1040 0%,#0f172a 100%);display:flex;align-items:center;justify-content:center;font-size:28px;';
+              fb.style.cssText = 'width:100%;height:100%;background:#1A1724;display:flex;align-items:center;justify-content:center;font-size:28px;';
               fb.textContent = '🎉';
               parent.insertBefore(fb, parent.firstChild);
             }
@@ -626,7 +625,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
                 color: isFree ? ventsColors.success : ventsColors.white,
-                background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                background: isFree ? 'rgba(6,214,160,0.15)' : '#8E5CF7',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
                 {cta}
@@ -640,9 +639,8 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
 });
 
 const shimmerBg: React.CSSProperties = {
-  background: 'linear-gradient(90deg, #1a1d2e 25%, #252840 50%, #1a1d2e 75%)',
-  backgroundSize: '800px 100%',
-  animation: 'shimmer 1.4s infinite linear',
+  background: '#1a1d2e',
+  animation: 'shimmer 1.4s infinite ease-in-out',
 };
 
 function HorizontalCardSkeleton() {
@@ -769,8 +767,8 @@ function FeaturedCarousel({
             showDots={false}
             style={{ width: '100%', height: '100%' }}
           />
-          {/* Deep gradient from transparent at top to almost-black at bottom */}
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
+          {/* Solid translucent band behind the bottom text */}
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '55%', background: 'rgba(0,0,0,0.75)' }} />
           {/* FEATURED badge -- handoff anatomy: dark glass pill, JetBrains
               Mono caps, not a purple gradient pill. */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
@@ -808,7 +806,7 @@ function FeaturedCarousel({
                     fontSize: '12px', fontWeight: 800, width: 'fit-content',
                     borderRadius: '20px', padding: '4px 12px',
                     color: isFree ? ventsColors.success : ventsColors.white,
-                    background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                    background: isFree ? 'rgba(6,214,160,0.15)' : '#8E5CF7',
                     border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
                   }}>
                     {cta}
@@ -1403,7 +1401,6 @@ export function HomeScreen({
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
-      <AmbientGlow />
       {/* Pull-to-refresh spinner */}
       {pullRefreshing && (
         <div style={{
@@ -1574,14 +1571,13 @@ export function HomeScreen({
         </div>
       )}
 
-      {/* Hero header -- premium gradient band (same radial-glow language as
-          WelcomeScreen, so Home reads as a continuation of the landing
-          screen, not a different app) carrying brand, location, account
+      {/* Hero header -- solid band (same flat background as WelcomeScreen,
+          so Home reads as a continuation of the landing screen, not a
+          different app) carrying brand, location, account
           actions, and a clear Events/Services quick-switch -- the two
           verticals surfaced as equals right under the logo, not one hidden
           behind a small icon button. */}
-      <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)' }}>
-        <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.09) 0%, transparent 70%)', top: '-100px', right: '-60px', pointerEvents: 'none' }} />
+      <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: '#020005' }}>
         {/* Row 1: logo | compact search pill | notifications (+ create).
             One location control total lives in Row 2 below -- the old
             duplicate country pill that sat under the logo, and the second
@@ -1629,7 +1625,7 @@ export function HomeScreen({
                 aria-label="Ask VENTS AI"
                 style={{
                   flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
-                  background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
+                  background: '#8E5CF7',
                   border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >

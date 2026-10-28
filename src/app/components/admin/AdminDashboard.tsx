@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { adminTheme, accentGradient } from './adminConsoleTheme';
+import { adminTheme, accentFill } from './adminConsoleTheme';
 import type { PermissionUser } from '../../../lib/permissions';
 
 const NGN = (n: number) => '₦' + Math.round(n).toLocaleString('en-NG');
@@ -270,5 +270,5 @@ export function AdminDashboard({ currentUser, isRoot, isSuperAdmin, isMobile, is
 }
 
 export function accentSwatch() {
-  return accentGradient;
+  return accentFill;
 }

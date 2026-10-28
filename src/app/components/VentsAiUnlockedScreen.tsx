@@ -6,9 +6,9 @@ import { isMobileNativeForAiGate } from '../../lib/platform';
 // Exact reproduction of VentsPrototype.dc.html's `ai.ph.unlocked` state --
 // the one place the approved prototype actually specifies an animated
 // "orb" (every other VENTS AI view uses a plain text/glyph header, no
-// orb). Three layered divs (outer glow halo, the lit sphere, a glossy
-// highlight) and the prototype's own vglow/vfloat keyframes, reproduced
-// value-for-value from its <style> block and this screen's inline styles.
+// orb), rendered as a single solid VENTS-accent circle (app-wide solid-
+// colour standard: no glow halo or gradient highlight) with the prototype's
+// own float keyframes.
 //
 // Shown once per session when AiAccessScreen's onContinue() fires --
 // which today means EITHER a real confirmed entitlement (enforcement on)
@@ -73,23 +73,9 @@ export function VentsAiUnlockedScreen({
       <div style={{ position: 'relative', width: '120px', height: '120px', margin: '20px auto' }}>
         <div
           style={{
-            position: 'absolute', inset: '-24px', borderRadius: '50%',
-            background: 'radial-gradient(closest-side, rgba(139,92,246,.45), transparent)',
-            animation: 'ventsAiOrbGlow 4.5s ease-in-out infinite',
-          }}
-        />
-        <div
-          style={{
             position: 'absolute', inset: 0, borderRadius: '50%',
-            background: 'radial-gradient(circle at 32% 28%, #e9ddff 0%, #a78bfa 22%, #6d28d9 58%, #1b1140 100%)',
-            boxShadow: 'inset 0 -10px 24px rgba(0,0,0,.45), inset 0 8px 18px rgba(255,255,255,.28)',
+            background: '#8E5CF7', // ventsColors.accent -- solid orb, no gradient
             animation: 'ventsAiOrbFloat 6s ease-in-out infinite',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute', left: '24%', top: '16%', width: '34%', height: '20%',
-            borderRadius: '50%', background: 'rgba(255,255,255,.35)', filter: 'blur(5px)',
           }}
         />
       </div>

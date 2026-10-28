@@ -306,14 +306,17 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             <div
               style={{
                 position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to bottom, rgba(19,22,41,0.1), rgba(19,22,41,0.85))',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: '45%',
+                background: 'rgba(19,22,41,0.7)',
               }}
             />
             <div style={{ position: 'absolute', bottom: '12px', left: '16px' }}>
               <span
                 style={{
-                  background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                  background: '#8E5CF7',
                   color: '#fff',
                   fontSize: '10px',
                   fontWeight: 700,
@@ -528,7 +531,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               disabled={loadingAccess}
               style={{
                 width: '100%',
-                background: 'linear-gradient(135deg,#7C3AED,#A855F7)',
+                background: '#8E5CF7',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '13px',
@@ -578,7 +581,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           onClick={onViewTickets}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            background: '#8E5CF7',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
@@ -634,7 +637,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                     Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
                   </span>
                 </div>
-                <button onClick={closeTransferModal} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Done
                 </button>
               </>
@@ -663,7 +666,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   <button
                     onClick={handleSendTransfer}
                     disabled={transferSending || !transferIdentifier.trim()}
-                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                    style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
                   >
                     {transferSending ? 'Sending…' : 'Send Request'}
                   </button>

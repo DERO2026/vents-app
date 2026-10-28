@@ -44,7 +44,7 @@ export function LazyImage({
         overflow: 'hidden',
         aspectRatio,
         borderRadius: radius,
-        background: 'linear-gradient(135deg,#1e1040 0%,#0f172a 100%)',
+        background: '#1A1724',
         ...style,
       }}
     >

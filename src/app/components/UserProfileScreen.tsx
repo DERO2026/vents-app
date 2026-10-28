@@ -229,7 +229,6 @@ export function UserProfileScreen({
       {/* Radial purple glow decoration, matching the export's ambient
           background treatment (both Public User and Organizer Profile
           exports use the same top-anchored radial glow, no cover photo). */}
-      <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.32), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
 
       {copiedToast && (
         <div style={{ position: 'fixed', left: '16px', right: '16px', bottom: 'calc(24px + env(safe-area-inset-bottom))', zIndex: 50, display: 'flex', justifyContent: 'center' }}>
@@ -254,7 +253,7 @@ export function UserProfileScreen({
             style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.35 }}
             onError={() => setCoverLoadFailed(true)}
           />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(8,5,15,0.2) 0%, #08050f 100%)' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,5,15,0.6)' }} />
         </div>
       )}
 
@@ -350,7 +349,7 @@ export function UserProfileScreen({
               width: isOrganizerProfile ? '92px' : '96px',
               height: isOrganizerProfile ? '92px' : '96px',
               borderRadius: isOrganizerProfile ? '22px' : '50%',
-              background: (user.avatar_url && !avatarLoadFailed) ? 'transparent' : `linear-gradient(145deg, ${user.avatarColor}, #4c1d95)`,
+              background: (user.avatar_url && !avatarLoadFailed) ? 'transparent' : user.avatarColor,
               boxShadow: '0 0 0 3px rgba(168,85,247,0.3), 0 0 28px rgba(168,85,247,0.45)',
               display: 'flex',
               alignItems: 'center',
@@ -412,7 +411,7 @@ export function UserProfileScreen({
         {(user.instagram_handle || user.x_handle || user.tiktok_handle) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
             {user.instagram_handle && (
-              <button onClick={() => openExternalUrl(`https://instagram.com/${user.instagram_handle}`)} title={`@${user.instagram_handle} on Instagram`} style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <button onClick={() => openExternalUrl(`https://instagram.com/${user.instagram_handle}`)} title={`@${user.instagram_handle} on Instagram`} style={{ width: '32px', height: '32px', borderRadius: '9px', background: '#8E5CF7', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 <SiInstagram size={14} color="#fff" />
               </button>
             )}
@@ -481,7 +480,7 @@ export function UserProfileScreen({
             style={{
               flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: '14px', border: 'none', cursor: 'pointer',
               fontWeight: 700, fontSize: '14px',
-              background: localFollowing ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg,#a855f7,#7c3aed)',
+              background: localFollowing ? 'rgba(255,255,255,0.08)' : '#8E5CF7',
               boxShadow: localFollowing ? 'none' : '0 6px 20px rgba(168,85,247,0.35)',
               color: localFollowing ? '#f6f4f9' : '#fff',
             }}

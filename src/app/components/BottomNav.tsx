@@ -56,7 +56,7 @@ const TABS: { id: TabId; label: string; Icon: typeof Home }[] = [
 //   active (non-AI): bg rgba(139,92,246,.55), color #fff
 //   inactive AI: transparent bg, color #c4b5fd (already purple-tinted,
 //     unlike the other four tabs' neutral inactive gray)
-//   active AI: bg linear-gradient(135deg,#8b5cf6,#6d28d9), color #fff
+//   active AI: bg #8E5CF7, color #fff
 // The one addition beyond the prototype's static markup is a restrained
 // pulsing glow on the active AI tab, which the Design Foundation's own
 // component spec calls for explicitly ("purple glow is reserved for one
@@ -147,7 +147,7 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
             minWidth: 0,
             border: 'none',
             borderRadius: '28px',
-            background: siActive ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)' : 'transparent',
+            background: siActive ? '#8E5CF7' : 'transparent',
             color: siActive ? '#fff' : '#c4b5fd',
             display: 'flex',
             flexDirection: 'column',

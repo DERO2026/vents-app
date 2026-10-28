@@ -54,15 +54,23 @@ async function mount(props: Partial<React.ComponentProps<typeof VentsAiScreen>> 
   });
 }
 
-describe('VentsAiScreen Home: dimensional 3D orb', () => {
-  it('renders a layered gradient orb, never the old flat star glyph', async () => {
+describe('VentsAiScreen Home: orb', () => {
+  it('renders the orb as a solid VENTS-accent circle, never the old flat star glyph', async () => {
     await mount();
     expect(container!.textContent).not.toContain('★');
     expect(container!.textContent).not.toContain('✦');
-    const radialLayers = Array.from(container!.querySelectorAll('div')).filter(
-      (el) => (el as HTMLElement).style.background?.includes('radial-gradient'),
+    const orb = container!.querySelector('[data-testid="vents-ai-orb"]') as HTMLElement | null;
+    expect(orb).toBeTruthy();
+    expect(orb!.style.borderRadius).toBe('50%');
+    expect(orb!.style.background).toBe('rgb(142, 92, 247)'); // ventsColors.accent #8E5CF7
+  });
+
+  it('uses no gradients anywhere on the Home view (solid-colour standard)', async () => {
+    await mount();
+    const withGradient = Array.from(container!.querySelectorAll<HTMLElement>('*')).filter((el) =>
+      /gradient\(/i.test(el.getAttribute('style') || ''),
     );
-    expect(radialLayers.length).toBeGreaterThanOrEqual(2);
+    expect(withGradient).toEqual([]);
   });
 });
 

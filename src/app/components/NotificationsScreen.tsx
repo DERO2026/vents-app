@@ -251,7 +251,7 @@ export function NotificationsScreen({
     <div
       className="notifications-content"
       style={{
-        background: 'radial-gradient(ellipse 520px 300px at 50% -8%, rgba(123,47,190,0.09) 0%, rgba(5,2,10,1) 40%, #050208 100%)',
+        background: '#050208',
         width: '100%',
         height: '100%',
         display: 'flex',

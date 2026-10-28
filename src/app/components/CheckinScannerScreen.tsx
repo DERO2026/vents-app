@@ -49,7 +49,7 @@ function GuardScreen({ icon, title, body, onBack }: { icon: React.ReactNode; tit
       {icon}
       <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, marginTop: '16px' }}>{title}</h2>
       <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '8px', lineHeight: 1.6, maxWidth: '300px' }}>{body}</p>
-      <button onClick={onBack} style={{ marginTop: '24px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+      <button onClick={onBack} style={{ marginTop: '24px', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
         Go Back
       </button>
     </div>
@@ -232,7 +232,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           </div>
           <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0 }}>Camera Unavailable</p>
           <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.6, maxWidth: '300px' }}>{cam.error}</p>
-          <button onClick={cam.retry} style={{ marginTop: '6px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+          <button onClick={cam.retry} style={{ marginTop: '6px', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
             Try Again
           </button>
           {/* Manual fallback is reachable even while the camera is denied/
@@ -245,7 +245,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       )}
 
       {/* ── Top bar: back + event + camera controls ─────────────────────────── */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(16px + env(safe-area-inset-top)) 16px 14px', background: 'linear-gradient(to bottom, rgba(2,0,5,0.85), transparent)' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(16px + env(safe-area-inset-top)) 16px 14px', background: 'rgba(2,0,5,0.85)' }}>
         <button onClick={onBack} aria-label="Back" style={{ background: 'rgba(9,5,20,0.7)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
           <ArrowLeft size={17} color="#F0F0FF" />
         </button>
@@ -273,7 +273,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       </div>
 
       {/* ── Bottom: prompt + live check-in count ─────────────────────────────── */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 30, padding: '20px 20px calc(22px + env(safe-area-inset-bottom))', background: 'linear-gradient(to top, rgba(2,0,5,0.9), transparent)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 30, padding: '20px 20px calc(22px + env(safe-area-inset-bottom))', background: 'rgba(2,0,5,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
         {showFrame && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981', animation: 'ventsLiveDot 1.3s ease-in-out infinite' }} />
@@ -287,7 +287,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
             <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{stats.checkedIn} / {stats.total}<span style={{ color: '#A78BFA', marginLeft: '6px' }}>{pct}%</span></span>
           </div>
           <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '100px', height: '5px', overflow: 'hidden' }}>
-            <div style={{ background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)', borderRadius: '100px', height: '100%', width: `${pct}%`, transition: 'width 0.4s ease' }} />
+            <div style={{ background: '#8E5CF7', borderRadius: '100px', height: '100%', width: `${pct}%`, transition: 'width 0.4s ease' }} />
           </div>
         </div>
 
@@ -335,7 +335,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
               disabled={!manualCode.trim() || manualBusy}
               style={{
                 width: '100%', height: '50px', border: 'none', borderRadius: '14px',
-                background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', color: '#fff', fontWeight: 700, fontSize: '15px',
+                background: '#8E5CF7', color: '#fff', fontWeight: 700, fontSize: '15px',
                 cursor: (!manualCode.trim() || manualBusy) ? 'not-allowed' : 'pointer',
                 opacity: (!manualCode.trim() || manualBusy) ? 0.6 : 1,
               }}

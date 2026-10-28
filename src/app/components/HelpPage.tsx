@@ -67,7 +67,7 @@ export function HelpPage() {
     <div style={{ background: '#090514', minHeight: '100dvh', color: '#C4C9E0', fontFamily: 'Manrope, sans-serif', padding: '40px 20px 80px', maxWidth: '680px', margin: '0 auto', lineHeight: 1.7 }}>
       {/* Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
-        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <span style={{ color: '#fff', fontWeight: 900, fontSize: '18px', fontFamily: 'Manrope, sans-serif' }}>V</span>
         </div>
         <span style={{ color: '#F0F0FF', fontWeight: 800, fontSize: '20px', fontFamily: 'Manrope, sans-serif' }}>Vents</span>

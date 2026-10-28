@@ -92,19 +92,6 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
         }
       `}</style>
 
-      {/* Background ambient glow */}
-      <div
-        style={{
-          position: 'absolute',
-          width: '500px',
-          height: '500px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0,200,80,0.04) 0%, transparent 70%)',
-          top: '100px',
-          left: '-60px',
-          pointerEvents: 'none',
-        }}
-      />
 
       {/* SVG Map */}
       <svg
@@ -128,14 +115,10 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
-          <radialGradient id="nlMapBg" cx="55%" cy="50%" r="45%">
-            <stop offset="0%" stopColor="rgba(0,40,20,0.9)" />
-            <stop offset="100%" stopColor="rgba(0,15,8,0.95)" />
-          </radialGradient>
         </defs>
 
         {/* Map fill */}
-        <path d={NIGERIA_PATH} fill="url(#nlMapBg)" stroke="none" />
+        <path d={NIGERIA_PATH} fill="rgba(0,28,14,0.92)" stroke="none" />
 
         {/* Border glow (thick outer) */}
         <path
@@ -290,7 +273,7 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
         </p>
       </div>
 
-      {/* Bottom gradient + stats */}
+      {/* Bottom panel + stats */}
       <div
         style={{
           position: 'absolute',
@@ -298,7 +281,7 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
           left: 0,
           right: 0,
           padding: '0 20px 44px',
-          background: 'linear-gradient(to top, rgba(6,9,13,1) 55%, rgba(6,9,13,0.7) 80%, transparent)',
+          background: 'rgba(6,9,13,0.95)',
           zIndex: 15,
           paddingTop: '40px',
         }}

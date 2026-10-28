@@ -33,7 +33,7 @@ export function ScanResultCard({ outcome }: { outcome: ScanOutcome }) {
         position: 'absolute', inset: 0, zIndex: 20,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         padding: '32px 24px', textAlign: 'center',
-        background: `radial-gradient(circle at 50% 42%, ${t.ring} 0%, rgba(2,0,5,0.86) 55%, rgba(2,0,5,0.94) 100%)`,
+        background: 'rgba(2,0,5,0.9)',
         animation: 'ventsResultIn 0.22s ease-out',
       }}
     >

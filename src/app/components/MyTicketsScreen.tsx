@@ -482,7 +482,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={{
-        background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -717,7 +717,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         <button
                           onClick={() => handleAcceptTransfer(t)}
                           disabled={transferActionBusy === t.id}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: '#8E5CF7', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
                         >
                           <Check size={13} /> {transferActionBusy === t.id ? 'Processing…' : `Accept & Pay ${formatPrice(t.feeKobo / 100)}`}
                         </button>
@@ -858,7 +858,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 }}
                 style={{
                   marginTop: activeTab === 'upcoming' ? '12px' : '0',
-                  background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                  background: '#8E5CF7',
                   border: 'none',
                   borderRadius: '12px',
                   padding: '10px 24px',
@@ -897,8 +897,11 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   <div
                     style={{
                       position: 'absolute',
-                      inset: 0,
-                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 40%, rgba(10,6,18,0.95) 100%)',
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: '50%',
+                      background: 'rgba(10,6,18,0.8)',
                     }}
                   />
                   <div
@@ -1093,7 +1096,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
                   </span>
                 </div>
-                <button onClick={closeTransferModal} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Done
                 </button>
               </>
@@ -1122,7 +1125,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   <button
                     onClick={handleSendTransfer}
                     disabled={transferSending || !transferIdentifier.trim()}
-                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                    style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
                   >
                     {transferSending ? 'Sending…' : 'Send Request'}
                   </button>

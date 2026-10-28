@@ -1,9 +1,8 @@
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 
 const shimmerStyle: React.CSSProperties = {
-  background: 'linear-gradient(90deg, #1a1d2e 25%, #252840 50%, #1a1d2e 75%)',
-  backgroundSize: '800px 100%',
-  animation: 'shimmer 1.4s infinite linear',
+  background: '#1a1d2e',
+  animation: 'shimmer 1.4s infinite ease-in-out',
   borderRadius: '8px',
 };
 

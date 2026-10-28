@@ -28,7 +28,7 @@ export const adminTheme = {
   red: '#f87171',
 } as const;
 
-export const accentGradient = `linear-gradient(135deg, ${adminTheme.accentFrom}, ${adminTheme.accentTo})`;
+export const accentFill = adminTheme.accentFrom;
 
 export type AdminConsoleViewKey =
   | 'overview'

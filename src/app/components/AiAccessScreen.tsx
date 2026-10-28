@@ -38,7 +38,7 @@ import { isMobileNativeForAiGate } from '../../lib/platform';
 //   an unexpected check_and_reserve_ai_usage error. Nothing here ever
 //   fails open past a real, on, enforcement flag.
 
-const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
+const ACCENT_FILL = '#8E5CF7';
 const BG = '#0a0810';
 const SURFACE = '#120e1a';
 const ELEVATED = '#1c1726';
@@ -269,7 +269,7 @@ function PromoCard({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        background: 'linear-gradient(160deg, rgba(163,92,255,.16), rgba(18,14,26,1) 70%)',
+        background: '#120e1a',
         border: '1px solid rgba(163,92,255,.35)',
         borderRadius: 16,
         padding: 18,
@@ -289,7 +289,7 @@ function PrimaryButton({ label, onClick }: { label: string; onClick: () => void 
         width: '100%',
         padding: '13px 16px',
         borderRadius: 12,
-        background: GRADIENT,
+        background: ACCENT_FILL,
         color: '#fff',
         fontWeight: 700,
         fontSize: 14,

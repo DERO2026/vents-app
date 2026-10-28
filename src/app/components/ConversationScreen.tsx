@@ -628,7 +628,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           </p>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => respondToRequest('decline')} disabled={respondingRequest} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Decline</button>
-            <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '10px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
+            <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '10px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
           </div>
         </div>
       )}
@@ -676,7 +676,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             >
               <div style={{
                 maxWidth: '75%',
-                background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
+                background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? '#8E5CF7' : ventsColors.elevated,
                 borderRadius: isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                 padding: (m.image_url && !isDeleted) ? '8px' : '10px 14px',
                 border: isMine && !isDeleted ? 'none' : '1px solid rgba(255,255,255,0.06)',
@@ -794,7 +794,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           disabled={!body.trim()}
           style={{
             width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-            background: body.trim() ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
+            background: body.trim() ? '#8E5CF7' : ventsColors.elevated,
             border: 'none', cursor: body.trim() ? 'pointer' : 'not-allowed',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}

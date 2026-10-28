@@ -33,12 +33,6 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
 
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="saBarGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={ventsColors.accent} />
-          <stop offset="100%" stopColor={ventsColors.accent} />
-        </linearGradient>
-      </defs>
       {/* Grid lines */}
       {[0, 0.25, 0.5, 0.75, 1].map((frac, i) => {
         const y = PT + innerH * frac;
@@ -68,7 +62,7 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
               height={barH}
               rx={4}
               ry={4}
-              fill="url(#saBarGrad)"
+              fill={ventsColors.accent}
             />
             <text
               x={x + barW / 2}
@@ -117,12 +111,6 @@ function LineChartSVG({ data }: { data: { day: string; rate: number }[] }) {
 
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="saLineArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={ventsColors.success} stopOpacity={0.25} />
-          <stop offset="100%" stopColor={ventsColors.success} stopOpacity={0} />
-        </linearGradient>
-      </defs>
       {[0, 0.5, 1].map((frac, i) => {
         const y = PT + innerH * frac;
         return (
@@ -137,7 +125,7 @@ function LineChartSVG({ data }: { data: { day: string; rate: number }[] }) {
           />
         );
       })}
-      <path d={area} fill="url(#saLineArea)" />
+      <path d={area} fill={ventsColors.success} fillOpacity={0.12} />
       <polyline points={polyline} fill="none" stroke={ventsColors.success} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
       {pts.map((p, i) => (
         <circle key={`dot-${i}`} cx={p.x} cy={p.y} r={3.5} fill={ventsColors.success} />

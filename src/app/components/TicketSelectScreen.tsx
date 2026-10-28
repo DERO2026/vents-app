@@ -135,8 +135,11 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
         />
         <div style={{
           position: 'absolute',
-          inset: 0,
-          background: 'linear-gradient(to bottom, rgba(6,10,18,0.55) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,0.85) 100%)',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: '45%',
+          background: 'rgba(6,10,18,0.75)',
         }} />
         {/* Back button */}
         <button
@@ -240,7 +243,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                           borderRadius: '50%',
                           border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.2)',
                           background: isSelected
-                            ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                            ? '#8E5CF7'
                             : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
@@ -332,7 +335,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                           width: '32px',
                           height: '32px',
                           borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                          background: '#8E5CF7',
                           border: 'none',
                           display: 'flex',
                           alignItems: 'center',
@@ -415,7 +418,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           style={{
             width: '100%',
             background: canContinue
-              ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
+              ? '#8E5CF7'
               : ventsColors.elevated,
             border: 'none',
             borderRadius: '16px',

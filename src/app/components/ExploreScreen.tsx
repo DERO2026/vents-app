@@ -301,7 +301,7 @@ export function ExploreScreen({
   return (
     <div
       className="explore-content"
-      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', position: 'relative' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -370,7 +370,7 @@ export function ExploreScreen({
                 onClick={() => { haptics.light(); setChatFilter(f.key); }}
                 style={{
                   flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
-                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'rgba(255,255,255,0.07)',
+                  background: active ? '#8E5CF7' : 'rgba(255,255,255,0.07)',
                   backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                   border: active ? '1px solid rgba(196,181,253,0.4)' : '1px solid rgba(255,255,255,0.12)',
                   borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
@@ -536,7 +536,7 @@ export function ExploreScreen({
 
       {/* ── Message Requests overlay ── */}
       {showRequests && (
-        <div style={{ position: 'fixed', inset: 0, background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', zIndex: 500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 0 16px' }}>
+        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 0 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0 16px 16px' }}>
             <button onClick={() => setShowRequests(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               <X size={22} color={ventsColors.accentSoft} />
@@ -579,7 +579,7 @@ export function ExploreScreen({
                   <button
                     onClick={() => respondToRequest(r.requesterId, 'accept')}
                     disabled={respondingId === r.requesterId}
-                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#8E5CF7', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Check size={15} color={ventsColors.white} />
                   </button>

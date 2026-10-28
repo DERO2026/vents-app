@@ -1673,7 +1673,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         )}
         <button
           onClick={handleTotpVerify}
-          style={{ marginTop: '20px', width: '100%', maxWidth: '320px', background: totpCode.length === 6 ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: 'none', borderRadius: '14px', padding: '14px', color: totpCode.length === 6 ? '#fff' : '#8B8FA8', fontSize: '15px', fontWeight: 700, cursor: totpCode.length === 6 ? 'pointer' : 'not-allowed' }}
+          style={{ marginTop: '20px', width: '100%', maxWidth: '320px', background: totpCode.length === 6 ? '#8E5CF7' : '#1A1D2E', border: 'none', borderRadius: '14px', padding: '14px', color: totpCode.length === 6 ? '#fff' : '#8B8FA8', fontSize: '15px', fontWeight: 700, cursor: totpCode.length === 6 ? 'pointer' : 'not-allowed' }}
         >
           Verify
         </button>
@@ -1687,7 +1687,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   return (
     <div
       style={{
-        background: `radial-gradient(ellipse at 50% 0%, rgba(142,92,247,0.16) 0%, ${ventsColors.elevated} 40%, ${ventsColors.bg} 100%)`,
+        background: ventsColors.bg,
         position: 'fixed',
         top: 0,
         left: 0,
@@ -2286,7 +2286,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 <>
                   {/* Profile Picture Upload */}
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '16px' }}>
-                    <div style={{ width: '70px', height: '70px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '8px', boxShadow: '0 6px 20px rgba(123,47,190,0.3)' }}>
+                    <div style={{ width: '70px', height: '70px', borderRadius: '20px', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '8px', boxShadow: '0 6px 20px rgba(123,47,190,0.3)' }}>
                       {signupAvatarPreview || signupAvatarUrl ? (
                         <img src={signupAvatarPreview || signupAvatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (

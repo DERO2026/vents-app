@@ -471,7 +471,7 @@ export function EventDetailsScreen({
       {
         id: `user-${Date.now()}`,
         name: 'You',
-        avatar: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+        avatar: '#8E5CF7',
         initials: 'ME',
         rating: reviewRating,
         text: reviewText.trim(),
@@ -567,7 +567,7 @@ export function EventDetailsScreen({
   return (
     <div
       style={{
-        background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -680,8 +680,8 @@ export function EventDetailsScreen({
       )}
 
       {/* Hero — premium rounded flyer card (Sync Rwanda-style): inset card
-          with generous corner radius, cover-fit image, bottom gradient for
-          legibility, category pill + share/save/report overlaid on the
+          with generous corner radius, cover-fit image, a solid translucent
+          bottom band for legibility, category pill + share/save/report overlaid on the
           image, and a subtle fade-in on mount. */}
       <div
         className="event-details-hero"
@@ -712,12 +712,15 @@ export function EventDetailsScreen({
             style={{ width: '100%', height: '100%', cursor: 'zoom-in' }}
           />
 
-          {/* Soft bottom gradient so the category pill and tap hint stay legible */}
+          {/* Solid translucent band so the category pill and tap hint stay legible */}
           <div
             style={{
               position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(to top, rgba(2,0,5,0.9) 0%, rgba(2,0,5,0.25) 40%, transparent 65%)',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: '40%',
+              background: 'rgba(2,0,5,0.7)',
               pointerEvents: 'none',
             }}
           />
@@ -917,7 +920,7 @@ export function EventDetailsScreen({
                 style={{
                   flex: 1,
                   flexShrink: 0,
-                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                  background: active ? '#8E5CF7' : 'transparent',
                   border: 'none',
                   borderRadius: '999px',
                   padding: '9px 14px',
@@ -977,14 +980,14 @@ export function EventDetailsScreen({
               onClick={() => onAskVentsAi(event)}
               style={{
                 marginTop: '12px', width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                background: 'linear-gradient(90deg, rgba(139,92,246,0.16), rgba(16,13,26,0.4))',
+                background: 'rgba(139,92,246,0.16)',
                 border: '1px solid rgba(139,92,246,0.3)', borderRadius: '16px', padding: '12px 14px',
                 cursor: 'pointer', textAlign: 'left',
               }}
             >
               <span style={{
                 flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
-                background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
+                background: '#8E5CF7',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <Sparkles size={14} color={ventsColors.white} />
@@ -1140,7 +1143,7 @@ export function EventDetailsScreen({
               width: '44px',
               height: '44px',
               borderRadius: '12px',
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              background: '#8E5CF7',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1186,7 +1189,7 @@ export function EventDetailsScreen({
         {canManageDoor && onOpenDoorScanner && (
           <div
             style={{
-              background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(34,211,238,0.12))',
+              background: 'rgba(142,92,247,0.15)',
               border: '1px solid rgba(167,139,250,0.35)',
               borderRadius: '18px',
               padding: '14px',
@@ -1207,7 +1210,7 @@ export function EventDetailsScreen({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '10px',
-                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                background: '#8E5CF7',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '16px',
@@ -1298,8 +1301,8 @@ export function EventDetailsScreen({
                 borderRadius: '3px',
                 background:
                   capacityPct > 80
-                    ? 'linear-gradient(90deg, #F59E0B, #EF4444)'
-                    : 'linear-gradient(90deg, #7B2FBE, #4F46E5)',
+                    ? '#FBBF24'
+                    : '#8E5CF7',
                 transition: 'width 0.5s ease',
               }}
             />
@@ -1479,7 +1482,7 @@ export function EventDetailsScreen({
                             <Minus size={14} color={ventsColors.ink2} />
                           </button>
                           <span key={qty} style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
-                          <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#8E5CF7', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                             <Plus size={14} color={ventsColors.white} />
                           </button>
                         </div>
@@ -1622,7 +1625,7 @@ export function EventDetailsScreen({
               background: purchasesDisabled
                 ? ventsColors.elevated
                 : canBook
-                ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                ? '#8E5CF7'
                 : ventsColors.elevated,
               border: 'none',
               borderRadius: '14px',
@@ -1797,7 +1800,7 @@ export function EventDetailsScreen({
                 background: purchasesDisabled
                   ? ventsColors.elevated
                   : canBook
-                  ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                  ? '#8E5CF7'
                   : ventsColors.elevated,
                 border: 'none',
                 borderRadius: '16px',
