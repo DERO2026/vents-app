@@ -1094,7 +1094,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     }}
                   >
                     {isDone ? (
-                      <Check size={13} color={ventsColors.white} />
+                      // Dark check on the bright success fill (10.4:1); a
+                      // white check on #34D399 is only 1.9:1.
+                      <Check size={13} color={ventsColors.bg} data-testid={`create-event-step-done-${s.num}`} />
                     ) : (
                       <span style={{ color: isActive ? ventsColors.white : ventsColors.ink2, fontSize: '12px', fontWeight: 700 }}>
                         {s.num}
