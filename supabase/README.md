@@ -41,12 +41,12 @@ Later migrations are normally applied with the Supabase MCP `apply_migration` to
   - Run manually in the Supabase dashboard SQL Editor on **2026-10-28** (Postgres log: `2026-10-28T05:35:40Z`, `source: dashboard`). This was a hand-formatted equivalent of the file: the same constraint (original 8 types + `'announcement'`) and the same `DROP FUNCTION public.send_event_reminders()`.
   - The missing history row was then backfilled with a history-only, guarded insert (no DDL re-run): version **`20261028053540`**, name **`notifications_type_check_allow_announcement`**, `statements` = this file verbatim at `main` `ffa4a25` (md5 `009d1108e8df47e70f9d01fd57846226`), `created_by` NULL.
   - Do **not** re-apply this migration. Its `DROP FUNCTION` would fail on the already-dropped function. Do not edit the file either: the history row stores its exact text.
-- **`0195_direct_messages_storage_private_access.sql`: no history row; how it reached production is unrecorded.**
-  - PR #64 merged the file on 2026-10-27 and stated it was *not* applied to the live database.
-  - Read-only production checks on 2026-10-27 found no 0195 row (the only `direct_messages`-named row is 0194, `20261027012403`). A check on 2026-10-28 found no row between 0194 and 0196 (`20261027201600`).
-  - The same 2026-10-27 checks found 0195's two effects live: the `direct_messages` bucket is `public = false`, and `storage_objects_dm_select`'s `USING` clause matches the file's.
-  - Not verified: the policy's role list (the file says `TO authenticated`; the pre-0195 policy was `TO public`), and who applied it, when, and how.
-  - Verify the role list, then decide whether to backfill a history row. Do not re-apply the file without checking: it is written to be re-runnable, but that has not been confirmed against production.
+- **`0195_direct_messages_storage_private_access.sql`: applied manually, history reconciled.**
+  - PR #64 merged the file on 2026-10-27 at 15:51 UTC and stated it was *not* applied to the live database.
+  - Run manually in the Supabase dashboard SQL Editor on **2026-10-27 at 16:06:49 UTC** (Postgres log: `2026-10-27T16:06:49Z`, `source: dashboard`). This was a hand-formatted equivalent of the file: the same `UPDATE storage.buckets SET public = false`, `DROP POLICY IF EXISTS` and `CREATE POLICY storage_objects_dm_select`.
+  - Verified read-only on 2026-10-28 before reconciling: the bucket is private, and `storage_objects_dm_select` is `FOR SELECT`, permissive, `TO authenticated`, with no `WITH CHECK`. Its `USING` text is identical to what the file produces.
+  - The missing history row was then backfilled with a history-only, guarded insert (no DDL re-run): version **`20261027160649`**, name **`direct_messages_storage_private_access`**, `statements` = this file verbatim at `main` `eadf414` (md5 `a0fb3ce3c245f74c5b956d4a2265ce57`), `created_by` NULL. It sorts between 0194 (`20261027012403`) and 0196 (`20261027201600`).
+  - Do **not** re-apply this migration: it is already live and recorded. Do not edit the file either: the history row stores its exact text.
 
 ## Architectural decision made here — still needs your sign-off
 
