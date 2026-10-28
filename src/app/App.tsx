@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode, Suspense, lazy } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
+import { PRIVATE_CHANNEL_OPTIONS, userTopic } from '../lib/realtimeTopics';
 import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
@@ -1752,7 +1753,7 @@ export default function App() {
   // Realtime: subscribe to user channel for badge updates
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(userTopic(currentUser.id), PRIVATE_CHANNEL_OPTIONS);
     channel.on('broadcast', { event: 'new_notification' }, () => fetchUnreadCount());
     channel.subscribe();
     return () => {

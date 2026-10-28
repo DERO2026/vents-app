@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Bell, Loader, Trash2, CheckCheck, ChevronRight } from 'lucide-react';
 import { Notification } from './types';
 import { supabase } from '../../lib/supabase';
+import { PRIVATE_CHANNEL_OPTIONS, userTopic } from '../../lib/realtimeTopics';
 import { analytics } from '../../lib/analyticsEvents';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Sentry } from '../../lib/sentry';
@@ -144,11 +145,9 @@ export function NotificationsScreen({
   // while it was open never appeared until the user backed out and back in.
   useEffect(() => {
     if (!currentUser?.id) return;
-    // Same topic-naming convention as ConversationScreen.tsx's messaging
-    // realtime — the server-side notify_new_notification() trigger
-    // broadcasts here (realtime.send(..., 'new_notification',
-    // 'user:'||user_id, false)).
-    const channel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
+    // My own private topic -- the server-side notify_new_notification()
+    // trigger signals new_notification here. Only I can join it (0199).
+    const channel = supabase.channel(userTopic(currentUser.id), PRIVATE_CHANNEL_OPTIONS);
     channel.on('broadcast', { event: 'new_notification' }, () => fetchNotifications());
     channel.subscribe();
     return () => {
