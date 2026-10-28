@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Bell, Loader, Trash2, CheckCheck, ChevronRight } from 'lucide-react';
 import { Notification } from './types';
 import { supabase } from '../../lib/supabase';
+import { onUserRealtime } from '../../lib/userRealtime';
 import { analytics } from '../../lib/analyticsEvents';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Sentry } from '../../lib/sentry';
@@ -148,12 +149,9 @@ export function NotificationsScreen({
     // realtime — the server-side notify_new_notification() trigger
     // broadcasts here (realtime.send(..., 'new_notification',
     // 'user:'||user_id, false)).
-    const channel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
-    channel.on('broadcast', { event: 'new_notification' }, () => fetchNotifications());
-    channel.subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // The channel is shared with App's badge listener (userRealtime), so
+    // unmounting this screen only drops this handler.
+    return onUserRealtime(currentUser.id, 'new_notification', () => fetchNotifications());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 

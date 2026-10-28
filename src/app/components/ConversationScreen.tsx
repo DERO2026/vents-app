@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { onUserRealtime } from '../../lib/userRealtime';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
@@ -240,23 +241,23 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     // 'user:'||recipient_id, false)), and sendTyping (below) targets this
     // same topic-naming convention on the OTHER user's side, so typing
     // events addressed to ME land here too.
-    const receiveChannel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
-
-    receiveChannel.on('broadcast', { event: 'new_message' }, (msg) => {
+    // Registered through userRealtime: that topic's channel is shared with
+    // App's badge listener, so closing this screen must only drop these
+    // handlers, not remove the channel.
+    const offNewMessage = onUserRealtime(currentUser.id, 'new_message', (msg) => {
       const payload = msg.payload as any;
       if (payload?.sender_id === otherUser.id || payload?.recipient_id === otherUser.id) {
         load();
         loadRequestStatus();
       }
     });
-    receiveChannel.on('broadcast', { event: 'typing' }, (msg) => {
+    const offTyping = onUserRealtime(currentUser.id, 'typing', (msg) => {
       const payload = msg.payload as any;
       if (payload?.from !== otherUser.id) return;
       setOtherTyping(true);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => setOtherTyping(false), 3000);
     });
-    receiveChannel.subscribe();
 
     // Send-only channel to the OTHER user's topic, for sendTyping below.
     const sendChannel = supabase.channel(`user:${otherUser.id}`);
@@ -267,7 +268,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     return () => {
       clearInterval(interval);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      supabase.removeChannel(receiveChannel);
+      offNewMessage();
+      offTyping();
       supabase.removeChannel(sendChannel);
       typingSendChannelRef.current = null;
     };

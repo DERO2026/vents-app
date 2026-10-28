@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode, Suspense, lazy } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
+import { onUserRealtime, closeAllUserRealtime } from '../lib/userRealtime';
 import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
@@ -1008,6 +1009,7 @@ export default function App() {
       setScreen('welcome');
       clearTicketTokenCache();
       invalidateVcBalanceCache();
+      closeAllUserRealtime();
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1752,12 +1754,9 @@ export default function App() {
   // Realtime: subscribe to user channel for badge updates
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
-    channel.on('broadcast', { event: 'new_notification' }, () => fetchUnreadCount());
-    channel.subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // Shared with NotificationsScreen/ConversationScreen via userRealtime,
+    // so their unmounting no longer tears this listener down.
+    return onUserRealtime(currentUser.id, 'new_notification', () => fetchUnreadCount());
   }, [currentUser?.id, fetchUnreadCount]);
 
   useEffect(() => {
@@ -2746,6 +2745,7 @@ export default function App() {
     // just rely on each cache's own userId check.
     clearTicketTokenCache();
     invalidateVcBalanceCache();
+    closeAllUserRealtime();
     // Strict === true, not a truthy check -- this is the one call this
     // function makes that decides whether a sign-out lands on Welcome/Login
     // (the only correct destination for a plain Sign Out) or detours into
