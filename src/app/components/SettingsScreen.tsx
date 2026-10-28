@@ -542,7 +542,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
               key={t} type="button" onClick={() => setOrganizerType(t)}
               style={{
                 flex: 1, minWidth: 0, padding: '12px 8px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                background: organizerType === t ? '#8E5CF7' : '#090514',
+                background: organizerType === t ? '#7B2FBE' : '#090514',
                 border: organizerType === t ? 'none' : '1px solid rgba(255,255,255,0.08)',
                 color: '#fff',
                 lineHeight: 1.3,
@@ -667,7 +667,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
       <button
         onClick={handleSubmit}
         disabled={submitting}
-        style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+        style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: '#7B2FBE', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
       >
         {uploading ? `Uploading… ${uploadProgress}%` : submitting ? 'Submitting…' : 'Submit for Verification'}
       </button>
@@ -1142,7 +1142,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
 
             {/* Avatar */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px' }}>
-              <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '12px', boxShadow: '0 8px 24px rgba(123,47,190,0.4)' }}>
+              <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '12px', boxShadow: '0 8px 24px rgba(123,47,190,0.4)' }}>
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
@@ -1336,7 +1336,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
         <button
           onClick={handleSaveProfile}
           disabled={loading || saving}
-          style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
+          style={{ width: '100%', background: '#7B2FBE', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
@@ -1655,7 +1655,7 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut
           <CheckCircle size={48} color="#10B981" />
           <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, textAlign: 'center', margin: 0 }}>Password updated!</p>
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>For your security, you've been signed out everywhere. Sign back in with your new password.</p>
-          <button onClick={onSignOut} style={{ marginTop: '8px', padding: '12px 32px', background: '#8E5CF7', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          <button onClick={onSignOut} style={{ marginTop: '8px', padding: '12px 32px', background: '#7B2FBE', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
         </div>
       ) : step === 'verify' ? (
         <form onSubmit={handleVerify} style={scrollFormStyle}>
@@ -1728,7 +1728,7 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut
             disabled={!canSubmit}
             style={{
               marginTop: '8px', padding: '14px',
-              background: canSubmit ? '#8E5CF7' : '#2D2D4E',
+              background: canSubmit ? '#7B2FBE' : '#2D2D4E',
               border: 'none', borderRadius: '12px',
               color: canSubmit ? '#fff' : '#6B6F8A', fontSize: '14px', fontWeight: 700,
               cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.85,
@@ -1752,7 +1752,7 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut
             <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>VERIFICATION CODE</label>
             <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="Enter code from email" required inputMode="numeric" autoComplete="one-time-code" enterKeyHint="done" style={{ ...inputStyle, letterSpacing: '0.1em', fontSize: '16px' }} />
           </div>
-          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : '#8E5CF7', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
+          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : '#7B2FBE', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
             {loading ? 'Updating…' : 'Update Password'}
           </button>
           <button type="button" onClick={() => { setStep('verify'); setError(null); }} style={{ padding: '10px', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '13px', cursor: 'pointer' }}>
@@ -1970,7 +1970,7 @@ export function SettingsScreen({
           onClick={() => setSubScreen('profile')}
           style={{ display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 40px)', margin: '18px 20px 0', padding: '14px', borderRadius: '16px', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
         >
-          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
             {(currentUser as any)?.avatar_url ? (
               <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
@@ -2336,7 +2336,7 @@ function ConnectedAccountsScreen({ currentUser, onBack, onProfileUpdated }: { cu
             <button
               onClick={saveHandle}
               disabled={saving}
-              style={{ height: '52px', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: '4px' }}
+              style={{ height: '52px', borderRadius: '14px', background: '#7B2FBE', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: '4px' }}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>

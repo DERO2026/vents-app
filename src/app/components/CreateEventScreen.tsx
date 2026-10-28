@@ -323,7 +323,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
           Your session needs a quick refresh. Go back and sign in again to continue creating your event.
         </p>
-        <button onClick={onBack} style={{ background: '#8E5CF7', border: 'none', borderRadius: '14px', padding: '12px 28px', color: ventsColors.white, fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: '#7B2FBE', border: 'none', borderRadius: '14px', padding: '12px 28px', color: ventsColors.white, fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
           Go Back
         </button>
       </div>
@@ -370,7 +370,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         <button
           onClick={onBack}
           style={{
-            background: '#8E5CF7',
+            background: '#7B2FBE',
             border: 'none',
             borderRadius: '14px',
             padding: '12px 28px',
@@ -1085,7 +1085,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       background: isDone
                         ? ventsColors.success
                         : isActive
-                        ? '#8E5CF7'
+                        ? '#7B2FBE'
                         : ventsColors.elevated,
                       border: isActive ? 'none' : '1px solid rgba(255,255,255,0.1)',
                       display: 'flex',
@@ -1205,7 +1205,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                             : prev.length < 5 ? [...prev, cat] : prev
                       )}
                       style={{
-                        background: sel ? '#8E5CF7' : ventsColors.elevated,
+                        background: sel ? '#7B2FBE' : ventsColors.elevated,
                         border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)',
                         borderRadius: '20px',
                         padding: '7px 14px',
@@ -2027,7 +2027,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               ? '#059669'
               : (submitting || uploadingImage)
               ? 'rgba(123,47,190,0.4)'
-              : '#8E5CF7',
+              : '#7B2FBE',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',

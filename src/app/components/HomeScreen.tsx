@@ -412,7 +412,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
                 color: isFree ? ventsColors.success : ventsColors.white,
-                background: isFree ? 'rgba(6,214,160,0.15)' : '#8E5CF7',
+                background: isFree ? 'rgba(6,214,160,0.15)' : '#7B2FBE',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
                 {cta}
@@ -625,7 +625,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
                 color: isFree ? ventsColors.success : ventsColors.white,
-                background: isFree ? 'rgba(6,214,160,0.15)' : '#8E5CF7',
+                background: isFree ? 'rgba(6,214,160,0.15)' : '#7B2FBE',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
                 {cta}
@@ -806,7 +806,7 @@ function FeaturedCarousel({
                     fontSize: '12px', fontWeight: 800, width: 'fit-content',
                     borderRadius: '20px', padding: '4px 12px',
                     color: isFree ? ventsColors.success : ventsColors.white,
-                    background: isFree ? 'rgba(6,214,160,0.15)' : '#8E5CF7',
+                    background: isFree ? 'rgba(6,214,160,0.15)' : '#7B2FBE',
                     border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
                   }}>
                     {cta}
@@ -1501,7 +1501,7 @@ export function HomeScreen({
                         onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accent, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accentStrong, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                           <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
                           {u.avatar_url && (
                             <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -2163,7 +2163,7 @@ export function HomeScreen({
                 onClick={applyFilters}
                 style={{
                   flex: 2, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
-                  background: ventsColors.accent, border: 'none', color: ventsColors.white, cursor: 'pointer',
+                  background: ventsColors.accentStrong, border: 'none', color: ventsColors.white, cursor: 'pointer',
                   boxShadow: '0 12px 34px -14px rgba(142,92,247,1)',
                 }}
               >Show results</button>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
-import { servicesColors, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
+import { servicesColors, servicesFills, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
 import { fetchMyServiceBookings, fetchProviderServiceBookings, completeServiceBooking, submitProviderReview, ServiceBookingRow } from '../../lib/serviceBookings';
 import { getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
@@ -413,7 +413,7 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
               <button
                 onClick={confirmSubmitReview}
                 disabled={submittingReviewId === reviewTarget.id}
-                style={{ flex: 1, background: servicesColors.accentPurple, border: 'none', borderRadius: servicesRadii.md, padding: '11px', color: '#fff', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', opacity: submittingReviewId === reviewTarget.id ? 0.6 : 1 }}
+                style={{ flex: 1, background: servicesFills.primary, border: 'none', borderRadius: servicesRadii.md, padding: '11px', color: '#fff', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', opacity: submittingReviewId === reviewTarget.id ? 0.6 : 1 }}
               >
                 {submittingReviewId === reviewTarget.id ? 'Submitting…' : 'Submit Review'}
               </button>

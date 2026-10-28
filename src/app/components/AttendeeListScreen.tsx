@@ -350,7 +350,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
           {/* Status filter */}
           <div style={{ display: 'flex', gap: '8px', padding: '0 16px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
             {(['all', 'checked-in', 'pending', 'cancelled'] as const).map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: '20px', border: 'none', background: statusFilter === s ? '#8E5CF7' : '#131629', color: statusFilter === s ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+              <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: '20px', border: 'none', background: statusFilter === s ? '#7B2FBE' : '#131629', color: statusFilter === s ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                 {s === 'all' ? 'All' : s === 'checked-in' ? 'Checked In' : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}

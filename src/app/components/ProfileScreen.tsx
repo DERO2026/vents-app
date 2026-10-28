@@ -338,7 +338,7 @@ export function ProfileScreen({
             maxWidth: '280px',
             height: '52px',
             padding: '0 28px',
-            background: '#8E5CF7',
+            background: '#7B2FBE',
             border: 'none',
             borderRadius: '100px',
             color: '#fff',
@@ -525,7 +525,7 @@ export function ProfileScreen({
                 style={{
                   width: '96px', height: '96px', borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-                  background: '#8E5CF7',
+                  background: '#7B2FBE',
                   boxShadow: `0 0 0 3px rgba(168,85,247,0.35), 0 0 30px rgba(168,85,247,0.5)`,
                 }}
               >
@@ -591,7 +591,7 @@ export function ProfileScreen({
                   alternatives to the account/staff-tier chip above -- both
                   can show at once alongside it. */}
               {isOrganizer && (
-                <div style={{ background: '#8E5CF7', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ background: '#7B2FBE', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>Organizer</span>
                 </div>
               )}
@@ -651,7 +651,7 @@ export function ProfileScreen({
         <div className="px-5" style={{ marginTop: '16px' }}>
           <button
             onClick={() => onNavigate('settings')}
-            style={{ width: '100%', padding: '13px 0', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', boxShadow: '0 6px 20px rgba(142,92,247,0.35)' }}
+            style={{ width: '100%', padding: '13px 0', borderRadius: '14px', background: '#7B2FBE', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', boxShadow: '0 6px 20px rgba(142,92,247,0.35)' }}
           >
             Edit Profile
           </button>
@@ -951,7 +951,7 @@ export function ProfileScreen({
                   <button
                     onClick={submitOrgRequest}
                     disabled={orgRequestStatus === 'sending'}
-                    style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
+                    style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: '#7B2FBE', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
                   >
                     {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
                   </button>

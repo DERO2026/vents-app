@@ -829,7 +829,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             )}
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleWithdraw} disabled={withdrawing} style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
+              <button onClick={handleWithdraw} disabled={withdrawing} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
                 {withdrawing ? 'Processing…' : 'Withdraw'}
               </button>
             </div>
@@ -895,7 +895,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <button
                 onClick={handleSaveBank}
                 disabled={savingBank || !resolvedName || resolving}
-                style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (savingBank || !resolvedName) ? 'not-allowed' : 'pointer', opacity: (savingBank || !resolvedName) ? 0.6 : 1 }}
+                style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (savingBank || !resolvedName) ? 'not-allowed' : 'pointer', opacity: (savingBank || !resolvedName) ? 0.6 : 1 }}
               >
                 {savingBank ? 'Saving…' : 'Save'}
               </button>
@@ -963,7 +963,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
               <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
+              <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
                 {confirmBusy ? 'Confirming…' : 'Confirm'}
               </button>
             </div>

@@ -29,6 +29,8 @@ export const adminTheme = {
 } as const;
 
 export const accentFill = adminTheme.accentFrom;
+// Solid fill under white text: 7.0:1, where accentFill is 3.8:1.
+export const accentStrongFill = adminTheme.accentTo;
 
 export type AdminConsoleViewKey =
   | 'overview'

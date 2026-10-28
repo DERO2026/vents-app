@@ -25,6 +25,10 @@ export const ventsColors = {
   divider: 'rgba(255,255,255,0.06)',
 
   accent: '#8E5CF7',
+  // Solid fill for anything carrying white text (buttons, chips, badges):
+  // 7.0:1 with white, where `accent` is 4.2:1 (under WCAG AA's 4.5:1).
+  // Keep `accent` for icons, dots, bars and other non-text accents.
+  accentStrong: '#7B2FBE',
   accentSoft: '#B79BFF',
 
   success: '#34D399',

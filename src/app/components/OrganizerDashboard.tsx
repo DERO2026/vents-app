@@ -679,7 +679,7 @@ export function OrganizerDashboard({
           onClick={() => onNavigate?.('create-event')}
           style={{
             width: '100%',
-            background: '#8E5CF7',
+            background: '#7B2FBE',
             border: 'none',
             borderRadius: '16px',
             padding: '16px 24px',

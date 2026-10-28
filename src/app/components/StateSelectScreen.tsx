@@ -213,7 +213,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
           style={{
             width: '100%',
             background: selected
-              ? '#8E5CF7'
+              ? '#7B2FBE'
               : 'rgba(123,47,190,0.25)',
             border: 'none',
             borderRadius: '16px',

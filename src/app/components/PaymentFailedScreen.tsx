@@ -129,7 +129,7 @@ export function PaymentFailedScreen({ eventTitle, reference, message, onGoHome }
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            background: '#8E5CF7',
+            background: '#7B2FBE',
             color: '#fff',
             fontSize: '15px',
             fontWeight: 700,

@@ -765,7 +765,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             disabled={step === 0 ? !canContinueFromCategory : step === 2 ? !canContinueFromDetails : false}
             style={{
               flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              background: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? '#8E5CF7' : 'rgba(123,47,190,0.25)',
+              background: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? '#7B2FBE' : 'rgba(123,47,190,0.25)',
               border: 'none', borderRadius: servicesRadii.md, padding: '16px',
               color: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? '#fff' : 'rgba(255,255,255,0.4)',
               fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
@@ -786,7 +786,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
               disabled={!canSave}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                background: canSave ? '#8E5CF7' : 'rgba(123,47,190,0.25)',
+                background: canSave ? '#7B2FBE' : 'rgba(123,47,190,0.25)',
                 border: 'none', borderRadius: servicesRadii.md, padding: '16px',
                 color: canSave ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '16px', fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif', cursor: canSave ? 'pointer' : 'not-allowed',

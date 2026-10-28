@@ -190,7 +190,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             </div>
           ))}
         </div>
-        <button onClick={onBack} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '16px', padding: '15px', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ width: '100%', background: '#7B2FBE', border: 'none', borderRadius: '16px', padding: '15px', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
           Back to Dashboard
         </button>
       </div>
@@ -313,7 +313,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                 onClick={() => setSelectedDuration(d.value)}
                 style={{
                   flex: 1,
-                  background: isSelected ? '#8E5CF7' : ventsColors.elevated,
+                  background: isSelected ? '#7B2FBE' : ventsColors.elevated,
                   border: isSelected ? 'none' : '1px solid rgba(255,255,255,0.08)',
                   borderRadius: '12px',
                   padding: '12px 6px',
@@ -370,7 +370,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           disabled={loading}
           style={{
             width: '100%',
-            background: loading ? 'rgba(123,47,190,0.4)' : '#8E5CF7',
+            background: loading ? 'rgba(123,47,190,0.4)' : '#7B2FBE',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',

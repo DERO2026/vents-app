@@ -480,7 +480,7 @@ export function UserProfileScreen({
             style={{
               flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: '14px', border: 'none', cursor: 'pointer',
               fontWeight: 700, fontSize: '14px',
-              background: localFollowing ? 'rgba(255,255,255,0.08)' : '#8E5CF7',
+              background: localFollowing ? 'rgba(255,255,255,0.08)' : '#7B2FBE',
               boxShadow: localFollowing ? 'none' : '0 6px 20px rgba(168,85,247,0.35)',
               color: localFollowing ? '#f6f4f9' : '#fff',
             }}

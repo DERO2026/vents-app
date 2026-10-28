@@ -32,7 +32,9 @@
 // native platform isn't the one currently rendering this screen, since
 // that claim would be false the instant both iOS and Android are gated.
 
-const ACCENT_FILL = '#8E5CF7';
+// Solid fill under white text: #7B2FBE gives 7.0:1 (the brighter accent
+// #8E5CF7 is only 4.2:1, under WCAG AA's 4.5:1 for normal-size text).
+const ACCENT_STRONG = '#7B2FBE';
 const BG = '#0a0810';
 const SURFACE = '#120e1a';
 const BORDER = '#2c2438';
@@ -103,7 +105,7 @@ export function VentsAiIosComingSoonScreen({ onClose }: { onClose: () => void })
           data-testid="vents-ai-ios-coming-soon-back"
           style={{
             marginTop: 10, width: '100%', maxWidth: 280, height: 48, borderRadius: 24, border: 0,
-            background: ACCENT_FILL, color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
+            background: ACCENT_STRONG, color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
           }}
         >
           Back to VENTS

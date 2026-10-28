@@ -29,8 +29,9 @@ export const servicesColors = {
 
 export const servicesFills = {
   // Solid fills (the app uses no gradients), usable directly as a CSS
-  // `background` value. Primary follows the redesign's button spec.
-  primary: ventsColors.accent,
+  // `background` value. Primary is the fill for anything carrying white
+  // text (buttons, initials tiles) -- see ventsColors.accentStrong.
+  primary: ventsColors.accentStrong,
   // Reserved for the existing "Become a Service Provider" capability-request
   // card in ProfileScreen -- Services screens should NOT reuse this for
   // their own CTAs, to keep that capability affordance visually distinct.

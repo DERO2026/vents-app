@@ -157,7 +157,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
           <button
             onClick={save}
             disabled={saving}
-            style={{ background: '#8E5CF7', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+            style={{ background: '#7B2FBE', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
           >
             {saving ? 'Saving…' : 'Save Settings'}
           </button>

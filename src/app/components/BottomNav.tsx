@@ -147,7 +147,7 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
             minWidth: 0,
             border: 'none',
             borderRadius: '28px',
-            background: siActive ? '#8E5CF7' : 'transparent',
+            background: siActive ? '#7B2FBE' : 'transparent',
             color: siActive ? '#fff' : '#c4b5fd',
             display: 'flex',
             flexDirection: 'column',

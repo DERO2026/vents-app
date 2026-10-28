@@ -418,7 +418,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           style={{
             width: '100%',
             background: canContinue
-              ? '#8E5CF7'
+              ? '#7B2FBE'
               : ventsColors.elevated,
             border: 'none',
             borderRadius: '16px',

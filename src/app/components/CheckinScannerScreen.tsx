@@ -49,7 +49,7 @@ function GuardScreen({ icon, title, body, onBack }: { icon: React.ReactNode; tit
       {icon}
       <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, marginTop: '16px' }}>{title}</h2>
       <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '8px', lineHeight: 1.6, maxWidth: '300px' }}>{body}</p>
-      <button onClick={onBack} style={{ marginTop: '24px', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+      <button onClick={onBack} style={{ marginTop: '24px', background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
         Go Back
       </button>
     </div>
@@ -232,7 +232,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           </div>
           <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0 }}>Camera Unavailable</p>
           <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.6, maxWidth: '300px' }}>{cam.error}</p>
-          <button onClick={cam.retry} style={{ marginTop: '6px', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+          <button onClick={cam.retry} style={{ marginTop: '6px', background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
             Try Again
           </button>
           {/* Manual fallback is reachable even while the camera is denied/
@@ -335,7 +335,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
               disabled={!manualCode.trim() || manualBusy}
               style={{
                 width: '100%', height: '50px', border: 'none', borderRadius: '14px',
-                background: '#8E5CF7', color: '#fff', fontWeight: 700, fontSize: '15px',
+                background: '#7B2FBE', color: '#fff', fontWeight: 700, fontSize: '15px',
                 cursor: (!manualCode.trim() || manualBusy) ? 'not-allowed' : 'pointer',
                 opacity: (!manualCode.trim() || manualBusy) ? 0.6 : 1,
               }}

@@ -289,14 +289,14 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               onClick={() => { haptics.light(); setTab(t); }}
               style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                background: tab === t ? '#8E5CF7' : 'transparent',
+                background: tab === t ? '#7B2FBE' : 'transparent',
                 border: 'none', borderRadius: '100px', padding: '9px', cursor: 'pointer',
                 color: tab === t ? ventsColors.white : '#9CA0BC', fontSize: '13px', fontWeight: 700,
               }}
             >
               {t === 'messages' ? 'Messages' : 'Requests'}
               {t === 'requests' && requests.length > 0 && (
-                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
+                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : ventsColors.accentStrong, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
                   {requests.length}
                 </span>
               )}
@@ -405,7 +405,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                     </p>
                   </div>
                   {t.unread > 0 && (
-                    <div style={{ background: ventsColors.accent, color: ventsColors.white, fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ background: ventsColors.accentStrong, color: ventsColors.white, fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {t.unread > 9 ? '9+' : t.unread}
                     </div>
                   )}

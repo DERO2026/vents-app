@@ -26,7 +26,11 @@ import { isMobileNativeForAiGate } from '../../lib/platform';
 // display:none pattern used for HomeScreen/MyTicketsScreen), but resets on
 // a full reload, sign-out, or app restart.
 
+// Accent for icons, glyph chips and decorative fills.
 const ACCENT_FILL = '#8E5CF7';
+// Solid fill under white text: #7B2FBE gives 7.0:1 (the brighter accent
+// #8E5CF7 is only 4.2:1, under WCAG AA's 4.5:1 for normal-size text).
+const ACCENT_STRONG = '#7B2FBE';
 
 type BackendCard = { type: string; data: unknown; source?: 'vents' | 'external' | 'general' };
 
@@ -358,7 +362,7 @@ function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSu
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Ask VENTS AI</span>
-        <span onClick={onOpenWorkspace} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Open plan</span>
+        <span onClick={onOpenWorkspace} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Open plan</span>
       </div>
     </div>
   );
@@ -717,7 +721,7 @@ function SetTotalBudgetSheet({
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-budget-set-total-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
+          <span onClick={save} role="button" data-testid="workspace-budget-set-total-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
         </div>
       </div>
     </div>
@@ -766,7 +770,7 @@ function SetEventDateSheet({
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-timeline-set-date-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
+          <span onClick={save} role="button" data-testid="workspace-timeline-set-date-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
         </div>
       </div>
     </div>
@@ -887,7 +891,7 @@ function DateChangeSheet({
             onClick={confirmMove}
             role="button"
             data-testid="ai-date-change-confirm"
-            style={{ flex: 1.6, height: 48, borderRadius: 12, background: newDate && newDate !== data.plan.event_date ? ACCENT_FILL : '#2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}
+            style={{ flex: 1.6, height: 48, borderRadius: 12, background: newDate && newDate !== data.plan.event_date ? ACCENT_STRONG : '#2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}
           >
             {saving ? 'Moving…' : newDateFmt ? `Move to ${newDateFmt.replace(/^\w+ /, '')}` : 'Choose a date'}
           </span>
@@ -1134,7 +1138,7 @@ function WorkspaceBudgetTab({
           <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>VENTS AI splits it across categories as planning estimates — not quotes.</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Not sure yet</span>
-            <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-set-total" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Set total</span>
+            <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-set-total" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Set total</span>
           </div>
         </div>
         {showSetTotal && (
@@ -1424,7 +1428,7 @@ function AllocationSheet({
         {error && <div style={{ fontSize: 12, color: '#fbbf24' }}>{error}</div>}
         <div style={{ display: 'flex', gap: 10 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, height: 48, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={handleSave} role="button" data-testid="ai-allocation-save" style={{ flex: 1.6, height: 48, borderRadius: 12, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save allocation'}</span>
+          <span onClick={handleSave} role="button" data-testid="ai-allocation-save" style={{ flex: 1.6, height: 48, borderRadius: 12, background: ACCENT_STRONG, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save allocation'}</span>
         </div>
       </div>
       {showCategoryPicker && (
@@ -1970,7 +1974,7 @@ function AddCategorySheet({ planId, onClose, onChanged }: { planId: string; onCl
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-add-category-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
+          <span onClick={save} role="button" data-testid="workspace-add-category-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
         </div>
       </div>
     </div>
@@ -2035,7 +2039,7 @@ function AddOwnVendorSheet({ category, onClose, onChanged }: { category: Workspa
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-add-vendor-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
+          <span onClick={save} role="button" data-testid="workspace-add-vendor-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
         </div>
       </div>
     </div>
@@ -2620,7 +2624,7 @@ function ConfirmationCard({
           <div
             onClick={onConfirm}
             data-testid="ai-confirmation-confirm"
-            style={{ flex: 1, textAlign: 'center', padding: 9, borderRadius: 8, background: ACCENT_FILL, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            style={{ flex: 1, textAlign: 'center', padding: 9, borderRadius: 8, background: ACCENT_STRONG, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
           >
             {confirmLabel}
           </div>
@@ -2896,7 +2900,7 @@ function PlanUpdateCard({
             onClick={handleApply}
             role="button"
             data-testid="ai-plan-update-apply"
-            style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: ACCENT_FILL, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: ACCENT_STRONG, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
           >
             Apply
           </div>
@@ -3067,7 +3071,7 @@ function PlanOfferCard({ data, onAccept }: { data: any; onAccept?: () => void })
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <span onClick={() => setDismissed(true)} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Just chat</span>
-        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with VENTS AI</span>
+        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with VENTS AI</span>
       </div>
     </div>
   );
@@ -3132,7 +3136,7 @@ function PlanQuestionCard({ data, onAnswer }: { data: any; onAnswer?: (text: str
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#8a7f97' }}>Pick up to {maxSelect}</span>
-            <span onClick={submitMulti} role="button" style={{ padding: '10px 18px', borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+            <span onClick={submitMulti} role="button" style={{ padding: '10px 18px', borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
           </div>
         </>
       ) : (
@@ -3272,7 +3276,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                       onChange={(e) => setBrief((b) => ({ ...b, event_date: e.target.value }))}
                       style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 14, color: '#f0f0ff', fontFamily: 'inherit' }}
                     />
-                    <span onClick={() => setEditing(null)} role="button" data-testid="ai-brief-row-date-done" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+                    <span onClick={() => setEditing(null)} role="button" data-testid="ai-brief-row-date-done" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
                   </>
                 )}
                 {r.key === 'location' && (
@@ -3296,7 +3300,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                         </span>
                       ))}
                     </div>
-                    <span onClick={() => setEditing(null)} role="button" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+                    <span onClick={() => setEditing(null)} role="button" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
                   </>
                 )}
                 {r.key === 'guests' && (
@@ -3310,7 +3314,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                       onClick={() => { setBrief((b) => ({ ...b, guests: draftGuests })); setEditing(null); }}
                       role="button"
                       data-testid="ai-brief-row-guests-done"
-                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
                     >
                       Done
                     </span>
@@ -3332,7 +3336,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                       onClick={() => { setBrief((b) => ({ ...b, total_budget_naira: draftBudget })); setEditing(null); }}
                       role="button"
                       data-testid="ai-brief-row-budget-done"
-                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
                     >
                       Done
                     </span>
@@ -3363,7 +3367,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
           </div>
         </div>
       )}
-      <span onClick={handleBuild} role="button" style={{ textAlign: 'center', padding: 13, borderRadius: 12, background: ACCENT_FILL, fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Build my plan</span>
+      <span onClick={handleBuild} role="button" style={{ textAlign: 'center', padding: 13, borderRadius: 12, background: ACCENT_STRONG, fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Build my plan</span>
       <span style={{ textAlign: 'center', fontSize: 11.5, color: '#8a7f97' }}>You can change any of this later.</span>
       {showCityPicker && (
         <PickerSheet
@@ -4495,7 +4499,7 @@ function TunePopover({
               onClick={() => canApply && onSelect(`₦${n.toLocaleString()}`)}
               disabled={!canApply}
               data-testid="vents-ai-tune-budget-custom-apply"
-              style={{ marginTop: 10, width: '100%', border: 0, borderRadius: 16, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: canApply ? ACCENT_FILL : '#2a2438', cursor: canApply ? 'pointer' : 'default' }}
+              style={{ marginTop: 10, width: '100%', border: 0, borderRadius: 16, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: canApply ? ACCENT_STRONG : '#2a2438', cursor: canApply ? 'pointer' : 'default' }}
             >
               Use this amount
             </button>
@@ -4736,7 +4740,7 @@ function PlansListView({
             onClick={() => onStartNewPlan("I'm planning an event.")}
             role="button"
             data-testid="si-new-plan"
-            style={{ height: 46, borderRadius: 12, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+            style={{ height: 46, borderRadius: 12, background: ACCENT_STRONG, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
           >
             Start a plan
           </span>
@@ -4799,7 +4803,7 @@ function RenamePlanSheet({ plan, onCancel, onSave }: { plan: PlanSummary; onCanc
         />
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onCancel} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={() => onSave(title)} role="button" data-testid="si-plan-rename-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Save</span>
+          <span onClick={() => onSave(title)} role="button" data-testid="si-plan-rename-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Save</span>
         </div>
       </div>
     </div>
@@ -4976,7 +4980,7 @@ function ConversationView({
                     onClick={() => onQuickAction?.(lastConvUserText)}
                     role="button"
                     data-testid="ai-plan-build-error-retry"
-                    style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                    style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_STRONG, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
                   >
                     Try again
                   </span>

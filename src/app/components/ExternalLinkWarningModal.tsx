@@ -69,7 +69,7 @@ function ExternalLinkWarningModal({ url, onCancel, onConfirm }: { url: string; o
           </button>
           <button
             onClick={onConfirm}
-            style={{ flex: 1, height: '50px', borderRadius: '14px', background: ventsColors.accent, border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+            style={{ flex: 1, height: '50px', borderRadius: '14px', background: ventsColors.accentStrong, border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
           >
             Continue
           </button>

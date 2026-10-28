@@ -628,7 +628,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           </p>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => respondToRequest('decline')} disabled={respondingRequest} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Decline</button>
-            <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '10px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
+            <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '10px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
           </div>
         </div>
       )}
@@ -676,7 +676,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             >
               <div style={{
                 maxWidth: '75%',
-                background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? '#8E5CF7' : ventsColors.elevated,
+                background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? '#7B2FBE' : ventsColors.elevated,
                 borderRadius: isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                 padding: (m.image_url && !isDeleted) ? '8px' : '10px 14px',
                 border: isMine && !isDeleted ? 'none' : '1px solid rgba(255,255,255,0.06)',

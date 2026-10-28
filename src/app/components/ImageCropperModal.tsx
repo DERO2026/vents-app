@@ -572,7 +572,7 @@ const floatBtn: React.CSSProperties = {
   width: '36px', height: '36px', color: ventsColors.ink1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)',
 };
 const doneBtn: React.CSSProperties = {
-  background: '#8E5CF7', border: 'none', borderRadius: '999px',
+  background: '#7B2FBE', border: 'none', borderRadius: '999px',
   height: '36px', padding: '0 16px', color: ventsColors.white, fontSize: '13px', fontWeight: 700,
   fontFamily: 'Manrope, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
 };
