@@ -33,6 +33,21 @@
 | `0012_fix_default_table_grants.sql` | Strips Supabase's default `TRUNCATE`/etc. grants, restores exact InsForge-matching table privileges |
 | `0013_fix_view_grants.sql` | Same fix for the `public_profiles` view |
 
+## Production migration history: out-of-band applies
+
+Later migrations are normally applied with the Supabase MCP `apply_migration` tool, which records a row in `supabase_migrations.schema_migrations` with a **timestamp** version (e.g. 0197 = `20261027210120 vents_earn_notifications_use_valid_type`), not the `NNNN` file number. Never use `supabase db push` against production: history and filenames don't line up. Migrations applied any other way leave no history row, and are recorded here.
+
+- **`0198_notifications_type_check_allow_announcement.sql`: applied manually, history reconciled.**
+  - Run manually in the Supabase dashboard SQL Editor on **2026-10-28** (Postgres log: `2026-10-28T05:35:40Z`, `source: dashboard`). This was a hand-formatted equivalent of the file: the same constraint (original 8 types + `'announcement'`) and the same `DROP FUNCTION public.send_event_reminders()`.
+  - The missing history row was then backfilled with a history-only, guarded insert (no DDL re-run): version **`20261028053540`**, name **`notifications_type_check_allow_announcement`**, `statements` = this file verbatim at `main` `ffa4a25` (md5 `009d1108e8df47e70f9d01fd57846226`), `created_by` NULL.
+  - Do **not** re-apply this migration. Its `DROP FUNCTION` would fail on the already-dropped function. Do not edit the file either: the history row stores its exact text.
+- **`0195_direct_messages_storage_private_access.sql`: no history row; how it reached production is unrecorded.**
+  - PR #64 merged the file on 2026-10-27 and stated it was *not* applied to the live database.
+  - Read-only production checks on 2026-10-27 found no 0195 row (the only `direct_messages`-named row is 0194, `20261027012403`). A check on 2026-10-28 found no row between 0194 and 0196 (`20261027201600`).
+  - The same 2026-10-27 checks found 0195's two effects live: the `direct_messages` bucket is `public = false`, and `storage_objects_dm_select`'s `USING` clause matches the file's.
+  - Not verified: the policy's role list (the file says `TO authenticated`; the pre-0195 policy was `TO public`), and who applied it, when, and how.
+  - Verify the role list, then decide whether to backfill a history row. Do not re-apply the file without checking: it is written to be re-runnable, but that has not been confirmed against production.
+
 ## Architectural decision made here — still needs your sign-off
 
 **`project_admin` is a real, narrowly-scoped Postgres role — not Supabase's `service_role`.** `service_role` bypasses RLS entirely, strictly more powerful than what these functions were designed to trust; substituting it would be a security *weakening*, which you explicitly asked me not to do for convenience. The cost: Supabase's PostgREST/RPC HTTP API only authenticates as `anon`/`authenticated`/`service_role` — it cannot assume a custom role. The Paystack webhook and payout endpoints will need a **direct Postgres connection** (`SET ROLE project_admin`) instead of the HTTP RPC calls they use against InsForge today. This is real application-code work for a later phase — flagged now as a known, deliberate decision.
