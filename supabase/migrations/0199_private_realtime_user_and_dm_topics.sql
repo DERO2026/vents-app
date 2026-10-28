@@ -4,8 +4,9 @@
 -- 0004_functions.sql): notify_new_direct_message() broadcast every new DM,
 -- INCLUDING ITS BODY, with
 --   realtime.send(payload, 'new_message', 'user:' || recipient_id, false)
--- and notify_new_notification() broadcast to the same 'user:<id>' topic,
--- also with private = false. A public channel has no authorization, so any
+-- and notify_new_notification() and notify_vc_update() (VC transaction
+-- user_id/amount/type) broadcast to the same 'user:<id>' topic, also with
+-- private = false. A public channel has no authorization, so any
 -- client holding the (public) anon key and a user's UUID could subscribe to
 -- 'user:<uuid>' and read that user's incoming messages live, and see their
 -- notification activity. Clients also SEND on public channels: typing
@@ -15,7 +16,7 @@
 -- channels were unusable until now.
 --
 -- Fix:
---   1. Both triggers send with private = true. Private broadcasts are only
+--   1. All three triggers send with private = true. Private broadcasts are only
 --      delivered to private-channel subscribers whose join passed the
 --      realtime.messages policies below.
 --   2. new_message no longer carries the body. Every client already treats
@@ -31,6 +32,9 @@
 --      two participants may receive (SELECT) or send (INSERT) on it, and
 --      neither may if either has blocked the other -- the same rule
 --      send_direct_message() enforces for messages.
+--
+-- notify_vc_update() has no client consumer today; it keeps its payload
+-- and only becomes private, so it can no longer be read by anyone else.
 --
 -- Only these two topic families get policies. Other Realtime topics
 -- (admin:stats, door:<event>, organizer-events:<id>) stay public channels
@@ -74,6 +78,23 @@ BEGIN
       'created_at', NEW.created_at
     ),
     'new_notification',
+    'user:' || NEW.user_id::text,
+    true
+  );
+  RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.notify_vc_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+BEGIN
+  PERFORM realtime.send(
+    jsonb_build_object('user_id', NEW.user_id, 'amount', NEW.amount, 'type', NEW.type),
+    'vc_updated',
     'user:' || NEW.user_id::text,
     true
   );

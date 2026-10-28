@@ -101,6 +101,7 @@ CREATE POLICY dm_select ON public.direct_messages FOR SELECT TO authenticated US
 GRANT SELECT ON public.direct_messages TO authenticated;
 
 CREATE TABLE public.notifications (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL, type text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE public.vc_transactions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL, amount integer NOT NULL, type text NOT NULL);
 
 -- realtime schema: realtime.messages columns, RLS (enabled, no policies) and
 -- anon/authenticated grants exactly as live; realtime.send / realtime.topic
@@ -159,6 +160,15 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+CREATE FUNCTION public.notify_vc_update() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $function$
+BEGIN
+  PERFORM realtime.send(
+    jsonb_build_object('user_id', NEW.user_id, 'amount', NEW.amount, 'type', NEW.type),
+    'vc_updated', 'user:' || NEW.user_id::text, false);
+  RETURN NEW;
+END;
+$function$;
+CREATE TRIGGER trg_realtime_vc AFTER INSERT ON public.vc_transactions FOR EACH ROW EXECUTE FUNCTION public.notify_vc_update();
 CREATE TRIGGER trg_realtime_new_dm AFTER INSERT ON public.direct_messages FOR EACH ROW EXECUTE FUNCTION public.notify_new_direct_message();
 CREATE TRIGGER trg_realtime_new_notification AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.notify_new_notification();
 SQL
@@ -167,6 +177,9 @@ echo "== Reproduce the leak (before 0199) =="
 "${PSQL[@]}" -c "INSERT INTO public.direct_messages (sender_id, recipient_id, body) VALUES ('$A', '$B', 'secret before');"
 expect_value "pre-0199: DM broadcast is PUBLIC (private=false)" \
   "SELECT private FROM realtime.messages WHERE event='new_message' ORDER BY inserted_at DESC LIMIT 1" "f"
+"${PSQL[@]}" -c "INSERT INTO public.vc_transactions (user_id, amount, type) VALUES ('$B', 50, 'earn');"
+expect_value "pre-0199: VC broadcast is PUBLIC (private=false)" \
+  "SELECT private FROM realtime.messages WHERE event='vc_updated'" "f"
 expect_value "pre-0199: DM broadcast payload carries the message body" \
   "SELECT payload->>'body' FROM realtime.messages WHERE event='new_message' ORDER BY inserted_at DESC LIMIT 1" "secret before"
 "${PSQL[@]}" -c "DELETE FROM realtime.messages;"
@@ -189,6 +202,11 @@ expect_value "the message text appears nowhere in realtime.messages" \
   "SELECT count(*) FROM realtime.messages WHERE payload::text LIKE '%secret after%'" "0"
 expect_value "notification broadcast is private" \
   "SELECT private FROM realtime.messages WHERE event='new_notification'" "t"
+"${PSQL[@]}" -c "INSERT INTO public.vc_transactions (user_id, amount, type) VALUES ('$B', 50, 'earn');"
+expect_value "VC broadcast is private, to the user's own topic" \
+  "SELECT private::text || ' ' || topic FROM realtime.messages WHERE event='vc_updated'" "true user:$B"
+expect_value "no broadcast is public after 0199" \
+  "SELECT count(*) FROM realtime.messages WHERE private IS NOT TRUE" "0"
 
 echo "== Normal messaging still works =="
 expect_value "the DM row was stored" \

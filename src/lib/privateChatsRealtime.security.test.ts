@@ -45,6 +45,20 @@ describe('database: broadcasts are private and carry no message body', () => {
     expect(body).toMatch(/'new_notification',\s*'user:' \|\| NEW\.user_id::text,\s*true\s*\)/);
   });
 
+  it('notify_vc_update (latest: 0199) sends privately to the same user:<uid> topic', () => {
+    const { file, body } = latestDefinition('notify_vc_update');
+    expect(file).toBe('0199_private_realtime_user_and_dm_topics.sql');
+    expect(body).toMatch(/'vc_updated',\s*'user:' \|\| NEW\.user_id::text,\s*true\s*\)/);
+  });
+
+  it('no function in the latest migrations publishes to a user: topic publicly', () => {
+    const latest = new Map<string, string>();
+    const re = /CREATE OR REPLACE FUNCTION (?:public\.)?(\w+)\([\s\S]*?\$function\$([\s\S]*?)\$function\$/g;
+    for (const f of migrations) for (const m of readFileSync(join(migDir, f), 'utf8').matchAll(re)) latest.set(m[1], m[2]);
+    const publicUserSends = [...latest].filter(([, body]) => /realtime\.send\([\s\S]*?'user:'[\s\S]*?,\s*false\s*\)/.test(body)).map(([fn]) => fn);
+    expect(publicUserSends).toEqual([]);
+  });
+
   it('no migration after 0199 re-publishes a DM body to Realtime', () => {
     const later = migrations.filter((f) => f > '0199');
     for (const f of later) {
