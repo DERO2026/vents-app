@@ -350,7 +350,7 @@ export function ManageEventsScreen({
                   className="vents-manage-card"
                   style={{ background: C.card, border: `1px solid ${meta.border}`, borderRadius: '18px', overflow: 'hidden', animationDelay: `${Math.min(idx, 8) * 30}ms` }}
                 >
-                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? 'linear-gradient(90deg, #10B981, #3B82F6)' : event.displayStatus === 'sold_out' ? ventsColors.pending : event.displayStatus === 'ended' ? ventsColors.elevated : ventsColors.elevated }} />
+                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? '#34D399' : event.displayStatus === 'sold_out' ? ventsColors.pending : event.displayStatus === 'ended' ? ventsColors.elevated : ventsColors.elevated }} />
 
                   <div style={{ padding: '14px' }}>
                     {/* Status + title */}
@@ -400,7 +400,7 @@ export function ManageEventsScreen({
                     </div>
                     {event.ticketGoal > 0 && (
                       <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '100px', height: '5px', overflow: 'hidden', marginBottom: '12px' }}>
-                        <div style={{ background: event.isSoldOut ? C.gold : 'linear-gradient(90deg,#7B2FBE,#4F46E5)', borderRadius: '100px', height: '100%', width: `${pct}%`, transition: 'width 0.4s ease' }} />
+                        <div style={{ background: event.isSoldOut ? C.gold : '#8E5CF7', borderRadius: '100px', height: '100%', width: `${pct}%`, transition: 'width 0.4s ease' }} />
                       </div>
                     )}
 
@@ -428,7 +428,7 @@ export function ManageEventsScreen({
                       <button
                         onClick={() => onPromoteEvent(event.id)}
                         className="vents-action-btn"
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(142,92,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
                       >
                         <Zap size={12} />
                         Promote Event
@@ -449,7 +449,7 @@ export function ManageEventsScreen({
             <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
               Create your first event and manage everything — tickets, attendees, and live sales — right here.
             </p>
-            <button onClick={onCreateEvent} style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '11px 24px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={onCreateEvent} style={{ background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '11px 24px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               + Create Event
             </button>
           </div>
@@ -554,7 +554,7 @@ export function ManageEventsScreen({
                       : `Sent to ${announceRecipients} ticket holder${announceRecipients === 1 ? '' : 's'}.`}
                   </span>
                 </div>
-                <button onClick={closeAnnounce} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={closeAnnounce} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: 'pointer' }}>
                   Done
                 </button>
               </>
@@ -597,7 +597,7 @@ export function ManageEventsScreen({
                   <button
                     onClick={sendAnnouncement}
                     disabled={announceSending || !announceTitle.trim() || !announceBody.trim()}
-                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 'not-allowed' : 'pointer', opacity: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 0.6 : 1 }}
+                    style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 'not-allowed' : 'pointer', opacity: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 0.6 : 1 }}
                   >
                     {announceSending ? 'Sending…' : 'Send'}
                   </button>

@@ -396,7 +396,7 @@ export function AdminVCScreen() {
             {creditCountsTowardLifetime ? '✓ Will increase Lifetime VC and may change tier/multiplier.' : 'Will NOT affect Lifetime VC, tier, or multiplier (ordinary balance adjustment).'}
           </div>
           {creditMsg && <div style={{ color: creditMsg.startsWith('✓') ? adminTheme.green : adminTheme.red, fontSize: 12 }}>{creditMsg}</div>}
-          <button onClick={() => setConfirmCredit(true)} disabled={creditBusy || !selectedUser || !creditAmount || !creditReason.trim()} style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', border: 'none', borderRadius: 12, padding: 12, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!selectedUser || !creditAmount || !creditReason.trim()) ? 0.5 : 1 }}>
+          <button onClick={() => setConfirmCredit(true)} disabled={creditBusy || !selectedUser || !creditAmount || !creditReason.trim()} style={{ background: '#a35cff', border: 'none', borderRadius: 12, padding: 12, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!selectedUser || !creditAmount || !creditReason.trim()) ? 0.5 : 1 }}>
             {creditBusy ? 'Crediting…' : 'Credit VC to User'}
           </button>
         </div>
@@ -412,7 +412,7 @@ export function AdminVCScreen() {
             </div>
           )}
           {debitMsg && <div style={{ color: debitMsg.startsWith('✓') ? adminTheme.green : adminTheme.red, fontSize: 12 }}>{debitMsg}</div>}
-          <button onClick={() => setConfirmDebit(true)} disabled={debitBusy || !selectedUser || !debitAmount || !debitReason.trim()} style={{ background: 'linear-gradient(135deg, #DC2626, #B91C1C)', border: 'none', borderRadius: 12, padding: 12, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!selectedUser || !debitAmount || !debitReason.trim()) ? 0.5 : 1 }}>
+          <button onClick={() => setConfirmDebit(true)} disabled={debitBusy || !selectedUser || !debitAmount || !debitReason.trim()} style={{ background: '#DC2626', border: 'none', borderRadius: 12, padding: 12, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!selectedUser || !debitAmount || !debitReason.trim()) ? 0.5 : 1 }}>
             {debitBusy ? 'Debiting…' : 'Debit VC from User'}
           </button>
         </div>

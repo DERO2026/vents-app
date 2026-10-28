@@ -203,7 +203,7 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
           left: 0,
           right: 0,
           padding: '14px 20px 32px',
-          background: `linear-gradient(to top, ${ventsColors.bg} 60%, transparent)`,
+          background: ventsColors.bg,
         }}
       >
         <button

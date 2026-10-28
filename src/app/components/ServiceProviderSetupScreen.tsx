@@ -750,7 +750,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           same validation as the final save (canContinueFromCategory/
           Details, canSave) -- nothing about what's required to publish
           changed, just when each check is surfaced to the user. */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 65%, transparent)', display: 'flex', gap: servicesSpacing.sm }}>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: '#020005', display: 'flex', gap: servicesSpacing.sm }}>
         {step > 0 && (
           <button
             onClick={() => setStep((s) => (s - 1) as WizardStep)}
@@ -765,7 +765,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             disabled={step === 0 ? !canContinueFromCategory : step === 2 ? !canContinueFromDetails : false}
             style={{
               flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              background: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)',
+              background: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? '#8E5CF7' : 'rgba(123,47,190,0.25)',
               border: 'none', borderRadius: servicesRadii.md, padding: '16px',
               color: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? '#fff' : 'rgba(255,255,255,0.4)',
               fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
@@ -786,7 +786,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
               disabled={!canSave}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                background: canSave ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)',
+                background: canSave ? '#8E5CF7' : 'rgba(123,47,190,0.25)',
                 border: 'none', borderRadius: servicesRadii.md, padding: '16px',
                 color: canSave ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '16px', fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif', cursor: canSave ? 'pointer' : 'not-allowed',

@@ -1,5 +1,5 @@
 import React from 'react';
-import { adminTheme, accentGradient, visibleNavItems, ROOT_ONLY_KEYS, AdminConsoleViewKey } from './adminConsoleTheme';
+import { adminTheme, accentFill, visibleNavItems, ROOT_ONLY_KEYS, AdminConsoleViewKey } from './adminConsoleTheme';
 
 interface AdminSidebarProps {
   activeView: AdminConsoleViewKey;
@@ -35,7 +35,7 @@ export function AdminSidebar({ activeView, onNavigate, isTablet, isRoot, isSuper
       <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
         <div
           aria-hidden
-          style={{ height: 22, width: 22, borderRadius: 6, background: accentGradient, flexShrink: 0 }}
+          style={{ height: 22, width: 22, borderRadius: 6, background: accentFill, flexShrink: 0 }}
         />
         {!isTablet && (
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: adminTheme.textFaint }}>

@@ -174,7 +174,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <button
             onClick={() => window.location.reload()}
             style={{
-              background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+              background: '#8E5CF7',
               border: 'none',
               borderRadius: '14px',
               padding: '12px 28px',
@@ -2802,7 +2802,7 @@ export default function App() {
           padding: '32px 24px', textAlign: 'center', fontFamily: 'Manrope, sans-serif',
         }}
       >
-        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
+        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
           <span style={{ fontSize: '32px' }}>⬆️</span>
         </div>
         <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
@@ -2813,7 +2813,7 @@ export default function App() {
         </p>
         <button
           onClick={() => openExternalUrl('https://getvents.com')}
-          style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+          style={{ background: '#8E5CF7', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
         >
           Reload Vents
         </button>
@@ -2835,7 +2835,7 @@ export default function App() {
           padding: '32px 24px', textAlign: 'center', fontFamily: 'Manrope, sans-serif',
         }}
       >
-        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
+        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
           <span style={{ fontSize: '32px' }}>🛠️</span>
         </div>
         <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
@@ -2852,7 +2852,7 @@ export default function App() {
     <div
       className="min-h-screen flex items-center justify-center"
       style={{
-        background: 'linear-gradient(135deg, #050010 0%, #000000 50%, #080014 100%)',
+        background: '#050010',
         fontFamily: 'Manrope, sans-serif',
       }}
     >
@@ -3592,7 +3592,7 @@ export default function App() {
                     }
                   } catch { /* user cancelled share sheet — not an error */ }
                 }}
-                style={{ height: '48px', padding: '0 28px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+                style={{ height: '48px', padding: '0 28px', background: '#8E5CF7', border: 'none', borderRadius: '100px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
               >
                 Share Payment Link
               </button>

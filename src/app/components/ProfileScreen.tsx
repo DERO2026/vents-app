@@ -338,7 +338,7 @@ export function ProfileScreen({
             maxWidth: '280px',
             height: '52px',
             padding: '0 28px',
-            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            background: '#8E5CF7',
             border: 'none',
             borderRadius: '100px',
             color: '#fff',
@@ -439,13 +439,13 @@ export function ProfileScreen({
 
   // Reflects the staff-tier chip only now that Organizer/Service Provider
   // render as their own separate chips above -- a plain User (even one who
-  // is also an Organizer) gets the neutral gradient, not the purple one,
+  // is also an Organizer) gets the neutral fill, not the purple one,
   // since that's now the dedicated Organizer chip's color.
-  const badgeGradient = isAdmin
-    ? 'linear-gradient(135deg, #F87171, #EF4444)'
+  const badgeFill = isAdmin
+    ? '#EF4444'
     : isSubAdmin
-    ? 'linear-gradient(135deg, #FBBF24, #F59E0B)'
-    : 'linear-gradient(135deg, #FFB830, #F59E0B)';
+    ? '#FBBF24'
+    : '#FBBF24';
 
   const badgeTextColor = isAdmin ? '#fff' : '#000';
   const starColor = isAdmin ? '#fff' : '#000';
@@ -467,7 +467,7 @@ export function ProfileScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', position: 'relative' }}
+      style={{ background: '#020005', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -512,7 +512,7 @@ export function ProfileScreen({
           {effectiveCoverUrl && !coverLoadFailed && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '90px', borderRadius: '0 0 24px 24px', overflow: 'hidden' }}>
               <img src={effectiveCoverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={() => setCoverLoadFailed(true)} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(6,10,18,0) 30%, rgba(6,10,18,0.92) 100%)' }} />
+              <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%', background: 'rgba(6,10,18,0.75)' }} />
             </div>
           )}
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: effectiveCoverUrl && !coverLoadFailed ? '30px' : 0 }}>
@@ -525,7 +525,7 @@ export function ProfileScreen({
                 style={{
                   width: '96px', height: '96px', borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-                  background: 'linear-gradient(145deg, #A855F7, #4C1D95)',
+                  background: '#8E5CF7',
                   boxShadow: `0 0 0 3px rgba(168,85,247,0.35), 0 0 30px rgba(168,85,247,0.5)`,
                 }}
               >
@@ -582,7 +582,7 @@ export function ProfileScreen({
             )}
 
             <div className="flex items-center" style={{ flexWrap: 'wrap', gap: '6px', marginTop: '10px', justifyContent: 'center' }}>
-              <div style={{ background: badgeGradient, borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <div style={{ background: badgeFill, borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                 <Star size={10} color={starColor} fill={starColor} />
                 <span style={{ color: badgeTextColor, fontSize: '10px', fontWeight: 700 }}>{roleLabel}</span>
               </div>
@@ -591,12 +591,12 @@ export function ProfileScreen({
                   alternatives to the account/staff-tier chip above -- both
                   can show at once alongside it. */}
               {isOrganizer && (
-                <div style={{ background: 'linear-gradient(135deg, #C084FC, #7C3AED)', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ background: '#8E5CF7', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>Organizer</span>
                 </div>
               )}
               {isServiceProvider && (
-                <div style={{ background: 'linear-gradient(135deg, #22D3EE, #0891B2)', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ background: '#0891B2', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>Service Provider</span>
                 </div>
               )}
@@ -651,7 +651,7 @@ export function ProfileScreen({
         <div className="px-5" style={{ marginTop: '16px' }}>
           <button
             onClick={() => onNavigate('settings')}
-            style={{ width: '100%', padding: '13px 0', borderRadius: '14px', background: 'linear-gradient(135deg, #8E5CF7, #6D3DE0)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', boxShadow: '0 6px 20px rgba(142,92,247,0.35)' }}
+            style={{ width: '100%', padding: '13px 0', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', boxShadow: '0 6px 20px rgba(142,92,247,0.35)' }}
           >
             Edit Profile
           </button>
@@ -669,7 +669,7 @@ export function ProfileScreen({
               role="button" tabIndex={0}
               style={{
                 padding: '16px', borderRadius: '16px',
-                background: 'linear-gradient(135deg, rgba(168,85,247,0.16), rgba(124,58,237,0.06))',
+                background: 'rgba(142,92,247,0.12)',
                 border: '1px solid rgba(168,85,247,0.28)',
                 display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer',
               }}
@@ -766,7 +766,7 @@ export function ProfileScreen({
               onClick={() => onNavigate('admin-console')}
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
-                background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))',
+                background: 'rgba(239,68,68,0.13)',
                 backdropFilter: 'blur(20px) saturate(160%)',
                 WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
@@ -951,7 +951,7 @@ export function ProfileScreen({
                   <button
                     onClick={submitOrgRequest}
                     disabled={orgRequestStatus === 'sending'}
-                    style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
+                    style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
                   >
                     {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
                   </button>

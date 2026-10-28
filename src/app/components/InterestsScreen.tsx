@@ -20,7 +20,7 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
   // relying on a guessed scroll-content padding (was a hardcoded 140px) --
   // same fix as ServiceProviderProfileScreen's sticky CTA bar. The bar's
   // height varies with content (the error message adds a line), so a fixed
-  // padding either wastes space or, worse, lets the gradient's opaque top
+  // padding either wastes space or, worse, lets the bar's opaque top
   // band cover the last row of category cards, as reported live.
   const ctaBarRef = useRef<HTMLDivElement>(null);
   const [ctaBarHeight, setCtaBarHeight] = useState(0);
@@ -178,7 +178,7 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
           left: 0,
           right: 0,
           padding: '14px 20px calc(24px + env(safe-area-inset-bottom))',
-          background: `linear-gradient(to top, ${ventsColors.bg} 60%, transparent)`,
+          background: ventsColors.bg,
         }}
       >
         {error && <p style={{ color: '#F87171', fontSize: '13px', textAlign: 'center', margin: '0 0 10px' }}>{error}</p>}

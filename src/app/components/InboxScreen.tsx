@@ -245,7 +245,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
   return (
     <div
-      style={{ background: `radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, ${ventsColors.bg} 100%)`, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
+      style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
       onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
       onTouchEnd={(e) => {
         if (pullStartY.current === null) return;
@@ -289,7 +289,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               onClick={() => { haptics.light(); setTab(t); }}
               style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                background: tab === t ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                background: tab === t ? '#8E5CF7' : 'transparent',
                 border: 'none', borderRadius: '100px', padding: '9px', cursor: 'pointer',
                 color: tab === t ? ventsColors.white : '#9CA0BC', fontSize: '13px', fontWeight: 700,
               }}
@@ -362,7 +362,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                   <button
                     onClick={() => respondToRequest(r, 'accept')}
                     disabled={respondingId === r.requesterId}
-                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#8E5CF7', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Check size={15} color={ventsColors.white} />
                   </button>

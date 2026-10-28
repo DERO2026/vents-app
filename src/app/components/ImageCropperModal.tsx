@@ -452,7 +452,7 @@ export function ImageCropperModal({
           above. Everything secondary (safe area, per-layout preview, wide-band
           warning) lives in the optional Guide sheet instead of sitting here. */}
       {isFlyer ? (
-        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '8px 16px calc(10px + env(safe-area-inset-bottom, 8px))', background: 'linear-gradient(to top, rgba(2,0,5,0.92) 45%, transparent)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '8px 16px calc(10px + env(safe-area-inset-bottom, 8px))', background: 'rgba(2,0,5,0.92)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {error && <div style={{ color: ventsColors.error, fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
 
           {/* Slim zoom fallback — pinch is the primary gesture; this covers
@@ -572,7 +572,7 @@ const floatBtn: React.CSSProperties = {
   width: '36px', height: '36px', color: ventsColors.ink1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)',
 };
 const doneBtn: React.CSSProperties = {
-  background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '999px',
+  background: '#8E5CF7', border: 'none', borderRadius: '999px',
   height: '36px', padding: '0 16px', color: ventsColors.white, fontSize: '13px', fontWeight: 700,
   fontFamily: 'Manrope, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
 };

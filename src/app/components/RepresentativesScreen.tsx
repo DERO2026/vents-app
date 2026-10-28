@@ -80,14 +80,14 @@ function relativeTime(iso: string | null | undefined): string | null {
   return months === 1 ? '1 month ago' : `${months} months ago`;
 }
 
-// One-time keyframes injection for the loading-skeleton shimmer -- React
+// One-time keyframes injection for the loading-skeleton pulse -- React
 // inline styles can't express @keyframes, and this app has no existing
 // shimmer utility class to reuse (checked: no global stylesheet defines
 // one). Scoped to a single rule under a unique name so it can't collide
 // with anything else.
 function ShimmerKeyframes() {
   return (
-    <style>{`@keyframes repScreenShimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}`}</style>
+    <style>{`@keyframes repScreenShimmer{0%,100%{opacity:1;}50%{opacity:0.5;}}`}</style>
   );
 }
 
@@ -98,9 +98,8 @@ function SkeletonLine({ width, height = 12, radius = 6 }: { width: string; heigh
         width,
         height,
         borderRadius: radius,
-        background: `linear-gradient(90deg, ${ventsColors.elevated}, rgba(255,255,255,0.08), ${ventsColors.elevated})`,
-        backgroundSize: '200% 100%',
-        animation: 'repScreenShimmer 1.6s infinite',
+        background: ventsColors.elevated,
+        animation: 'repScreenShimmer 1.6s infinite ease-in-out',
       }}
     />
   );
@@ -530,10 +529,8 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
     }
   };
 
-  const gradientPrimary = `linear-gradient(135deg, ${ventsColors.accent}, #7C4DEF)`;
-
   const primaryButtonStyle: CSSProperties = {
-    background: gradientPrimary,
+    background: ventsColors.accent,
     color: ventsColors.white,
     border: 'none',
     borderRadius: ventsRadii.md,
@@ -605,7 +602,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
     height: size,
     minWidth: size,
     borderRadius: ventsRadii.pill,
-    background: 'linear-gradient(135deg, rgba(142,92,247,0.35), rgba(142,92,247,0.08))',
+    background: 'rgba(142,92,247,0.2)',
     border: '1px solid rgba(142,92,247,0.3)',
     color: ventsColors.accentSoft,
     display: 'flex',
@@ -829,7 +826,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        background: `radial-gradient(520px 320px at 85% -8%, rgba(142,92,247,0.14), transparent 60%), ${ventsColors.bg}`,
+        background: ventsColors.bg,
         color: ventsColors.ink1,
         fontFamily: ventsTypography.fontBody,
         overflowX: 'hidden',
@@ -918,22 +915,10 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
               marginBottom: ventsSpacing.unit[4],
               position: 'relative',
               overflow: 'hidden',
-              background: `linear-gradient(160deg, rgba(142,92,247,0.18), rgba(142,92,247,0.03) 55%), ${ventsColors.surface}`,
+              background: ventsColors.surface,
               border: '1px solid rgba(142,92,247,0.28)',
             }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                width: 180,
-                height: 180,
-                borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(142,92,247,0.35), transparent 70%)',
-                top: -70,
-                right: -60,
-                pointerEvents: 'none',
-              }}
-            />
             <div
               style={{
                 display: 'inline-flex',
@@ -972,10 +957,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                   fontSize: 22,
                   fontWeight: 800,
                   minWidth: 54,
-                  background: gradientPrimary,
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  color: ventsColors.accentSoft,
                 }}
               >
                 10%
@@ -1026,7 +1008,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                 gap: 6,
                 border: 'none',
                 borderRadius: ventsRadii.sm,
-                background: tab === t.id ? gradientPrimary : 'transparent',
+                background: tab === t.id ? ventsColors.accent : 'transparent',
                 color: tab === t.id ? ventsColors.white : ventsColors.ink2,
                 fontFamily: ventsTypography.fontBody,
                 ...ventsTypography.caption,

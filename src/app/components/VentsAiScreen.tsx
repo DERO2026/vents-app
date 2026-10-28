@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { sendVentsAiMessage, type VentsAiMessage } from '../../lib/ventsAi';
 import { supabase } from '../../lib/supabase';
 import { PickerSheet, PickerField } from './shared/PickerSheet';
@@ -26,7 +26,7 @@ import { isMobileNativeForAiGate } from '../../lib/platform';
 // display:none pattern used for HomeScreen/MyTicketsScreen), but resets on
 // a full reload, sign-out, or app restart.
 
-const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
+const ACCENT_FILL = '#8E5CF7';
 
 type BackendCard = { type: string; data: unknown; source?: 'vents' | 'external' | 'general' };
 
@@ -230,6 +230,26 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
 // assigned (35%) + budget fully committed (15%). Shared by
 // ContinuePlanningCard, WorkspaceOverviewTab, and P14's "Plan is now X%
 // ready" toast -- one formula, never three slightly-different copies.
+
+// Readiness progress ring: a solid track circle plus a solid arc whose length
+// is exactly `pct` percent of the circumference (same hard-stop reading the
+// old conic-gradient gave, without a gradient). Children render centred on top.
+function ReadinessRing({ size, stroke, pct, track, children }: { size: number; stroke: number; pct: number; track: string; children: ReactNode }) {
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, pct));
+  return (
+    <div data-testid="readiness-ring" style={{ position: 'relative', width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#a35cff" strokeWidth={stroke}
+          strokeDasharray={circumference} strokeDashoffset={circumference * (1 - clamped / 100)} />
+      </svg>
+      <div style={{ position: 'relative', display: 'flex' }}>{children}</div>
+    </div>
+  );
+}
+
 function computeReadiness(data: PlanWorkspaceData): number {
   const tasksDone = data.tasks.filter((t) => !!t.done_at).length;
   const tasksTotal = data.tasks.length;
@@ -250,7 +270,7 @@ function computeReadiness(data: PlanWorkspaceData): number {
 function NewPlannerPromoCard({ onPickType }: { onPickType: (text: string) => void }) {
   const TYPES = ['Wedding', 'Birthday', 'Conference', 'Something else'];
   return (
-    <div style={{ padding: 16, borderRadius: 14, background: 'linear-gradient(160deg, rgba(163,92,255,.16), rgba(18,14,26,1) 70%)', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+    <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
       <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.16em', color: '#d3b8ff' }}>NEW · VENTS AI PLANNER</span>
       <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.01em' }}>Plan an event with VENTS AI</span>
       <span style={{ fontSize: 13, color: '#c9c0d4', lineHeight: 1.5 }}>Tell VENTS AI what you're hosting. Get a budget, a team of VENTS providers, tasks and a timeline.</span>
@@ -313,15 +333,15 @@ function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSu
   }
 
   return (
-    <div style={{ padding: 16, borderRadius: 14, background: 'linear-gradient(160deg, rgba(163,92,255,.16), #120e1a 70%)', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+    <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.16em', color: '#d3b8ff' }}>CONTINUE PLANNING</span>
         <span style={{ fontSize: 12, color: '#a89db3' }}>{daysToGo != null ? `${daysToGo} days` : ''}</span>
       </div>
       <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-        <div style={{ width: 52, height: 52, borderRadius: '50%', background: `conic-gradient(#a35cff 0 ${readiness}%, #2c2438 ${readiness}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <ReadinessRing size={52} stroke={5} pct={readiness} track="#2c2438">
           <span style={{ width: 42, height: 42, borderRadius: '50%', background: '#16111f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800 }}>{readiness}%</span>
-        </div>
+        </ReadinessRing>
         <div>
           <div style={{ fontSize: 17, fontWeight: 800 }}>{plan.title}</div>
           <div style={{ fontSize: 12.5, color: '#a89db3', marginTop: 2 }}>
@@ -338,7 +358,7 @@ function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSu
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Ask VENTS AI</span>
-        <span onClick={onOpenWorkspace} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Open plan</span>
+        <span onClick={onOpenWorkspace} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Open plan</span>
       </div>
     </div>
   );
@@ -351,7 +371,8 @@ function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSu
 // chat tool's view of the same plan.
 //
 // Style values below are copied verbatim from P07.html/P08.html (colors,
-// px sizes, border-radius, gradient stops) -- "style-value verified"
+// px sizes, border-radius; the source's gradients have since been replaced
+// by solid VENTS colours app-wide) -- "style-value verified"
 // against that source, not visually verified (this sandbox cannot render
 // or screenshot). Team/Tasks/Timeline tabs are not implemented; they are
 // shown as explicit placeholders rather than silently omitted.
@@ -539,7 +560,7 @@ function PlanWorkspaceView({
 
       <div style={{ flexShrink: 0, padding: '10px 16px 22px', background: '#0b0812', borderTop: '1px solid #1c1726' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#161020', border: '1px solid #2a2438', borderRadius: 12, padding: '6px 6px 6px 12px' }}>
-          <span style={{ width: 22, height: 22, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff' }}>✦</span>
+          <span style={{ width: 22, height: 22, borderRadius: '50%', background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff' }}>✦</span>
           <input
             value={composerText}
             onChange={(e) => setComposerText(e.target.value)}
@@ -547,7 +568,7 @@ function PlanWorkspaceView({
             placeholder={composerPlaceholder}
             style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#e8e3ee', fontFamily: 'inherit' }}
           />
-          <span onClick={sendComposer} role="button" aria-label="Send" style={{ width: 30, height: 30, borderRadius: 8, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, cursor: 'pointer' }}>↑</span>
+          <span onClick={sendComposer} role="button" aria-label="Send" style={{ width: 30, height: 30, borderRadius: 8, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, cursor: 'pointer' }}>↑</span>
         </div>
       </div>
       {showDateSheet && data && (
@@ -696,7 +717,7 @@ function SetTotalBudgetSheet({
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-budget-set-total-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
+          <span onClick={save} role="button" data-testid="workspace-budget-set-total-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
         </div>
       </div>
     </div>
@@ -745,7 +766,7 @@ function SetEventDateSheet({
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-timeline-set-date-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
+          <span onClick={save} role="button" data-testid="workspace-timeline-set-date-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
         </div>
       </div>
     </div>
@@ -866,7 +887,7 @@ function DateChangeSheet({
             onClick={confirmMove}
             role="button"
             data-testid="ai-date-change-confirm"
-            style={{ flex: 1.6, height: 48, borderRadius: 12, background: newDate && newDate !== data.plan.event_date ? GRADIENT : '#2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}
+            style={{ flex: 1.6, height: 48, borderRadius: 12, background: newDate && newDate !== data.plan.event_date ? ACCENT_FILL : '#2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}
           >
             {saving ? 'Moving…' : newDateFmt ? `Move to ${newDateFmt.replace(/^\w+ /, '')}` : 'Choose a date'}
           </span>
@@ -902,12 +923,12 @@ function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData;
   return (
     <>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d' }}>
-        <div style={{ width: 78, height: 78, borderRadius: '50%', background: `conic-gradient(#a35cff 0 ${readiness}%, #221d2d ${readiness}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <ReadinessRing size={78} stroke={7} pct={readiness} track="#221d2d">
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#120e1a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 19, fontWeight: 800 }}>{readiness}%</span>
             <span style={{ fontSize: 9.5, color: '#8a7f97' }}>ready</span>
           </div>
-        </div>
+        </ReadinessRing>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.02em' }}>{daysToGo != null ? `${daysToGo} days to go` : 'No date set'}</span>
           <span style={{ fontSize: 13, color: '#a89db3' }}>{tasksDone} of {tasksTotal} tasks · {assignedCategories} of {categoriesTotal} team assigned</span>
@@ -1113,7 +1134,7 @@ function WorkspaceBudgetTab({
           <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>VENTS AI splits it across categories as planning estimates — not quotes.</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Not sure yet</span>
-            <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-set-total" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Set total</span>
+            <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-set-total" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Set total</span>
           </div>
         </div>
         {showSetTotal && (
@@ -1220,7 +1241,7 @@ function WorkspaceBudgetTab({
                   )}
                 </span>
               </div>
-              <div style={{ height: 5, borderRadius: 999, background: s === 'estimate' ? 'repeating-linear-gradient(45deg, rgba(163,92,255,.35) 0 4px, rgba(163,92,255,.1) 4px 8px)' : '#221d2d', overflow: 'hidden', display: 'flex' }}>
+              <div style={{ height: 5, borderRadius: 999, background: s === 'estimate' ? 'rgba(163,92,255,.35)' : '#221d2d', overflow: 'hidden', display: 'flex' }}>
                 {s !== 'estimate' && <span style={{ width: `${barPct}%`, background: barColor }} />}
               </div>
               <span style={{ fontSize: 11.5, color: s === 'over' ? '#fbbf24' : s === 'paid' ? '#34d399' : '#a89db3' }}>
@@ -1403,7 +1424,7 @@ function AllocationSheet({
         {error && <div style={{ fontSize: 12, color: '#fbbf24' }}>{error}</div>}
         <div style={{ display: 'flex', gap: 10 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, height: 48, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={handleSave} role="button" data-testid="ai-allocation-save" style={{ flex: 1.6, height: 48, borderRadius: 12, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save allocation'}</span>
+          <span onClick={handleSave} role="button" data-testid="ai-allocation-save" style={{ flex: 1.6, height: 48, borderRadius: 12, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save allocation'}</span>
         </div>
       </div>
       {showCategoryPicker && (
@@ -1510,7 +1531,7 @@ function CategoryDetailView({
         ) : (
           <>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 12, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d' }}>
-              <span style={{ width: 52, height: 52, borderRadius: 10, background: 'repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px)', flexShrink: 0 }} />
+              <span style={{ width: 52, height: 52, borderRadius: 10, background: '#1c1726', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{active.provider?.business_name || active.own_vendor_name || 'Provider'}</div>
                 <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>
@@ -1843,7 +1864,7 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {[0, 1, 2].map((i) => (
-                  <span key={i} style={{ width: 32, height: 32, borderRadius: '50%', marginLeft: i > 0 ? -14 : 0, background: 'repeating-linear-gradient(45deg,#2c2438,#2c2438 5px,#231d2e 5px,#231d2e 10px)', border: '2px solid #120e1a' }} />
+                  <span key={i} style={{ width: 32, height: 32, borderRadius: '50%', marginLeft: i > 0 ? -14 : 0, background: '#2c2438', border: '2px solid #120e1a' }} />
                 ))}
                 <span style={{ flex: 1 }} />
                 <span onClick={() => onOpenCategory(c.id)} role="button" style={{ padding: '8px 14px', borderRadius: 9, background: 'rgba(163,92,255,.14)', color: '#d3b8ff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>View providers</span>
@@ -1949,7 +1970,7 @@ function AddCategorySheet({ planId, onClose, onChanged }: { planId: string; onCl
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-add-category-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
+          <span onClick={save} role="button" data-testid="workspace-add-category-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
         </div>
       </div>
     </div>
@@ -2014,7 +2035,7 @@ function AddOwnVendorSheet({ category, onClose, onChanged }: { category: Workspa
         {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={save} role="button" data-testid="workspace-add-vendor-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
+          <span onClick={save} role="button" data-testid="workspace-add-vendor-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
         </div>
       </div>
     </div>
@@ -2294,7 +2315,7 @@ function WorkspaceTimelineTab({ data, planId, onOpenTasks, onChanged }: { data: 
               ) : (
                 <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a3f56', marginTop: 2 }} />
               )}
-              {i < sorted.length - 1 && <span style={{ flex: 1, width: 2, background: isPast ? '#34d399' : nextUpcoming ? 'linear-gradient(#a35cff,#2c2438)' : '#2c2438' }} />}
+              {i < sorted.length - 1 && <span style={{ flex: 1, width: 2, background: isPast ? '#34d399' : nextUpcoming ? '#a35cff' : '#2c2438' }} />}
             </div>
             <div style={{ flex: 1, paddingBottom: 20 }}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: isPast ? '#34d399' : nextUpcoming ? '#d3b8ff' : '#8a7f97' }}>
@@ -2314,7 +2335,7 @@ function WorkspaceTimelineTab({ data, planId, onOpenTasks, onChanged }: { data: 
       {eventDateMs && (
         <div style={{ display: 'flex', gap: 14 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 16 }}>
-            <span style={{ width: 16, height: 16, borderRadius: 4, background: GRADIENT, transform: 'rotate(45deg)' }} />
+            <span style={{ width: 16, height: 16, borderRadius: 4, background: ACCENT_FILL, transform: 'rotate(45deg)' }} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#d3b8ff' }}>{fmtTaskDate(new Date(eventDateMs)).toUpperCase()}</div>
@@ -2359,7 +2380,7 @@ function EventCardRow({ events, onOpenEvent }: { events: any[]; onOpenEvent?: (i
           <div
             style={{
               height: 90,
-              background: e.image_url ? `url(${e.image_url}) center/cover` : 'repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px)',
+              background: e.image_url ? `url(${e.image_url}) center/cover` : '#1c1726',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: '#4a3f56',
             }}
@@ -2400,7 +2421,7 @@ function ProviderCardRow({ providers, onOpenProvider }: { providers: any[]; onOp
             <div
               style={{
                 height: 90,
-                background: p.photo_urls?.[0] ? `url(${p.photo_urls[0]}) center/cover` : 'repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px)',
+                background: p.photo_urls?.[0] ? `url(${p.photo_urls[0]}) center/cover` : '#1c1726',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: '#4a3f56',
               }}
@@ -2599,7 +2620,7 @@ function ConfirmationCard({
           <div
             onClick={onConfirm}
             data-testid="ai-confirmation-confirm"
-            style={{ flex: 1, textAlign: 'center', padding: 9, borderRadius: 8, background: GRADIENT, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            style={{ flex: 1, textAlign: 'center', padding: 9, borderRadius: 8, background: ACCENT_FILL, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
           >
             {confirmLabel}
           </div>
@@ -2713,7 +2734,7 @@ function BudgetBar({ estimated, committed, paid, total, hideLegend }: { estimate
         <div
           style={{
             width: pct(estimated),
-            background: 'repeating-linear-gradient(45deg, rgba(163,92,255,.35) 0 4px, rgba(163,92,255,.12) 4px 8px)',
+            background: 'rgba(163,92,255,.35)',
           }}
         />
       </div>
@@ -2875,7 +2896,7 @@ function PlanUpdateCard({
             onClick={handleApply}
             role="button"
             data-testid="ai-plan-update-apply"
-            style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: GRADIENT, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: ACCENT_FILL, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
           >
             Apply
           </div>
@@ -3046,7 +3067,7 @@ function PlanOfferCard({ data, onAccept }: { data: any; onAccept?: () => void })
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <span onClick={() => setDismissed(true)} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Just chat</span>
-        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with VENTS AI</span>
+        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with VENTS AI</span>
       </div>
     </div>
   );
@@ -3111,7 +3132,7 @@ function PlanQuestionCard({ data, onAnswer }: { data: any; onAnswer?: (text: str
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#8a7f97' }}>Pick up to {maxSelect}</span>
-            <span onClick={submitMulti} role="button" style={{ padding: '10px 18px', borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+            <span onClick={submitMulti} role="button" style={{ padding: '10px 18px', borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
           </div>
         </>
       ) : (
@@ -3251,7 +3272,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                       onChange={(e) => setBrief((b) => ({ ...b, event_date: e.target.value }))}
                       style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 14, color: '#f0f0ff', fontFamily: 'inherit' }}
                     />
-                    <span onClick={() => setEditing(null)} role="button" data-testid="ai-brief-row-date-done" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+                    <span onClick={() => setEditing(null)} role="button" data-testid="ai-brief-row-date-done" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
                   </>
                 )}
                 {r.key === 'location' && (
@@ -3275,7 +3296,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                         </span>
                       ))}
                     </div>
-                    <span onClick={() => setEditing(null)} role="button" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+                    <span onClick={() => setEditing(null)} role="button" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
                   </>
                 )}
                 {r.key === 'guests' && (
@@ -3289,7 +3310,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                       onClick={() => { setBrief((b) => ({ ...b, guests: draftGuests })); setEditing(null); }}
                       role="button"
                       data-testid="ai-brief-row-guests-done"
-                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
                     >
                       Done
                     </span>
@@ -3311,7 +3332,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
                       onClick={() => { setBrief((b) => ({ ...b, total_budget_naira: draftBudget })); setEditing(null); }}
                       role="button"
                       data-testid="ai-brief-row-budget-done"
-                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
                     >
                       Done
                     </span>
@@ -3342,7 +3363,7 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
           </div>
         </div>
       )}
-      <span onClick={handleBuild} role="button" style={{ textAlign: 'center', padding: 13, borderRadius: 12, background: GRADIENT, fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Build my plan</span>
+      <span onClick={handleBuild} role="button" style={{ textAlign: 'center', padding: 13, borderRadius: 12, background: ACCENT_FILL, fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Build my plan</span>
       <span style={{ textAlign: 'center', fontSize: 11.5, color: '#8a7f97' }}>You can change any of this later.</span>
       {showCityPicker && (
         <PickerSheet
@@ -4080,11 +4101,10 @@ function HomeView({
           <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS AI" role="button">✕</div>
         </div>
 
-        {/* Centered dimensional orb -- layered radial gradients (lit
-            sphere + offset highlight + a rotating glassy sheen + outer
-            glow halo) rather than a flat circle with a glyph. Pure CSS,
-            no new dependency, frozen to a static single frame under
-            prefers-reduced-motion (handled inside Vents3DOrb itself).
+        {/* Centered orb -- a solid VENTS-accent circle (no gradients,
+            per the app-wide solid-colour standard) rather than a glyph.
+            Pure CSS, no new dependency, frozen to a static single frame
+            under prefers-reduced-motion (handled inside Vents3DOrb itself).
             Sized with clamp() so it's noticeably bigger than the old
             76px fixed size on every device, without overflowing a small
             phone or looking undersized on a tablet/desktop. */}
@@ -4183,7 +4203,7 @@ function HomeView({
                 // looked barely rounded.
                 style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 26, padding: '15px 52px 15px 20px', fontSize: 16, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
               />
-              <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 18, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
+              <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 18, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
             </div>
 
             {/* Mood/Budget/Area -- compact popovers anchored directly under
@@ -4297,11 +4317,9 @@ function HomeView({
   );
 }
 
-// Dimensional purple "glass" orb for the Home header -- layered radial
-// gradients (a soft outer halo, a lit sphere with its own inner shadow/
-// highlight, a glossy sheen) rather than a flat circle or a star glyph, per
-// the design review's explicit "no flat star / no 2D illustration"
-// requirement. Reuses the exact ventsAiOrbGlow/ventsAiOrbFloat keyframes
+// Purple orb for the Home header -- a single solid VENTS-accent circle (the
+// app-wide standard is solid colours, no gradients), never a star glyph.
+// Reuses the exact ventsAiOrbGlow/ventsAiOrbFloat keyframes
 // already defined in VentsAiUnlockedScreen.tsx (same values, so the two
 // screens' orbs read as the same visual object) and the same
 // prefers-reduced-motion override pattern. `size` controls everything
@@ -4309,37 +4327,20 @@ function HomeView({
 // `size` is a CSS length (often clamp(min, preferred-vw, max)) so the orb
 // scales with viewport width instead of being pinned to one device's
 // pixel value -- a fixed px size either looks tiny on a tablet or
-// overflows a small phone. All the inner layers use percentages, which
-// resolve against this element's own box, so they scale with it for free.
+// overflows a small phone. The orb fills this element's own box, so it
+// scales with it for free.
 function Vents3DOrb({ size }: { size: string }) {
   return (
     <div style={{ position: 'relative', width: size, height: size, margin: '0 auto' }}>
-      {/* Glow halo -- widened (-26% vs -20%) and slightly brighter
-          (.58 vs .45 peak opacity) than the previous pass for a stronger
-          but still restrained purple presence, per the explicit "slightly
-          stronger but restrained" request. */}
       <div
-        style={{
-          position: 'absolute', inset: '-26%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(139,92,246,.58), transparent)',
-          animation: 'ventsAiOrbGlow 4.5s ease-in-out infinite',
-        }}
-      />
-      <div
+        data-testid="vents-ai-orb"
         style={{
           position: 'absolute', inset: 0, borderRadius: '50%',
-          background: 'radial-gradient(circle at 32% 28%, #e9ddff 0%, #a78bfa 22%, #6d28d9 58%, #1b1140 100%)',
-          boxShadow: 'inset 0 -10px 24px rgba(0,0,0,.45), inset 0 8px 18px rgba(255,255,255,.28)',
+          background: '#8E5CF7', // ventsColors.accent -- solid orb, no gradient
           // Slower (7.5s vs 6s) and travels further (-11px vs -6px) --
           // "noticeable without being distracting": slow enough to read
           // as a gentle float, not a bounce.
           animation: 'ventsAiOrbFloat 7.5s ease-in-out infinite',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute', left: '24%', top: '16%', width: '34%', height: '20%',
-          borderRadius: '50%', background: 'rgba(255,255,255,.35)', filter: 'blur(5px)',
         }}
       />
       <style>{`
@@ -4494,7 +4495,7 @@ function TunePopover({
               onClick={() => canApply && onSelect(`₦${n.toLocaleString()}`)}
               disabled={!canApply}
               data-testid="vents-ai-tune-budget-custom-apply"
-              style={{ marginTop: 10, width: '100%', border: 0, borderRadius: 16, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: canApply ? GRADIENT : '#2a2438', cursor: canApply ? 'pointer' : 'default' }}
+              style={{ marginTop: 10, width: '100%', border: 0, borderRadius: 16, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: canApply ? ACCENT_FILL : '#2a2438', cursor: canApply ? 'pointer' : 'default' }}
             >
               Use this amount
             </button>
@@ -4735,7 +4736,7 @@ function PlansListView({
             onClick={() => onStartNewPlan("I'm planning an event.")}
             role="button"
             data-testid="si-new-plan"
-            style={{ height: 46, borderRadius: 12, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+            style={{ height: 46, borderRadius: 12, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
           >
             Start a plan
           </span>
@@ -4745,7 +4746,7 @@ function PlansListView({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#8a7f97' }}>UPCOMING</span>
             {/* P25's own layout: "+ New plan" is this small inline link
-                beside UPCOMING once plans exist -- the big gradient CTA
+                beside UPCOMING once plans exist -- the big accent CTA
                 is S2-A's own treatment, only for the genuinely-empty state
                 above. */}
             <span onClick={() => onStartNewPlan("I'm planning an event.")} role="button" data-testid="si-new-plan" style={{ fontSize: 13, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>+ New plan</span>
@@ -4798,7 +4799,7 @@ function RenamePlanSheet({ plan, onCancel, onSave }: { plan: PlanSummary; onCanc
         />
         <div style={{ display: 'flex', gap: 8 }}>
           <span onClick={onCancel} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
-          <span onClick={() => onSave(title)} role="button" data-testid="si-plan-rename-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Save</span>
+          <span onClick={() => onSave(title)} role="button" data-testid="si-plan-rename-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Save</span>
         </div>
       </div>
     </div>
@@ -4834,7 +4835,7 @@ function DeletePlanConfirmDialog({ plan, onCancel, onConfirm }: { plan: PlanSumm
 function BuildingPlanLoader({ title }: { title: string }) {
   return (
     <div style={{ padding: '40px 8px 16px', display: 'flex', flexDirection: 'column', gap: 24 }} data-testid="ai-building-plan-loader">
-      <span style={{ width: 56, height: 56, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#fff', boxShadow: '0 0 0 10px rgba(163,92,255,.08)' }}>✦</span>
+      <span style={{ width: 56, height: 56, borderRadius: '50%', background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#fff', boxShadow: '0 0 0 10px rgba(163,92,255,.08)' }}>✦</span>
       <div>
         <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.2 }}>Building your<br />{title} plan</div>
         <div style={{ fontSize: 13, color: '#a89db3', marginTop: 8 }}>Usually under 20 seconds.</div>
@@ -4915,7 +4916,7 @@ function ConversationView({
               </div>
             ) : (
               <div key={i} style={{ display: 'flex', gap: 9, marginBottom: 16, alignItems: 'flex-start' }}>
-                <div style={{ width: 26, height: 26, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
                   <span style={{ fontSize: 11, color: '#fff' }}>✦</span>
                 </div>
                 <div style={{ maxWidth: '82%' }}>
@@ -4975,7 +4976,7 @@ function ConversationView({
                     onClick={() => onQuickAction?.(lastConvUserText)}
                     role="button"
                     data-testid="ai-plan-build-error-retry"
-                    style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                    style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: ACCENT_FILL, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
                   >
                     Try again
                   </span>
@@ -5017,7 +5018,7 @@ function ConversationView({
               />
             ) : (
               <div style={{ display: 'flex', gap: 9, marginBottom: 16 }}>
-                <div style={{ width: 26, height: 26, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <span style={{ fontSize: 11, color: '#fff' }}>✦</span>
                 </div>
                 <div style={{ background: '#120e1a', border: '1px solid #221d2d', borderRadius: '3px 14px 14px 14px', padding: '13px 16px', display: 'flex', gap: 4 }}>
@@ -5039,7 +5040,7 @@ function ConversationView({
             placeholder={conversation.planId ? `Ask VENTS AI about ${conversation.title}…` : 'Ask a follow-up…'}
             style={{ width: '100%', boxSizing: 'border-box', background: '#161020', border: '1px solid #2a2438', borderRadius: 12, padding: '12px 48px 12px 14px', fontSize: 13, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
           />
-          <div onClick={onSend} style={{ position: 'absolute', right: 6, top: 6, width: 30, height: 30, borderRadius: 8, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 13 }}>↑</div>
+          <div onClick={onSend} style={{ position: 'absolute', right: 6, top: 6, width: 30, height: 30, borderRadius: 8, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 13 }}>↑</div>
         </div>
       </div>
     </>
@@ -5084,7 +5085,7 @@ function RightPanel({ conversation }: { conversation: LocalConversation }) {
   return (
     <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid #211c2c', background: '#0d0a15', padding: 20, overflowY: 'auto' }}>
       <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 12 }}>DETAILS</div>
-      <div style={{ height: 150, background: 'repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: '#4a3f56' }}>
+      <div style={{ height: 150, background: '#1c1726', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: '#4a3f56' }}>
         DETAILS
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: '#f5f2f8', marginTop: 14 }}>{title}</div>

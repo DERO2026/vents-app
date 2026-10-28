@@ -11,7 +11,6 @@ import { ServiceProviderCard, ServiceProviderCompactCard } from './ServiceProvid
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { PickerSheet } from './shared/PickerSheet';
-import { AmbientGlow } from './shared/AmbientGlow';
 
 interface ServicesHomeScreenProps {
   onBack: () => void;
@@ -185,7 +184,6 @@ export function ServicesHomeScreen({
 
   return (
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-      <AmbientGlow />
       {pickerOpen && (
         <DiscoveryCountryPicker
           selectedIso={activeIso}
@@ -250,8 +248,8 @@ export function ServicesHomeScreen({
         {/* Search bar -- exact dimensions/colors from VentsPrototype.dc.html's
             Services search row (height 52px, radius 26px, bg #181330,
             border rgba(139,92,246,.35)); the AI control is the prototype's
-            literal "✦" glyph button (44px, radius 22px, gradient 135deg
-            #a78bfa→#6d28d9), not a lucide icon. */}
+            literal "✦" glyph button (44px, radius 22px, solid VENTS
+            accent), not a lucide icon. */}
         <div style={{ display: 'flex', alignItems: 'center', height: '52px', borderRadius: '26px', background: '#181330', border: '1px solid rgba(139,92,246,0.35)', padding: '0 4px 0 18px', gap: '8px' }}>
           <input
             type="search"
@@ -284,7 +282,7 @@ export function ServicesHomeScreen({
               aria-label="Ask VENTS AI"
               style={{
                 flexShrink: 0, width: '44px', height: '44px', borderRadius: '22px',
-                background: 'linear-gradient(135deg,#a78bfa,#6d28d9)',
+                background: '#8E5CF7',
                 border: 'none', cursor: 'pointer', color: '#fff', fontSize: '18px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}

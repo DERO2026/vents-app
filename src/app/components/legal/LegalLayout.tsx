@@ -55,7 +55,7 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
                 width: '32px',
                 height: '32px',
                 borderRadius: '9px',
-                background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                background: '#8E5CF7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

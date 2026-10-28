@@ -331,7 +331,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                 <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 800 }}>{checkedIn} / {total}</span>
               </div>
               <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px' }}>
-                <div style={{ height: '100%', width: `${total > 0 ? (checkedIn / total) * 100 : 0}%`, borderRadius: '3px', background: 'linear-gradient(90deg, #10B981, #06B6D4)', transition: 'width 0.3s ease' }} />
+                <div style={{ height: '100%', width: `${total > 0 ? (checkedIn / total) * 100 : 0}%`, borderRadius: '3px', background: '#34D399', transition: 'width 0.3s ease' }} />
               </div>
               <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '5px' }}>
                 {total > 0 ? Math.round((checkedIn / total) * 100) : 0}% checked in
@@ -350,7 +350,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
           {/* Status filter */}
           <div style={{ display: 'flex', gap: '8px', padding: '0 16px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
             {(['all', 'checked-in', 'pending', 'cancelled'] as const).map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: '20px', border: 'none', background: statusFilter === s ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629', color: statusFilter === s ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+              <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: '20px', border: 'none', background: statusFilter === s ? '#8E5CF7' : '#131629', color: statusFilter === s ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                 {s === 'all' ? 'All' : s === 'checked-in' ? 'Checked In' : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}

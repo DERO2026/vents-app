@@ -32,7 +32,7 @@
 // native platform isn't the one currently rendering this screen, since
 // that claim would be false the instant both iOS and Android are gated.
 
-const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
+const ACCENT_FILL = '#8E5CF7';
 const BG = '#0a0810';
 const SURFACE = '#120e1a';
 const BORDER = '#2c2438';
@@ -71,19 +71,10 @@ export function VentsAiIosComingSoonScreen({ onClose }: { onClose: () => void })
         <div style={{ position: 'relative', width: 96, height: 96, marginBottom: 6 }}>
           <div
             style={{
-              position: 'absolute', inset: '-20px', borderRadius: '50%',
-              background: 'radial-gradient(closest-side, rgba(139,92,246,.4), transparent)',
-              animation: 'ventsAiComingSoonGlow 4.5s ease-in-out infinite',
-            }}
-          />
-          <div
-            style={{
               position: 'absolute', inset: 0, borderRadius: '50%',
-              background: 'radial-gradient(circle at 32% 28%, #e9ddff 0%, #a78bfa 22%, #6d28d9 58%, #1b1140 100%)',
-              boxShadow: 'inset 0 -8px 20px rgba(0,0,0,.45), inset 0 6px 14px rgba(255,255,255,.28)',
+              background: '#8E5CF7', // ventsColors.accent -- solid orb, no gradient
             }}
           />
-          <div style={{ position: 'absolute', left: '24%', top: '16%', width: '34%', height: '20%', borderRadius: '50%', background: 'rgba(255,255,255,.35)', filter: 'blur(5px)' }} />
         </div>
 
         <div
@@ -112,7 +103,7 @@ export function VentsAiIosComingSoonScreen({ onClose }: { onClose: () => void })
           data-testid="vents-ai-ios-coming-soon-back"
           style={{
             marginTop: 10, width: '100%', maxWidth: 280, height: 48, borderRadius: 24, border: 0,
-            background: GRADIENT, color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
+            background: ACCENT_FILL, color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
           }}
         >
           Back to VENTS

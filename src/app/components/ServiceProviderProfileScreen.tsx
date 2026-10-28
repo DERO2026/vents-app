@@ -349,15 +349,13 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
         {/* SV3 hero -- shorter cover band (200px, was 260px) with a
             floating profile card overlapping it, rather than the name
             baked into the photo itself. Real cover photo (photoUrls[0])
-            kept when set; falls back to the export's gradient-glow
-            treatment otherwise. */}
-        <div style={{ position: 'relative', height: '200px', background: coverPhoto ? undefined : 'linear-gradient(160deg,#3b0764,#0d0616 70%)', overflow: 'hidden' }}>
-          {coverPhoto ? (
+            kept when set; falls back to a solid dark band
+            otherwise. */}
+        <div style={{ position: 'relative', height: '200px', background: coverPhoto ? undefined : '#1A1724', overflow: 'hidden' }}>
+          {coverPhoto && (
             <img src={coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <div style={{ position: 'absolute', top: '-80px', left: '50%', transform: 'translateX(-50%)', width: '420px', height: '300px', background: `radial-gradient(ellipse at center, ${accent}66, transparent 65%)` }} />
           )}
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(2,0,5,0.1) 0%, rgba(2,0,5,0.85) 100%)' }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '50%', background: 'rgba(2,0,5,0.75)' }} />
           <div style={{ position: 'absolute', top: 'calc(16px + env(safe-area-inset-top))', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between' }}>
             <button onClick={onBack} style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <ArrowLeft size={16} color="#fff" />
@@ -433,7 +431,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             anywhere, so that part of the export isn't reproduced either. */}
         <div style={{ position: 'relative', margin: '-40px 20px 0', padding: '18px', borderRadius: '20px', background: 'rgba(20,12,30,0.85)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(16px)' }}>
           <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-            <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: `linear-gradient(145deg, ${accent}, #4c1d95)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 0 0 3px rgba(8,5,15,0.9)', overflow: 'hidden' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 0 0 3px rgba(8,5,15,0.9)', overflow: 'hidden' }}>
               {coverPhoto ? null : provider.businessName.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -637,7 +635,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           Contact Provider kept underneath for anything that isn't a
           straightforward purchase (availability questions, custom
           requests). */}
-      <div ref={ctaBarRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 75%, transparent)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div ref={ctaBarRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: '#020005', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {bookingSuccess && (
           <div style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: servicesRadii.md, padding: '12px 14px' }}>
             <p style={{ color: servicesColors.success, fontSize: '13px', fontWeight: 700, margin: 0 }}>Booking confirmed! Check My Bookings for details.</p>
@@ -664,7 +662,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
               onClick={() => setActiveTab('services')}
               style={{
                 flex: 2, textAlign: 'center', padding: '15px 0', borderRadius: servicesRadii.md,
-                background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none',
+                background: '#8E5CF7', border: 'none',
                 fontWeight: 700, fontSize: '14.5px', color: '#fff', cursor: 'pointer',
                 boxShadow: '0 8px 26px rgba(168,85,247,0.4)',
               }}
@@ -759,7 +757,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
               disabled={disabled}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                background: 'linear-gradient(135deg, #10B981, #059669)',
+                background: '#059669',
                 border: 'none', borderRadius: servicesRadii.md, padding: '16px',
                 color: '#fff', fontSize: '16px', fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -780,7 +778,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           disabled={!onContactProvider}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-            background: selectedServices.length > 0 ? servicesColors.cardBg : (onContactProvider ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)'),
+            background: selectedServices.length > 0 ? servicesColors.cardBg : (onContactProvider ? '#8E5CF7' : 'rgba(123,47,190,0.25)'),
             border: selectedServices.length > 0 ? `1px solid ${servicesColors.border}` : 'none',
             borderRadius: servicesRadii.md, padding: '16px',
             color: selectedServices.length > 0 ? servicesColors.textPrimary : (onContactProvider ? '#fff' : 'rgba(255,255,255,0.4)'),

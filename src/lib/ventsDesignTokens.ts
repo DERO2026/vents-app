@@ -26,7 +26,6 @@ export const ventsColors = {
 
   accent: '#8E5CF7',
   accentSoft: '#B79BFF',
-  ambientGradient: 'linear-gradient(140deg,#2A1A4A,#0B0814)',
 
   success: '#34D399',
   pending: '#FBBF24',

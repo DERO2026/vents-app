@@ -181,21 +181,6 @@ div[style*="background:#060A12"]:not([style*="width: 22px"]):not([style*="width:
   background: var(--theme-bg) !important;
 }
 
-/* Gradient overrides */
-div[style*="linear-gradient(to top, #060A12 80%"],
-div[style*="linear-gradient(to top, rgb(6, 10, 18) 80%"] {
-  background: linear-gradient(to top, var(--theme-bg) 80%, transparent) !important;
-}
-
-div[style*="rgba(6,10,18,1)"],
-div[style*="rgba(6, 10, 18, 1)"] {
-  background: linear-gradient(to bottom, rgba(var(--theme-bg-rgb), 0.35) 0%, transparent 30%, var(--theme-bg) 100%) !important;
-}
-
-div[style*="rgba(6,10,18,0.3) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,1) 100%"] {
-  background: linear-gradient(to bottom, rgba(var(--theme-bg-rgb), 0.3) 0%, rgba(var(--theme-bg-rgb), 0) 40%, var(--theme-bg) 100%) !important;
-}
-
 /* ── Utility Classes ─────────────────────────────────────────────────────────── */
 
 /* Liquid glass button */
@@ -264,9 +249,10 @@ div[style*="rgba(6,10,18,0.3) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,1) 100%"] 
   to   { transform: rotate(360deg); }
 }
 
+/* Skeleton loading pulse on a solid fill (no moving gradient). */
 @keyframes shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
 }
 
 /* A number/value that just changed (ticket qty, VC balance, etc.) pops

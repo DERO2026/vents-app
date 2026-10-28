@@ -24,11 +24,11 @@ interface ImageCarouselProps {
   maxHeightVh?: number;
 }
 
-const FALLBACK_BG = 'linear-gradient(135deg, #1e1040 0%, #0f172a 100%)';
+const FALLBACK_BG = '#1A1724';
 
 // Shared swipeable image carousel used by both the home feed cards and the
 // Event Details flyer. Degrades gracefully: an empty/all-broken image list
-// renders the same dark gradient placeholder every card in this app already
+// renders the same solid dark placeholder every card in this app already
 // uses on a load failure, instead of a broken-image icon.
 export function ImageCarousel({
   images,

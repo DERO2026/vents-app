@@ -83,7 +83,7 @@ function Avatar({ url, name, size = 40 }: { url?: string | null; name?: string |
   }
   return (
     <div style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', color: '#fff', fontSize: size * 0.36, fontWeight: 700 }}>
+      background: '#8E5CF7', color: '#fff', fontSize: size * 0.36, fontWeight: 700 }}>
       {initials}
     </div>
   );
@@ -240,7 +240,7 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '100px', height: '9px', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: '100px',
-                    background: `linear-gradient(90deg, ${C.purpleDeep}, ${C.green})`, boxShadow: `0 0 14px ${C.greenGlow}`, transition: 'width 0.5s ease' }} />
+                    background: C.green, boxShadow: `0 0 14px ${C.greenGlow}`, transition: 'width 0.5s ease' }} />
                 </div>
               </div>
             </div>
@@ -401,7 +401,7 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
 
 // ─── Presentational pieces ────────────────────────────────────────────────────
 const iconBtn: React.CSSProperties = { background: C.card, border: `1px solid ${C.line}`, borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
-const scanBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '9px 14px', cursor: 'pointer', flexShrink: 0, boxShadow: '0 4px 16px rgba(123,47,190,0.4)' };
+const scanBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '6px', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '9px 14px', cursor: 'pointer', flexShrink: 0, boxShadow: '0 4px 16px rgba(123,47,190,0.4)' };
 
 function Stat({ label, value, color, glow, small }: { label: string; value: number; color: string; glow?: boolean; small?: boolean }) {
   return (
@@ -587,7 +587,7 @@ function DetailsSheet({ a, scanningDisabled, confirming, acting, onConfirmStart,
 }
 
 const ghostBtn: React.CSSProperties = { flex: 1, height: 46, background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.line}`, borderRadius: '13px', color: '#C4C9E0', fontSize: '14px', fontWeight: 700, cursor: 'pointer' };
-const primaryBtn: React.CSSProperties = { flex: 1, height: 46, background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '13px', color: '#fff', fontSize: '14px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const primaryBtn: React.CSSProperties = { flex: 1, height: 46, background: '#8E5CF7', border: 'none', borderRadius: '13px', color: '#fff', fontSize: '14px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
 function Guard({ icon, title, body, onBack }: { icon: React.ReactNode; title: string; body: string; onBack: () => void }) {
   return (
@@ -595,7 +595,7 @@ function Guard({ icon, title, body, onBack }: { icon: React.ReactNode; title: st
       <div style={{ marginBottom: 16 }}>{icon}</div>
       <h2 style={{ color: C.text, fontSize: '18px', fontWeight: 800 }}>{title}</h2>
       <p style={{ color: C.sub, fontSize: '13px', marginTop: '8px', lineHeight: 1.6, maxWidth: 300 }}>{body}</p>
-      <button onClick={onBack} style={{ marginTop: 24, background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>Go Back</button>
+      <button onClick={onBack} style={{ marginTop: 24, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>Go Back</button>
     </div>
   );
 }

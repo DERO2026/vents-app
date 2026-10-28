@@ -129,16 +129,13 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
 
-  const cardGradientTop = '#07030F';
-  const bg = ctx.createLinearGradient(0, BANNER_H, width, height);
-  bg.addColorStop(0, cardGradientTop);
-  bg.addColorStop(1, '#0C0616');
-  ctx.fillStyle = bg;
+  const cardBg = '#07030F';
+  ctx.fillStyle = cardBg;
   ctx.fillRect(0, BANNER_H, width, height - BANNER_H);
 
   // Event flyer banner, purely decorative -- a failed/slow load (CORS,
   // network) must never block the rest of the ticket, which is why this is
-  // wrapped separately and falls back to a plain brand-gradient strip.
+  // wrapped separately and falls back to a plain solid brand strip.
   let bannerDrawn = false;
   if (params.eventImage) {
     try {
@@ -147,10 +144,8 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
       const sw = width / scale, sh = BANNER_H / scale;
       const sx = (bannerImg.width - sw) / 2, sy = (bannerImg.height - sh) / 2;
       ctx.drawImage(bannerImg, sx, sy, sw, sh, 0, 0, width, BANNER_H);
-      const shade = ctx.createLinearGradient(0, 0, 0, BANNER_H);
-      shade.addColorStop(0, 'rgba(0,0,0,0.15)');
-      shade.addColorStop(1, 'rgba(7,3,15,0.95)');
-      ctx.fillStyle = shade;
+      // Uniform translucent tint (no gradient) so the flyer reads as a banner.
+      ctx.fillStyle = 'rgba(7,3,15,0.35)';
       ctx.fillRect(0, 0, width, BANNER_H);
       bannerDrawn = true;
     } catch (err) {
@@ -158,10 +153,7 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
     }
   }
   if (!bannerDrawn) {
-    const bannerBg = ctx.createLinearGradient(0, 0, width, BANNER_H);
-    bannerBg.addColorStop(0, '#3B1466');
-    bannerBg.addColorStop(1, '#0C0616');
-    ctx.fillStyle = bannerBg;
+    ctx.fillStyle = '#3B1466';
     ctx.fillRect(0, 0, width, BANNER_H);
   }
 
@@ -205,7 +197,7 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
   ctx.fillText(`Ticket Reference No.: ${params.referenceNumber}`, 40, y);
 
   y += 38;
-  drawPerforation(ctx, y, width, cardGradientTop);
+  drawPerforation(ctx, y, width, cardBg);
 
   if (params.signedToken) {
     const qrDataUrl = await QRCode.toDataURL(params.signedToken, {

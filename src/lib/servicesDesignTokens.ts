@@ -27,15 +27,14 @@ export const servicesColors = {
   error: ventsColors.error,
 } as const;
 
-export const servicesGradients = {
-  // Solid accent fill per the redesign's button spec (no longer a
-  // gradient) -- kept as a CSS `background` value either way, so every
-  // consumer using `background: servicesGradients.primary` needs no change.
+export const servicesFills = {
+  // Solid fills (the app uses no gradients), usable directly as a CSS
+  // `background` value. Primary follows the redesign's button spec.
   primary: ventsColors.accent,
   // Reserved for the existing "Become a Service Provider" capability-request
   // card in ProfileScreen -- Services screens should NOT reuse this for
   // their own CTAs, to keep that capability affordance visually distinct.
-  serviceProviderCapability: 'linear-gradient(135deg, #0891B2, #22D3EE)',
+  serviceProviderCapability: '#0891B2',
 } as const;
 
 // Approved redesign's 12-category taxonomy (Design Foundation, "V3

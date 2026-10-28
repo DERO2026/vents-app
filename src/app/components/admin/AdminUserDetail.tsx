@@ -25,7 +25,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Shield } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { adminTheme, accentGradient } from './adminConsoleTheme';
+import { adminTheme, accentFill } from './adminConsoleTheme';
 import { isRoot as permIsRoot, isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
 import { statusColors, verifColors, initials, staffLabel } from './AdminUsersList';
 import { suspendOrUnban, toggleVerifyUser, setOrganizerCapability, setServiceProviderCapability, softDeleteUser, reinstateUser, roleChange } from './adminUserEventActions';
@@ -208,7 +208,7 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
       {msg && <div style={{ fontSize: 12.5, color: adminTheme.text, marginBottom: 10 }}>{msg}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 14, padding: isMobile ? 16 : '20px 22px', marginBottom: 18, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-        <div style={{ width: 54, height: 54, borderRadius: '50%', background: accentGradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+        <div style={{ width: 54, height: 54, borderRadius: '50%', background: accentFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
           {initials(user.full_name, user.email)}
         </div>
         <div style={{ flex: 1, minWidth: 200 }}>

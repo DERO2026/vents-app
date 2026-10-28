@@ -82,7 +82,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
       <div
         style={{
           padding: 'calc(28px + env(safe-area-inset-top)) 24px 20px',
-          background: 'linear-gradient(180deg, #0D0520 0%, #020005 100%)',
+          background: '#020005',
           flexShrink: 0,
         }}
       >
@@ -171,7 +171,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
                       width: '22px',
                       height: '22px',
                       borderRadius: '50%',
-                      background: isSelected ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'transparent',
+                      background: isSelected ? '#8E5CF7' : 'transparent',
                       border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.15)',
                       display: 'flex',
                       alignItems: 'center',
@@ -204,7 +204,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
           left: 0,
           right: 0,
           padding: '14px 20px 32px',
-          background: 'linear-gradient(to top, #020005 60%, transparent)',
+          background: '#020005',
         }}
       >
         <button
@@ -213,7 +213,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
           style={{
             width: '100%',
             background: selected
-              ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
+              ? '#8E5CF7'
               : 'rgba(123,47,190,0.25)',
             border: 'none',
             borderRadius: '16px',

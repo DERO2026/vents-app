@@ -594,12 +594,6 @@ export function OrganizerDashboard({
             </div>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={chartData} barGap={4} margin={{ top: 8, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="orgDashBarGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={ventsColors.accent} />
-                    <stop offset="100%" stopColor={ventsColors.accent} />
-                  </linearGradient>
-                </defs>
                 <XAxis dataKey="name" tick={{ fill: ventsColors.ink3, fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: ventsColors.ink3, fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
@@ -618,7 +612,7 @@ export function OrganizerDashboard({
                       key={idx}
                       fill={entry.goal != null && entry.sold >= entry.goal
                         ? ventsColors.success  // green = hit a REAL goal the organizer actually set
-                        : entry.sold > 0 ? 'url(#orgDashBarGradient)' : 'rgba(167,139,250,0.3)'  // gradient or empty -- never claims "hit goal" when there's no real goal to compare against
+                        : entry.sold > 0 ? ventsColors.accent : 'rgba(167,139,250,0.3)'  // solid accent or empty -- never claims "hit goal" when there's no real goal to compare against
                       }
                     />
                   ))}
@@ -685,7 +679,7 @@ export function OrganizerDashboard({
           onClick={() => onNavigate?.('create-event')}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            background: '#8E5CF7',
             border: 'none',
             borderRadius: '16px',
             padding: '16px 24px',
@@ -750,7 +744,7 @@ export function OrganizerDashboard({
                       left: 0,
                       right: 0,
                       height: '2px',
-                      background: 'linear-gradient(90deg, #7B2FBE 0%, #4F46E5 100%)',
+                      background: '#8E5CF7',
                       borderRadius: '2px',
                     }}
                   />

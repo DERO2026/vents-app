@@ -10,7 +10,7 @@ const BADGE_STYLES: Record<string, React.CSSProperties> = {
   gold: { background: '#FFD700', color: '#333' },
   platinum: { background: '#E5E4E2', color: '#333' },
   elite: { background: '#090514', color: 'white', border: '1px solid #7B2FF7' },
-  legend: { background: 'linear-gradient(90deg, #7B2FF7, #F107A3)', color: 'white' },
+  legend: { background: '#7B2FF7', color: 'white' },
 };
 
 export default function BadgeChip({ tier }: BadgeChipProps) {

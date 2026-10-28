@@ -120,7 +120,7 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
       <div style={{ flex: 1, padding: '0 16px 32px' }}>
         {/* Ticket summary */}
         <div style={{ display: 'flex', gap: '12px', padding: '14px', borderRadius: '18px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', marginBottom: '16px' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', flexShrink: 0 }} />
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#8E5CF7', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: ventsColors.white }}>{eventTitle}</p>
             <p style={{ margin: '3px 0 0', fontSize: '12.5px', fontWeight: 600, color: ventsColors.ink2 }}>

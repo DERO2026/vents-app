@@ -247,8 +247,8 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
         )}
       </div>
 
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 65%, transparent)' }}>
-        <button onClick={openCreate} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: servicesRadii.md, padding: '15px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: '#020005' }}>
+        <button onClick={openCreate} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#8E5CF7', border: 'none', borderRadius: servicesRadii.md, padding: '15px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
           <Plus size={18} /> Add a Service
         </button>
       </div>
@@ -288,7 +288,7 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
 
             {formError && <p style={{ color: ventsColors.error, fontSize: '12px', margin: 0 }}>{formError}</p>}
 
-            <button onClick={handleSubmit} disabled={saving} style={{ height: '48px', borderRadius: servicesRadii.md, background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+            <button onClick={handleSubmit} disabled={saving} style={{ height: '48px', borderRadius: servicesRadii.md, background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : editing ? 'Save Changes' : 'Add Service'}
             </button>
           </div>

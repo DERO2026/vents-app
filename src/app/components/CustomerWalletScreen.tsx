@@ -187,7 +187,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
         <div
           style={{
-            background: 'linear-gradient(135deg, #2D0B4E, #0F0620)',
+            background: '#1A1724',
             border: '1px solid rgba(168,85,247,0.35)',
             boxShadow: '0 0 40px rgba(124,58,237,0.25)',
             borderRadius: '22px',
@@ -210,7 +210,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               width: '100%', padding: '14px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-              background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: ventsColors.white, fontWeight: 700, fontSize: '15px',
+              background: '#8E5CF7', color: ventsColors.white, fontWeight: 700, fontSize: '15px',
             }}
           >
             <Plus size={18} /> Deposit Funds
@@ -317,7 +317,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
               disabled={depositing}
               style={{
                 width: '100%', padding: '14px', borderRadius: '12px', border: 'none', cursor: depositing ? 'not-allowed' : 'pointer',
-                background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: ventsColors.white, fontWeight: 700, opacity: depositing ? 0.6 : 1,
+                background: '#8E5CF7', color: ventsColors.white, fontWeight: 700, opacity: depositing ? 0.6 : 1,
               }}
             >
               {depositing ? 'Processing…' : 'Continue to Paystack'}

@@ -1060,7 +1060,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               style={{
                 width: '100%',
                 height: '52px',
-                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                background: '#8E5CF7',
                 border: 'none',
                 borderRadius: '100px',
                 padding: '0 24px',
@@ -1139,7 +1139,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
                 onClick={() => { setPaymentMethod('paystack'); setShowInsufficientSheet(false); }}
-                style={{ width: '100%', height: '54px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+                style={{ width: '100%', height: '54px', borderRadius: '16px', background: '#8E5CF7', border: 'none', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
               >
                 Pay {formatPrice(total)} by card instead
               </button>

@@ -11,7 +11,6 @@ import { Capacitor } from '@capacitor/core';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { Sentry } from '../../lib/sentry';
 import { TOAST_TOP_POSITION } from './shared/toastPosition';
-import { AmbientGlow } from './shared/AmbientGlow';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -176,7 +175,6 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
 
   return (
     <div className="flex flex-col h-full" style={{ background: ventsColors.bg, position: 'relative', overflow: 'hidden' }}>
-      <AmbientGlow />
       {saveError && (
         <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.error, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
@@ -242,7 +240,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <div className="px-4">
           <div
             style={{
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5, #22D3EE)',
+              background: '#8E5CF7',
               borderRadius: '26px',
               padding: '1.5px',
               boxShadow: '0 0 40px rgba(123,47,190,0.35), 0 20px 60px rgba(0,0,0,0.55)',
@@ -259,8 +257,8 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
               <div className="relative" style={{ height: '140px' }}>
                 <img src={ticket.event.image} alt={ticket.event.title} className="w-full h-full object-cover" />
                 <div
-                  className="absolute inset-0"
-                  style={{ background: 'linear-gradient(to bottom, rgba(7,3,15,0) 0%, rgba(7,3,15,0.97) 100%)' }}
+                  className="absolute inset-x-0 bottom-0"
+                  style={{ height: '55%', background: 'rgba(7,3,15,0.85)' }}
                 />
                 <div className="absolute bottom-3 left-4 right-4">
                   <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1.2, textShadow: '0 0 20px rgba(167,139,250,0.6)' }}>
@@ -409,7 +407,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       {/* Bottom actions */}
       <div
         className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
-        style={{ background: 'linear-gradient(to top, #020005 70%, transparent)' }}
+        style={{ background: '#020005' }}
       >
         <div className="flex gap-3">
           <button
@@ -433,7 +431,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
             className="flex-1 flex items-center justify-center"
             style={{
               height: '50px',
-              background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+              background: '#8E5CF7',
               borderRadius: '14px',
               boxShadow: '0 4px 16px rgba(123,47,190,0.4)',
             }}

@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 
 // Persistent floating orb entry point for VENTS AI, per design-export/
 // "VENTS AI.dc.html"'s ENTRY view (bottom:96px;right:16px so it sits above
-// the 4-tab BottomNav, not on top of it; 54x54 circle, purple gradient,
+// the 4-tab BottomNav, not on top of it; 54x54 circle, solid VENTS accent,
 // pulseGlow animation, "✦" glyph). App.tsx renders this on top of
 // Home/Discover/Bookings only -- see src/app/lib/ventsAiOrbScreens.ts.
 //
@@ -23,7 +23,7 @@ import { X } from 'lucide-react';
 // interrupting navigation while still giving every user a first look.
 const TOOLTIP_AUTO_HIDE_MS = 4000;
 
-const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
+const ACCENT_FILL = '#8E5CF7';
 const ORB_SIZE = 54;
 // A plain tap and the start of a drag look identical for the first few
 // pixels -- this is the threshold past which a pointer-down+move is
@@ -232,7 +232,7 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
           width: ORB_SIZE,
           height: ORB_SIZE,
           borderRadius: '50%',
-          background: GRADIENT,
+          background: ACCENT_FILL,
           border: 'none',
           display: 'flex',
           alignItems: 'center',

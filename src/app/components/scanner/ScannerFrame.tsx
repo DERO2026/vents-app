@@ -73,7 +73,7 @@ export function ScannerFrame({ ratio = 0.68, paused = false, accent = '#c084fc' 
             <div
               style={{
                 position: 'absolute', left: '7%', right: '7%', height: '2px',
-                background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
+                background: accent,
                 borderRadius: '2px',
                 boxShadow: `0 0 10px ${accent}`,
                 animation: 'ventsScanSweep 2.6s ease-in-out infinite',

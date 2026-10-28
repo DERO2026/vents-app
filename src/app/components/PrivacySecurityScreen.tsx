@@ -87,7 +87,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
       onClick={() => onChange(!checked)}
       style={{
         width: '44px', height: '26px', borderRadius: '13px',
-        background: checked ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2A2D3E',
+        background: checked ? '#8E5CF7' : '#2A2D3E',
         cursor: 'pointer', position: 'relative', transition: 'background 0.25s', flexShrink: 0,
       }}
     >
@@ -157,7 +157,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
           <button
             onClick={save}
             disabled={saving}
-            style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+            style={{ background: '#8E5CF7', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
           >
             {saving ? 'Saving…' : 'Save Settings'}
           </button>

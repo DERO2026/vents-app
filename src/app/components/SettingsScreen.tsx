@@ -300,7 +300,7 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
   ];
   return (
     <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '28px 20px 22px', background: 'linear-gradient(180deg, rgba(123,47,190,0.16), rgba(9,5,20,0))', borderRadius: '20px', border: '1px solid rgba(168,85,247,0.2)' }}>
+      <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '28px 20px 22px', background: 'transparent', borderRadius: '20px', border: '1px solid rgba(168,85,247,0.2)' }}>
         <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Clock size={28} color="#F59E0B" />
         </div>
@@ -542,7 +542,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
               key={t} type="button" onClick={() => setOrganizerType(t)}
               style={{
                 flex: 1, minWidth: 0, padding: '12px 8px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                background: organizerType === t ? 'linear-gradient(135deg,#7B2FBE,#4F46E5)' : '#090514',
+                background: organizerType === t ? '#8E5CF7' : '#090514',
                 border: organizerType === t ? 'none' : '1px solid rgba(255,255,255,0.08)',
                 color: '#fff',
                 lineHeight: 1.3,
@@ -652,7 +652,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
               <div
                 style={{
                   width: `${uploadProgress}%`, height: '100%', borderRadius: '3px',
-                  background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)',
+                  background: '#8E5CF7',
                   transition: 'width 0.2s ease',
                 }}
               />
@@ -667,7 +667,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
       <button
         onClick={handleSubmit}
         disabled={submitting}
-        style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+        style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
       >
         {uploading ? `Uploading… ${uploadProgress}%` : submitting ? 'Submitting…' : 'Submit for Verification'}
       </button>
@@ -1142,7 +1142,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
 
             {/* Avatar */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px' }}>
-              <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '12px', boxShadow: '0 8px 24px rgba(123,47,190,0.4)' }}>
+              <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '12px', boxShadow: '0 8px 24px rgba(123,47,190,0.4)' }}>
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
@@ -1336,7 +1336,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
         <button
           onClick={handleSaveProfile}
           disabled={loading || saving}
-          style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
+          style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
@@ -1397,7 +1397,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
         {/* Contact support */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
           {/* Email Support */}
-          <div style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ background: 'rgba(142,92,247,0.15)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(168,85,247,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Globe size={18} color="#A855F7" />
             </div>
@@ -1414,7 +1414,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
           </div>
 
           {/* WhatsApp Support */}
-          <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05))', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Smartphone size={18} color="#10B981" />
             </div>
@@ -1655,7 +1655,7 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut
           <CheckCircle size={48} color="#10B981" />
           <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, textAlign: 'center', margin: 0 }}>Password updated!</p>
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>For your security, you've been signed out everywhere. Sign back in with your new password.</p>
-          <button onClick={onSignOut} style={{ marginTop: '8px', padding: '12px 32px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          <button onClick={onSignOut} style={{ marginTop: '8px', padding: '12px 32px', background: '#8E5CF7', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
         </div>
       ) : step === 'verify' ? (
         <form onSubmit={handleVerify} style={scrollFormStyle}>
@@ -1728,7 +1728,7 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut
             disabled={!canSubmit}
             style={{
               marginTop: '8px', padding: '14px',
-              background: canSubmit ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2D2D4E',
+              background: canSubmit ? '#8E5CF7' : '#2D2D4E',
               border: 'none', borderRadius: '12px',
               color: canSubmit ? '#fff' : '#6B6F8A', fontSize: '14px', fontWeight: 700,
               cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.85,
@@ -1752,7 +1752,7 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut
             <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>VERIFICATION CODE</label>
             <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="Enter code from email" required inputMode="numeric" autoComplete="one-time-code" enterKeyHint="done" style={{ ...inputStyle, letterSpacing: '0.1em', fontSize: '16px' }} />
           </div>
-          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
+          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : '#8E5CF7', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
             {loading ? 'Updating…' : 'Update Password'}
           </button>
           <button type="button" onClick={() => { setStep('verify'); setError(null); }} style={{ padding: '10px', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '13px', cursor: 'pointer' }}>
@@ -1950,7 +1950,6 @@ export function SettingsScreen({
 
   return (
     <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.3), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
       {/* Header -- matches PD3: left-aligned back + title, not centered. */}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '14px', padding: 'calc(16px + env(safe-area-inset-top)) 20px 4px' }}>
         <button
@@ -1971,7 +1970,7 @@ export function SettingsScreen({
           onClick={() => setSubScreen('profile')}
           style={{ display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 40px)', margin: '18px 20px 0', padding: '14px', borderRadius: '16px', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
         >
-          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(145deg,#a855f7,#4c1d95)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
             {(currentUser as any)?.avatar_url ? (
               <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
@@ -2146,7 +2145,7 @@ export function SettingsScreen({
         <Section title="RESOURCES">
           <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => openExternalUrl('mailto:support@getvents.com')} />
           <Divider />
-          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => openExternalUrl('https://instagram.com/vents.app')} />
+          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="#8E5CF7" onPress={() => openExternalUrl('https://instagram.com/vents.app')} />
           <Divider />
           <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => openExternalUrl('https://x.com/vents_app')} />
           <Divider />
@@ -2193,7 +2192,7 @@ export function SettingsScreen({
 // links to VENTS' own corporate social accounts, which this screen does
 // not touch.
 const SOCIAL_HANDLE_FIELDS = [
-  { key: 'instagram_handle' as const, label: 'Instagram', icon: SiInstagram, background: 'linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)', placeholder: 'username' },
+  { key: 'instagram_handle' as const, label: 'Instagram', icon: SiInstagram, background: '#8E5CF7', placeholder: 'username' },
   { key: 'x_handle' as const, label: 'X (Twitter)', icon: SiX, background: '#000', placeholder: 'username' },
   { key: 'tiktok_handle' as const, label: 'TikTok', icon: SiTiktok, background: '#000', placeholder: 'username' },
 ];
@@ -2337,7 +2336,7 @@ function ConnectedAccountsScreen({ currentUser, onBack, onProfileUpdated }: { cu
             <button
               onClick={saveHandle}
               disabled={saving}
-              style={{ height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: '4px' }}
+              style={{ height: '52px', borderRadius: '14px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: '4px' }}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>

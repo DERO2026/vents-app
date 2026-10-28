@@ -101,7 +101,7 @@ export function PermissionSheetHost() {
             <button
               onClick={() => { state.onContinue(); setState(null); }}
               style={{
-                background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                background: '#8E5CF7',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '14px',
@@ -131,7 +131,7 @@ export function PermissionSheetHost() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                background: '#8E5CF7',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '14px',

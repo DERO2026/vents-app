@@ -190,7 +190,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             </div>
           ))}
         </div>
-        <button onClick={onBack} style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '16px', padding: '15px', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '16px', padding: '15px', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
           Back to Dashboard
         </button>
       </div>
@@ -220,8 +220,8 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
       <div style={{ padding: '4px 16px 24px' }}>
         {/* Hero */}
-        <div style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.2) 0%, rgba(79,70,229,0.15) 100%)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '20px', padding: '20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ background: 'rgba(142,92,247,0.18)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '20px', padding: '20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <TrendingUp size={24} color={ventsColors.white} />
           </div>
           <div>
@@ -286,7 +286,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                       From {formatPrice(p.price[3])}
                     </p>
                   </div>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: isSelected ? `linear-gradient(135deg, ${p.color}, ${p.color}aa)` : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: isSelected ? p.color : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {isSelected && <CheckCircle size={14} color={ventsColors.white} />}
                   </div>
                 </div>
@@ -313,7 +313,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                 onClick={() => setSelectedDuration(d.value)}
                 style={{
                   flex: 1,
-                  background: isSelected ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
+                  background: isSelected ? '#8E5CF7' : ventsColors.elevated,
                   border: isSelected ? 'none' : '1px solid rgba(255,255,255,0.08)',
                   borderRadius: '12px',
                   padding: '12px 6px',
@@ -370,7 +370,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           disabled={loading}
           style={{
             width: '100%',
-            background: loading ? 'rgba(123,47,190,0.4)' : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            background: loading ? 'rgba(123,47,190,0.4)' : '#8E5CF7',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',

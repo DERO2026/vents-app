@@ -69,8 +69,6 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
         color: ventsColors.ink1,
       }}
     >
-      <div style={{ position: 'absolute', inset: 0, background: ventsColors.ambientGradient, opacity: 0.5, pointerEvents: 'none' }} />
-
       {/* Header.
           Top padding is a dvh-scaled clamp, not a fixed 48px, so the whole
           composition below it compresses together on a short viewport
@@ -133,7 +131,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
             }}
           >
             <img src={card.src} alt={card.caption ?? 'Events'} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 45%, rgba(0,0,0,0.85) 100%)' }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%', background: 'rgba(0,0,0,0.65)' }} />
             {card.side === 'center' ? (
               <>
                 <span style={{ position: 'absolute', top: '16px', left: '16px', fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', padding: '5px 9px', borderRadius: '7px', background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.16)', color: '#fff' }}>

@@ -258,7 +258,6 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
   return (
     <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <style>{`input::placeholder{color:#555C7A;} .vc-scroll::-webkit-scrollbar{display:none;}`}</style>
-      <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.35), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(16px + env(safe-area-inset-top)) 20px 4px', flexShrink: 0 }}>
         <button onClick={onBack} style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#f6f4f9" />
@@ -279,7 +278,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
         {/* Balance hero: spendable VC is the headline number. Lifetime-earned
             VC and tier are shown as clearly separate figures so spending
             never visually reads as "losing progress". */}
-        <div data-testid="vc-balance-hero" style={{ marginTop: '18px', padding: '24px 20px', borderRadius: '22px', background: 'linear-gradient(135deg, rgba(168,85,247,0.22), rgba(76,29,149,0.18))', border: '1px solid rgba(168,85,247,0.32)', textAlign: 'center', boxShadow: '0 10px 40px rgba(124,58,237,0.25)', marginBottom: '14px', position: 'relative' }}>
+        <div data-testid="vc-balance-hero" style={{ marginTop: '18px', padding: '24px 20px', borderRadius: '22px', background: 'rgba(142,92,247,0.2)', border: '1px solid rgba(168,85,247,0.32)', textAlign: 'center', boxShadow: '0 10px 40px rgba(124,58,237,0.25)', marginBottom: '14px', position: 'relative' }}>
           {currentTier && (
             <span style={{ position: 'absolute', top: '16px', right: '16px', background: TIER_COLORS[currentTier], color: currentTier === 'gold' ? '#1a1a2e' : '#fff', fontSize: '10px', fontWeight: 700, borderRadius: '20px', padding: '5px 10px', letterSpacing: '0.08em' }}>
               {TIER_LABELS[currentTier]?.toUpperCase()}
@@ -306,7 +305,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
             <button
               onClick={() => setConvertOpen(true)}
-              style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: canConvert ? 'linear-gradient(135deg,#a855f7,#7c3aed)' : 'rgba(255,255,255,0.08)', border: canConvert ? 'none' : '1px solid rgba(255,255,255,0.14)', fontWeight: 700, fontSize: '13.5px', color: canConvert ? '#fff' : '#9a93a8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: canConvert ? '#8E5CF7' : 'rgba(255,255,255,0.08)', border: canConvert ? 'none' : '1px solid rgba(255,255,255,0.14)', fontWeight: 700, fontSize: '13.5px', color: canConvert ? '#fff' : '#9a93a8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
               {!canConvert && <Lock size={12} />} Convert to Wallet
             </button>
@@ -329,7 +328,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           {nextTier ? (
             <>
               <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
-                <div style={{ height: '100%', width: `${progressFraction * 100}%`, background: 'linear-gradient(90deg, #7B2FBE, #A855F7)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+                <div style={{ height: '100%', width: `${progressFraction * 100}%`, background: '#8E5CF7', borderRadius: '4px', transition: 'width 0.4s ease' }} />
               </div>
               <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>
                 {Math.max(0, nextTier.min_lifetime_vc - lifetimeEarned).toLocaleString()} more lifetime VC to reach{' '}
@@ -415,7 +414,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <button
             onClick={handleFeaturedInPeople}
             disabled={featuredBusy || balance < FEATURE_IN_PEOPLE_COST_VC}
-            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? 'linear-gradient(135deg, #1E40AF, #3B82F6)' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
+            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#3B82F6' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
           >
             {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · ${FEATURE_IN_PEOPLE_COST_VC.toLocaleString()} VC`}
           </button>
@@ -433,7 +432,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <button
             onClick={handleClaimProfileBonus}
             disabled={profileBonusBusy || profileBonusClaimed}
-            style={{ width: '100%', borderRadius: '12px', padding: '11px', background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : 'linear-gradient(135deg,#065F46,#10B981)', border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none', color: profileBonusClaimed ? '#10B981' : '#fff', fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer' }}
+            style={{ width: '100%', borderRadius: '12px', padding: '11px', background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : '#059669', border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none', color: profileBonusClaimed ? '#10B981' : '#fff', fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer' }}
           >
             {profileBonusClaimed ? '✓ Bonus claimed' : profileBonusBusy ? 'Checking…' : `Claim +${profileAward} VC`}
           </button>
@@ -449,7 +448,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
             <span style={{ color: '#A855F7', fontSize: '13px', fontWeight: 700 }}>{joinedCount} / {MAX_REFERRALS} joined</span>
           </div>
           <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', marginBottom: '8px' }}>
-            <div style={{ height: '100%', width: `${(joinedCount / MAX_REFERRALS) * 100}%`, background: 'linear-gradient(90deg, #7B2FBE, #A855F7)', borderRadius: '3px', transition: 'width 0.4s ease' }} />
+            <div style={{ height: '100%', width: `${(joinedCount / MAX_REFERRALS) * 100}%`, background: '#8E5CF7', borderRadius: '3px', transition: 'width 0.4s ease' }} />
           </div>
           <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '14px', lineHeight: 1.5 }}>
             Your friend gets <span style={{ color: '#FFB830', fontWeight: 700 }}>{referredAward} VC</span> for joining. Once they check into their first event, you get{' '}
@@ -715,7 +714,7 @@ function ConvertToWalletModal({
               data-testid="convert-continue-button"
               disabled={!canProceed}
               onClick={() => setStep('confirm')}
-              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '20px', background: canProceed ? 'linear-gradient(135deg,#a855f7,#7c3aed)' : 'rgba(255,255,255,0.06)', border: 'none', color: canProceed ? '#fff' : '#555C7A', fontWeight: 700, fontSize: '14.5px', cursor: canProceed ? 'pointer' : 'not-allowed' }}
+              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '20px', background: canProceed ? '#8E5CF7' : 'rgba(255,255,255,0.06)', border: 'none', color: canProceed ? '#fff' : '#555C7A', fontWeight: 700, fontSize: '14.5px', cursor: canProceed ? 'pointer' : 'not-allowed' }}
             >
               Continue
             </button>
@@ -745,7 +744,7 @@ function ConvertToWalletModal({
             <button
               data-testid="convert-confirm-button"
               onClick={runConversion}
-              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '18px', background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}
+              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '18px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}
             >
               Confirm Conversion
             </button>
@@ -767,7 +766,7 @@ function ConvertToWalletModal({
               ◎ {successResult.vc_amount.toLocaleString()} VC converted to <span style={{ color: '#34D399', fontWeight: 700 }}>₦{successResult.wallet_credit_naira.toLocaleString()}</span> in your VENTS Wallet.
             </p>
             {onGoToWallet && (
-              <button onClick={() => { onClose(); onGoToWallet(); }} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <button onClick={() => { onClose(); onGoToWallet(); }} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                 <Wallet size={16} /> View VENTS Wallet
               </button>
             )}
@@ -780,7 +779,7 @@ function ConvertToWalletModal({
             </div>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '8px' }}>Conversion failed</p>
             <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px', lineHeight: 1.5 }}>{errorMsg}</p>
-            <button data-testid="convert-retry-button" onClick={runConversion} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}>Retry</button>
+            <button data-testid="convert-retry-button" onClick={runConversion} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}>Retry</button>
             <button onClick={startOver} style={{ width: '100%', padding: '12px', marginTop: '8px', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '13px', cursor: 'pointer' }}>Start over</button>
           </div>
         )}
