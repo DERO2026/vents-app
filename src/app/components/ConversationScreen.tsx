@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { PRIVATE_CHANNEL_OPTIONS, dmTopic, userTopic } from '../../lib/realtimeTopics';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
@@ -235,12 +236,10 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     if (!currentUser?.id || !otherUser?.id) return;
     load();
 
-    // My own topic — the server-side notify_new_direct_message() trigger
-    // broadcasts new_message here (realtime.send(..., 'new_message',
-    // 'user:'||recipient_id, false)), and sendTyping (below) targets this
-    // same topic-naming convention on the OTHER user's side, so typing
-    // events addressed to ME land here too.
-    const receiveChannel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
+    // My own private topic -- the server-side notify_new_direct_message()
+    // trigger signals new_message here (no body; the thread reloads through
+    // direct_messages' own RLS). Only I can join it (migration 0199).
+    const receiveChannel = supabase.channel(userTopic(currentUser.id), PRIVATE_CHANNEL_OPTIONS);
 
     receiveChannel.on('broadcast', { event: 'new_message' }, (msg) => {
       const payload = msg.payload as any;
@@ -249,26 +248,27 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         loadRequestStatus();
       }
     });
-    receiveChannel.on('broadcast', { event: 'typing' }, (msg) => {
+    receiveChannel.subscribe();
+
+    // Typing indicators: this conversation's private topic, which only the
+    // two of us can join (never the other user's personal topic).
+    const typingChannel = supabase.channel(dmTopic(currentUser.id, otherUser.id), PRIVATE_CHANNEL_OPTIONS);
+    typingChannel.on('broadcast', { event: 'typing' }, (msg) => {
       const payload = msg.payload as any;
       if (payload?.from !== otherUser.id) return;
       setOtherTyping(true);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => setOtherTyping(false), 3000);
     });
-    receiveChannel.subscribe();
-
-    // Send-only channel to the OTHER user's topic, for sendTyping below.
-    const sendChannel = supabase.channel(`user:${otherUser.id}`);
-    sendChannel.subscribe();
-    typingSendChannelRef.current = sendChannel;
+    typingChannel.subscribe();
+    typingSendChannelRef.current = typingChannel;
 
     const interval = setInterval(load, 8000);
     return () => {
       clearInterval(interval);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       supabase.removeChannel(receiveChannel);
-      supabase.removeChannel(sendChannel);
+      supabase.removeChannel(typingChannel);
       typingSendChannelRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
