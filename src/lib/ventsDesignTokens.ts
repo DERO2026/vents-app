@@ -36,6 +36,13 @@ export const ventsColors = {
   error: '#F87171',
   info: '#60A5FA',
 
+  // Solid status fills under white text (buttons, toasts, count badges),
+  // each >= 4.5:1 with white. The status colours above stay for status
+  // text, icons, dots and tints on the dark background.
+  successStrong: '#065F46',
+  infoStrong: '#4361EE',
+  errorStrong: '#DC2626',
+
   ink1: '#EDEAF5',
   ink2: 'rgba(237,234,245,0.66)',
   ink3: 'rgba(237,234,245,0.55)',

@@ -100,7 +100,7 @@ export function VentsAiUnlockedScreen({
             data-testid="vents-ai-unlocked-view-plans"
             style={{
               width: '100%', height: '52px', borderRadius: '26px', border: 0,
-              background: '#8b5cf6', color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
+              background: '#7B2FBE', color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
             }}
           >
             View Plans
@@ -112,7 +112,7 @@ export function VentsAiUnlockedScreen({
           style={{
             width: '100%', height: '52px', borderRadius: '26px',
             border: !hasRealAccess && realAccess !== 'checking' ? '1px solid rgba(255,255,255,.18)' : 0,
-            background: !hasRealAccess && realAccess !== 'checking' ? 'transparent' : '#8b5cf6',
+            background: !hasRealAccess && realAccess !== 'checking' ? 'transparent' : '#7B2FBE',
             color: !hasRealAccess && realAccess !== 'checking' ? '#e4d4ff' : '#fff',
             font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
           }}

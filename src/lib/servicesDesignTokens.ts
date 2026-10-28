@@ -35,7 +35,8 @@ export const servicesFills = {
   // Reserved for the existing "Become a Service Provider" capability-request
   // card in ProfileScreen -- Services screens should NOT reuse this for
   // their own CTAs, to keep that capability affordance visually distinct.
-  serviceProviderCapability: '#0891B2',
+  // Cyan-700 (5.4:1 with white); the brighter #0891B2 is 3.7:1.
+  serviceProviderCapability: '#0E7490',
 } as const;
 
 // Approved redesign's 12-category taxonomy (Design Foundation, "V3

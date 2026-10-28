@@ -757,7 +757,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
               disabled={disabled}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                background: '#059669',
+                background: '#065F46',
                 border: 'none', borderRadius: servicesRadii.md, padding: '16px',
                 color: '#fff', fontSize: '16px', fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif', cursor: disabled ? 'not-allowed' : 'pointer',

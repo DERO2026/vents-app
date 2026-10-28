@@ -1304,7 +1304,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
             </div>
 
             {saved && (
-              <div style={{ background: '#10B981', borderRadius: '12px', padding: '12px', marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ background: '#065F46', borderRadius: '12px', padding: '12px', marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CheckCircle size={16} color="#fff" />
                 <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Profile saved successfully!</span>
               </div>
@@ -2459,7 +2459,7 @@ function DeleteAccountScreen({
             <button
               onClick={handleDelete}
               disabled={confirmText !== 'DELETE' || loading}
-              style={{ width: '100%', background: confirmText === 'DELETE' ? '#EF4444' : 'rgba(239,68,68,0.15)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: confirmText === 'DELETE' ? 'pointer' : 'not-allowed', opacity: loading ? 0.7 : 1, marginBottom: '8px' }}
+              style={{ width: '100%', background: confirmText === 'DELETE' ? '#DC2626' : 'rgba(239,68,68,0.15)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: confirmText === 'DELETE' ? 'pointer' : 'not-allowed', opacity: loading ? 0.7 : 1, marginBottom: '8px' }}
             >
               {loading ? 'Deleting...' : 'Permanently Delete My Account'}
             </button>

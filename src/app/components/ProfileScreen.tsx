@@ -442,7 +442,7 @@ export function ProfileScreen({
   // is also an Organizer) gets the neutral fill, not the purple one,
   // since that's now the dedicated Organizer chip's color.
   const badgeFill = isAdmin
-    ? '#EF4444'
+    ? '#DC2626'
     : isSubAdmin
     ? '#FBBF24'
     : '#FBBF24';
@@ -596,7 +596,7 @@ export function ProfileScreen({
                 </div>
               )}
               {isServiceProvider && (
-                <div style={{ background: '#0891B2', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ background: '#0E7490', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>Service Provider</span>
                 </div>
               )}
@@ -731,7 +731,7 @@ export function ProfileScreen({
                     {item.badge && (
                       <div
                         style={{
-                          background: ventsColors.error,
+                          background: ventsColors.errorStrong,
                           borderRadius: '50%',
                           width: '18px',
                           height: '18px',

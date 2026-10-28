@@ -4,6 +4,7 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
 import { downloadBlob } from '../../lib/ticketImage';
+import { avatarFill } from '../../lib/avatarFill';
 
 interface AttendeeListScreenProps {
   onBack: () => void;
@@ -379,7 +380,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                     const StatusIcon = sc.icon;
                     return (
                       <div key={attendee.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: attendee.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', color: '#fff', fontWeight: 700, flexShrink: 0 }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: avatarFill(attendee.avatarColor), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', color: '#fff', fontWeight: 700, flexShrink: 0 }}>
                           {attendee.initials}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>

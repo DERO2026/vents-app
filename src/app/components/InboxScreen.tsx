@@ -464,7 +464,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               <button onClick={() => setConfirmAction(null)} disabled={actionBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '11px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: ventsColors.error, border: 'none', borderRadius: '12px', padding: '11px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
+              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: ventsColors.errorStrong, border: 'none', borderRadius: '12px', padding: '11px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
                 {actionBusy ? 'Working…' : 'Confirm'}
               </button>
             </div>

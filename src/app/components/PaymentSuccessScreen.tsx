@@ -445,14 +445,14 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
       {/* Toast notifications */}
       {saveToast && (
-        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.success, borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.successStrong, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>
             ✓ {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
           </span>
         </div>
       )}
       {saveError && (
-        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.error, borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.errorStrong, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}

@@ -2024,7 +2024,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           style={{
             width: '100%',
             background: published
-              ? '#059669'
+              ? '#065F46'
               : (submitting || uploadingImage)
               ? 'rgba(123,47,190,0.4)'
               : '#7B2FBE',

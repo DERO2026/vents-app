@@ -414,7 +414,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <button
             onClick={handleFeaturedInPeople}
             disabled={featuredBusy || balance < FEATURE_IN_PEOPLE_COST_VC}
-            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#3B82F6' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
+            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#4361EE' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
           >
             {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · ${FEATURE_IN_PEOPLE_COST_VC.toLocaleString()} VC`}
           </button>
@@ -432,7 +432,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <button
             onClick={handleClaimProfileBonus}
             disabled={profileBonusBusy || profileBonusClaimed}
-            style={{ width: '100%', borderRadius: '12px', padding: '11px', background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : '#059669', border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none', color: profileBonusClaimed ? '#10B981' : '#fff', fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer' }}
+            style={{ width: '100%', borderRadius: '12px', padding: '11px', background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : '#065F46', border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none', color: profileBonusClaimed ? '#10B981' : '#fff', fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer' }}
           >
             {profileBonusClaimed ? '✓ Bonus claimed' : profileBonusBusy ? 'Checking…' : `Claim +${profileAward} VC`}
           </button>

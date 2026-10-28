@@ -2860,7 +2860,7 @@ export default function App() {
         <div
           style={{
             position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 10000, background: '#EF4444', borderRadius: '12px', padding: '10px 18px',
+            zIndex: 10000, background: '#DC2626', borderRadius: '12px', padding: '10px 18px',
             display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
           }}
         >
@@ -2878,7 +2878,7 @@ export default function App() {
         <div
           style={{
             position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 10000, background: '#22C55E', borderRadius: '12px', padding: '10px 18px',
+            zIndex: 10000, background: '#065F46', borderRadius: '12px', padding: '10px 18px',
             display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
           }}
         >

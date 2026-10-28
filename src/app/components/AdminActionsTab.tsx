@@ -273,7 +273,7 @@ export function AdminActionsTab({
             <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 10px' }}>Optional reason (shown to the Sub-Admin):</p>
             <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} placeholder="e.g. Not warranted — insufficient evidence" style={{ width: '100%', boxSizing: 'border-box', background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: '#F0F0FF', fontSize: '13px', outline: 'none', resize: 'vertical' }} />
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-              <button disabled={busyId === rejectFor.id} onClick={doReject} style={{ flex: 1, background: '#EF4444', border: 'none', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Confirm Reject</button>
+              <button disabled={busyId === rejectFor.id} onClick={doReject} style={{ flex: 1, background: '#DC2626', border: 'none', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Confirm Reject</button>
               <button onClick={() => setRejectFor(null)} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: '#C4C9E0', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>

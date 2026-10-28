@@ -8,6 +8,7 @@ import { SkeletonCard } from './SkeletonCard';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { haptics } from '../../lib/haptics';
 import { Sentry } from '../../lib/sentry';
+import { avatarFill } from '../../lib/avatarFill';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -413,7 +414,7 @@ export function ExploreScreen({
                         role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
                       >
-                        <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
+                        <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : avatarFill(u.avatarColor), overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>

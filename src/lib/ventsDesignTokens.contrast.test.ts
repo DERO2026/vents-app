@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ventsColors } from './ventsDesignTokens';
+import { servicesFills } from './servicesDesignTokens';
 import { accentFill, accentStrongFill } from '../app/components/admin/adminConsoleTheme';
 
 // WCAG 2.x contrast ratio between two #rrggbb colours.
@@ -18,9 +19,15 @@ function contrast(a: string, b: string): number {
 // Solid fills under white text must meet WCAG AA for normal-size text
 // (4.5:1). The brighter accents stay for icons and decorative fills, where
 // the non-text requirement is 3:1.
-describe('purple fills under white text', () => {
+describe('solid fills under white text', () => {
   it('ventsColors.accentStrong meets AA (4.5:1) with white', () => {
     expect(contrast(ventsColors.accentStrong, ventsColors.white)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('the strong status fills meet AA (4.5:1) with white', () => {
+    for (const c of [ventsColors.successStrong, ventsColors.infoStrong, ventsColors.errorStrong, servicesFills.serviceProviderCapability]) {
+      expect(contrast(c, ventsColors.white), c).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('the admin accentStrongFill meets AA (4.5:1) with white', () => {

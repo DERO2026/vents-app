@@ -1653,7 +1653,7 @@ export function HomeScreen({
                 style={{
                   position: 'absolute', top: '-4px', right: '-4px',
                   minWidth: '16px', height: '16px', padding: '0 4px',
-                  borderRadius: '9px', background: ventsColors.error, border: `2px solid ${ventsColors.bg}`,
+                  borderRadius: '9px', background: ventsColors.errorStrong, border: `2px solid ${ventsColors.bg}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '9px', fontWeight: 800, color: ventsColors.white, lineHeight: 1,
                 }}
