@@ -174,7 +174,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
           style={{
             width: '100%',
             height: '56px',
-            background: ventsColors.accent,
+            background: ventsColors.accentStrong,
             border: 'none',
             borderRadius: '16px',
             color: ventsColors.white,

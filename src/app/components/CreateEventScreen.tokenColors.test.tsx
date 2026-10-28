@@ -87,4 +87,43 @@ describe('CreateEventScreen token colors (Stage 5 #fff -> ventsColors.white)', (
     );
     expect(rawWhiteHex.length).toBe(0);
   });
+
+  it('draws the completed-step check at >= 3:1 against its success-green circle', async () => {
+    act(() => {
+      root!.render(
+        <CreateEventScreen currentUser={CURRENT_USER} onBack={() => {}} onCreated={() => {}} />
+      );
+    });
+    await flush();
+
+    // Complete step 1 (title + one category) and advance, so step 1 renders as done.
+    const titleInput = container!.querySelector('input[placeholder="e.g. Afrobeats Night 2026"]') as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(titleInput, 'Test Night');
+      titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const music = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Music')!;
+    act(() => { music.click(); });
+    const next = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent?.includes('Next'))!;
+    await act(async () => { next.click(); });
+    await flush();
+
+    const check = container!.querySelector('[data-testid="create-event-step-done-1"]') as SVGElement;
+    expect(check).toBeTruthy();
+    const circle = check.parentElement as HTMLElement;
+    const toRgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+    expect(getComputedStyle(circle).backgroundColor).toBe(toRgb(ventsColors.success));
+    const iconColor = check.getAttribute('stroke')!;
+    expect(iconColor).toBe(ventsColors.bg);
+
+    const lum = (rgb: string) => {
+      const [r, g, b] = rgb.match(/\d+/g)!.slice(0, 3).map((v) => {
+        const c = Number(v) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [lum(getComputedStyle(circle).backgroundColor), lum(toRgb(iconColor))].sort((x, y) => y - x);
+    expect((hi + 0.05) / (lo + 0.05)).toBeGreaterThanOrEqual(3);
+  });
 });

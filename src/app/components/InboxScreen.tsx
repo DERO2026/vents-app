@@ -289,14 +289,14 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               onClick={() => { haptics.light(); setTab(t); }}
               style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                background: tab === t ? '#8E5CF7' : 'transparent',
+                background: tab === t ? '#7B2FBE' : 'transparent',
                 border: 'none', borderRadius: '100px', padding: '9px', cursor: 'pointer',
                 color: tab === t ? ventsColors.white : '#9CA0BC', fontSize: '13px', fontWeight: 700,
               }}
             >
               {t === 'messages' ? 'Messages' : 'Requests'}
               {t === 'requests' && requests.length > 0 && (
-                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
+                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : ventsColors.accentStrong, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
                   {requests.length}
                 </span>
               )}
@@ -405,7 +405,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                     </p>
                   </div>
                   {t.unread > 0 && (
-                    <div style={{ background: ventsColors.accent, color: ventsColors.white, fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ background: ventsColors.accentStrong, color: ventsColors.white, fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {t.unread > 9 ? '9+' : t.unread}
                     </div>
                   )}
@@ -464,7 +464,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               <button onClick={() => setConfirmAction(null)} disabled={actionBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '11px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: ventsColors.error, border: 'none', borderRadius: '12px', padding: '11px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
+              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: ventsColors.errorStrong, border: 'none', borderRadius: '12px', padding: '11px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
                 {actionBusy ? 'Working…' : 'Confirm'}
               </button>
             </div>

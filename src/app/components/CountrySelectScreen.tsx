@@ -212,7 +212,7 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
           style={{
             width: '100%',
             height: '56px',
-            background: selectedCountry ? ventsColors.accent : 'rgba(255,255,255,0.05)',
+            background: selectedCountry ? ventsColors.accentStrong : 'rgba(255,255,255,0.05)',
             border: 'none',
             borderRadius: `${ventsRadii.lg}px`,
             padding: '0 16px',

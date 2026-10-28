@@ -263,7 +263,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
           <div style={{ marginTop: '40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
             <p style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 800, margin: 0 }}>You're approved ✓</p>
             <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, maxWidth: '280px' }}>Head back to your profile to set up your Services listing.</p>
-            <button onClick={onBack} style={{ marginTop: '12px', height: '44px', padding: '0 24px', borderRadius: '14px', background: '#0891B2', border: 'none', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={onBack} style={{ marginTop: '12px', height: '44px', padding: '0 24px', borderRadius: '14px', background: '#0E7490', border: 'none', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               Back to Profile
             </button>
           </div>
@@ -275,7 +275,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
               <p style={{ color: ventsColors.error, fontSize: '13px', fontWeight: 700, margin: '0 0 4px' }}>Application not approved</p>
               {verification.admin_note && <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>{verification.admin_note}</p>}
             </div>
-            <button onClick={() => setStatus('form')} style={{ width: '100%', height: '48px', borderRadius: '14px', background: '#0891B2', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={() => setStatus('form')} style={{ width: '100%', height: '48px', borderRadius: '14px', background: '#0E7490', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
               Apply Again
             </button>
           </div>
@@ -337,7 +337,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
 
             {error && <p style={{ color: ventsColors.error, fontSize: '12px', margin: 0 }}>{error}</p>}
 
-            <button onClick={handleSubmit} disabled={submitting} style={{ height: '50px', borderRadius: '14px', background: '#0891B2', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
+            <button onClick={handleSubmit} disabled={submitting} style={{ height: '50px', borderRadius: '14px', background: '#0E7490', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
               {submitting ? 'Submitting...' : 'Submit Application'}
             </button>
           </div>

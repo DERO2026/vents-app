@@ -449,7 +449,7 @@ export function ManageEventsScreen({
             <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
               Create your first event and manage everything — tickets, attendees, and live sales — right here.
             </p>
-            <button onClick={onCreateEvent} style={{ background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '11px 24px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={onCreateEvent} style={{ background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '11px 24px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               + Create Event
             </button>
           </div>
@@ -554,7 +554,7 @@ export function ManageEventsScreen({
                       : `Sent to ${announceRecipients} ticket holder${announceRecipients === 1 ? '' : 's'}.`}
                   </span>
                 </div>
-                <button onClick={closeAnnounce} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={closeAnnounce} style={{ width: '100%', background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: 'pointer' }}>
                   Done
                 </button>
               </>
@@ -597,7 +597,7 @@ export function ManageEventsScreen({
                   <button
                     onClick={sendAnnouncement}
                     disabled={announceSending || !announceTitle.trim() || !announceBody.trim()}
-                    style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 'not-allowed' : 'pointer', opacity: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 0.6 : 1 }}
+                    style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.white, fontWeight: 700, cursor: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 'not-allowed' : 'pointer', opacity: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 0.6 : 1 }}
                   >
                     {announceSending ? 'Sending…' : 'Send'}
                   </button>

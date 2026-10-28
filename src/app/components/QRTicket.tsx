@@ -176,7 +176,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   return (
     <div className="flex flex-col h-full" style={{ background: ventsColors.bg, position: 'relative', overflow: 'hidden' }}>
       {saveError && (
-        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.error, borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.errorStrong, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
@@ -431,7 +431,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
             className="flex-1 flex items-center justify-center"
             style={{
               height: '50px',
-              background: '#8E5CF7',
+              background: '#7B2FBE',
               borderRadius: '14px',
               boxShadow: '0 4px 16px rgba(123,47,190,0.4)',
             }}

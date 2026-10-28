@@ -920,7 +920,7 @@ export function EventDetailsScreen({
                 style={{
                   flex: 1,
                   flexShrink: 0,
-                  background: active ? '#8E5CF7' : 'transparent',
+                  background: active ? '#7B2FBE' : 'transparent',
                   border: 'none',
                   borderRadius: '999px',
                   padding: '9px 14px',
@@ -1143,7 +1143,7 @@ export function EventDetailsScreen({
               width: '44px',
               height: '44px',
               borderRadius: '12px',
-              background: '#8E5CF7',
+              background: '#7B2FBE',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1210,7 +1210,7 @@ export function EventDetailsScreen({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '10px',
-                background: '#8E5CF7',
+                background: '#7B2FBE',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '16px',
@@ -1625,7 +1625,7 @@ export function EventDetailsScreen({
               background: purchasesDisabled
                 ? ventsColors.elevated
                 : canBook
-                ? '#8E5CF7'
+                ? '#7B2FBE'
                 : ventsColors.elevated,
               border: 'none',
               borderRadius: '14px',
@@ -1800,7 +1800,7 @@ export function EventDetailsScreen({
                 background: purchasesDisabled
                   ? ventsColors.elevated
                   : canBook
-                  ? '#8E5CF7'
+                  ? '#7B2FBE'
                   : ventsColors.elevated,
                 border: 'none',
                 borderRadius: '16px',

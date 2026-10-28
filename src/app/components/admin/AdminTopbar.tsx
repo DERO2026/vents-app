@@ -1,5 +1,5 @@
 import React from 'react';
-import { adminTheme, accentFill } from './adminConsoleTheme';
+import { adminTheme, accentFill, accentStrongFill } from './adminConsoleTheme';
 
 interface AdminTopbarProps {
   pageTitle: string;
@@ -36,7 +36,7 @@ export function AdminTopbar({ pageTitle, isMobile, showBack, onBack }: AdminTopb
         <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: adminTheme.text, textAlign: 'center' }}>{pageTitle}</div>
         <div
           aria-hidden
-          style={{ width: 26, height: 26, borderRadius: 8, background: accentFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, color: '#fff' }}
+          style={{ width: 26, height: 26, borderRadius: 8, background: accentStrongFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, color: '#fff' }}
         >
           7
         </div>
@@ -93,13 +93,13 @@ export function AdminTopbar({ pageTitle, isMobile, showBack, onBack }: AdminTopb
       </div>
       <div
         aria-hidden
-        style={{ width: 34, height: 34, borderRadius: 10, background: accentFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}
+        style={{ width: 34, height: 34, borderRadius: 10, background: accentStrongFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}
       >
         7
       </div>
       <div
         aria-hidden
-        style={{ width: 34, height: 34, borderRadius: '50%', background: accentFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff' }}
+        style={{ width: 34, height: 34, borderRadius: '50%', background: accentStrongFill, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff' }}
       >
         AC
       </div>

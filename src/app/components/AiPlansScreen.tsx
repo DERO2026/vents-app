@@ -64,7 +64,9 @@ const BORDER = '#2c2438';
 const INK1 = '#f2eff6';
 const INK2 = '#c9c0d4';
 const INK3 = '#8a7f97';
-const ACCENT_FILL = '#8E5CF7';
+// Solid fill under white text: #7B2FBE gives 7.0:1 (the brighter accent
+// #8E5CF7 is only 4.2:1, under WCAG AA's 4.5:1 for normal-size text).
+const ACCENT_STRONG = '#7B2FBE';
 
 function formatNaira(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString('en-NG')}`;
@@ -380,7 +382,7 @@ export function AiPlansScreen({
                     data-testid={`ai-plan-subscribe-${plan.plan_id}`}
                     style={{
                       width: '100%', height: 44, borderRadius: 12, border: 'none', cursor: busy ? 'default' : 'pointer',
-                      background: busy ? 'rgba(255,255,255,.08)' : ACCENT_FILL, color: busy ? INK3 : '#fff', fontSize: 14, fontWeight: 700,
+                      background: busy ? 'rgba(255,255,255,.08)' : ACCENT_STRONG, color: busy ? INK3 : '#fff', fontSize: 14, fontWeight: 700,
                     }}
                   >
                     {isPurchasing ? 'Opening checkout…' : isVerifying ? 'Verifying payment…' : `Subscribe for ${formatNaira(plan.price_kobo)}/mo`}

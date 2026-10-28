@@ -316,7 +316,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             <div style={{ position: 'absolute', bottom: '12px', left: '16px' }}>
               <span
                 style={{
-                  background: '#8E5CF7',
+                  background: '#7B2FBE',
                   color: '#fff',
                   fontSize: '10px',
                   fontWeight: 700,
@@ -445,19 +445,19 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
       {/* Toast notifications */}
       {saveToast && (
-        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.success, borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.successStrong, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>
             ✓ {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
           </span>
         </div>
       )}
       {saveError && (
-        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.error, borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.errorStrong, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
       {shareToast && (
-        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.accent, borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.accentStrong, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Copied to clipboard!</span>
         </div>
       )}
@@ -531,7 +531,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               disabled={loadingAccess}
               style={{
                 width: '100%',
-                background: '#8E5CF7',
+                background: '#7B2FBE',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '13px',
@@ -581,7 +581,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           onClick={onViewTickets}
           style={{
             width: '100%',
-            background: '#8E5CF7',
+            background: '#7B2FBE',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
@@ -637,7 +637,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                     Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
                   </span>
                 </div>
-                <button onClick={closeTransferModal} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Done
                 </button>
               </>
@@ -666,7 +666,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   <button
                     onClick={handleSendTransfer}
                     disabled={transferSending || !transferIdentifier.trim()}
-                    style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                    style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
                   >
                     {transferSending ? 'Sending…' : 'Send Request'}
                   </button>

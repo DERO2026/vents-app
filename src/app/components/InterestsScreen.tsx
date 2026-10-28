@@ -191,7 +191,7 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
           style={{
             width: '100%',
             height: '56px',
-            background: canContinue ? ventsColors.accent : 'rgba(255,255,255,0.05)',
+            background: canContinue ? ventsColors.accentStrong : 'rgba(255,255,255,0.05)',
             border: 'none',
             borderRadius: `${ventsRadii.lg}px`,
             padding: '0 16px',

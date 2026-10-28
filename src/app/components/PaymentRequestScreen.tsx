@@ -239,7 +239,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
                 payer's view, payer_name for the requester's view), no
                 fabricated identity. */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '6px 0 18px' }}>
-              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: '#8E5CF7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', fontWeight: 800, color: '#fff', boxShadow: '0 0 0 3px rgba(168,85,247,0.25)' }}>
+              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', fontWeight: 800, color: '#fff', boxShadow: '0 0 0 3px rgba(168,85,247,0.25)' }}>
                 {otherPartyInitials}
               </div>
               <div style={{ marginTop: '12px', fontSize: '14px', color: ventsColors.ink2 }}>{isRequester ? 'Waiting on' : 'Request from'}</div>
@@ -413,7 +413,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
                 onClick={handlePay}
                 disabled={paying}
                 style={{
-                  width: '100%', height: '52px', background: '#8E5CF7', border: 'none',
+                  width: '100%', height: '52px', background: '#7B2FBE', border: 'none',
                   borderRadius: '100px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
                   cursor: paying ? 'not-allowed' : 'pointer', opacity: paying ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 }}

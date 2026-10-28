@@ -13,6 +13,19 @@ function hexToRgb(hex: string): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// WCAG 2.x contrast ratio between two computed `rgb(r, g, b)` strings.
+function contrast(a: string, b: string): number {
+  const lum = (rgb: string) => {
+    const [r, g, bl] = rgb.match(/\d+/g)!.slice(0, 3).map((v) => {
+      const c = Number(v) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 // Stage 10 of the VENTS UI refurbishment -- InboxScreen had never consumed
 // ventsColors at all (every color was a hardcoded hex literal). These
 // assertions check the actual COMPUTED style, not just text presence --
@@ -99,7 +112,7 @@ describe('InboxScreen token colors (Stage 10)', () => {
     expect(getComputedStyle(title as HTMLElement).color).toBe(hexToRgb(ventsColors.ink1));
   });
 
-  it('renders the unread badge background in ventsColors.accent and text in ventsColors.white', async () => {
+  it('renders the unread badge background in ventsColors.accentStrong and text in ventsColors.white, at AA contrast', async () => {
     setupSupabase({
       messages: [
         { id: 'm1', sender_id: 'other-1', recipient_id: 'user-me', body: 'hi', created_at: new Date().toISOString(), read_at: null },
@@ -109,8 +122,10 @@ describe('InboxScreen token colors (Stage 10)', () => {
     const el = await renderInbox();
     const badge = Array.from(el!.querySelectorAll('div')).find(d => d.textContent === '1' && (d as HTMLElement).style.borderRadius === '50%');
     expect(badge).toBeTruthy();
-    expect(getComputedStyle(badge as HTMLElement).backgroundColor).toBe(hexToRgb(ventsColors.accent));
-    expect(getComputedStyle(badge as HTMLElement).color).toBe(hexToRgb(ventsColors.white));
+    const { backgroundColor, color } = getComputedStyle(badge as HTMLElement);
+    expect(backgroundColor).toBe(hexToRgb(ventsColors.accentStrong));
+    expect(color).toBe(hexToRgb(ventsColors.white));
+    expect(contrast(backgroundColor, color)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('renders the empty-state message in ventsColors.ink1', async () => {

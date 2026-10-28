@@ -8,6 +8,7 @@ import { SkeletonCard } from './SkeletonCard';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { haptics } from '../../lib/haptics';
 import { Sentry } from '../../lib/sentry';
+import { avatarFill } from '../../lib/avatarFill';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -370,7 +371,7 @@ export function ExploreScreen({
                 onClick={() => { haptics.light(); setChatFilter(f.key); }}
                 style={{
                   flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
-                  background: active ? '#8E5CF7' : 'rgba(255,255,255,0.07)',
+                  background: active ? '#7B2FBE' : 'rgba(255,255,255,0.07)',
                   backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                   border: active ? '1px solid rgba(196,181,253,0.4)' : '1px solid rgba(255,255,255,0.12)',
                   borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
@@ -378,7 +379,7 @@ export function ExploreScreen({
               >
                 <span style={{ color: active ? ventsColors.white : ventsColors.ink1, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{f.label}</span>
                 {!!f.count && (
-                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
+                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : ventsColors.accentStrong, color: ventsColors.white, fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
                 )}
               </button>
             );
@@ -413,7 +414,7 @@ export function ExploreScreen({
                         role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
                       >
-                        <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
+                        <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : avatarFill(u.avatarColor), overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -449,7 +450,7 @@ export function ExploreScreen({
                     <MessageCircle size={15} color={ventsColors.accentSoft} />
                   </div>
                   <span style={{ flex: 1, textAlign: 'left', color: ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>Message Requests</span>
-                  <span style={{ background: ventsColors.accentSoft, color: ventsColors.white, fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
+                  <span style={{ background: ventsColors.accentStrong, color: ventsColors.white, fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
                   <ChevronRight size={16} color={ventsColors.ink2} />
                 </button>
               </div>
@@ -494,7 +495,7 @@ export function ExploreScreen({
                         role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                       >
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box', position: 'relative' }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accentStrong, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box', position: 'relative' }}>
                           {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
                           {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: ventsColors.success, border: '2px solid #0A0612' }} />}
                         </div>
@@ -520,7 +521,7 @@ export function ExploreScreen({
                           </div>
                         </div>
                         {isUnread && (
-                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
+                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: ventsColors.accentStrong, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
                             <span style={{ color: ventsColors.white, fontSize: '10px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                           </div>
                         )}
@@ -562,7 +563,7 @@ export function ExploreScreen({
                     borderLeft: isHighlighted ? `2px solid ${ventsColors.accent}` : '2px solid transparent',
                   }}
                 >
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accentStrong, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                     {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{name[0]?.toUpperCase()}</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>

@@ -25,12 +25,23 @@ export const ventsColors = {
   divider: 'rgba(255,255,255,0.06)',
 
   accent: '#8E5CF7',
+  // Solid fill for anything carrying white text (buttons, chips, badges):
+  // 7.0:1 with white, where `accent` is 4.2:1 (under WCAG AA's 4.5:1).
+  // Keep `accent` for icons, dots, bars and other non-text accents.
+  accentStrong: '#7B2FBE',
   accentSoft: '#B79BFF',
 
   success: '#34D399',
   pending: '#FBBF24',
   error: '#F87171',
   info: '#60A5FA',
+
+  // Solid status fills under white text (buttons, toasts, count badges),
+  // each >= 4.5:1 with white. The status colours above stay for status
+  // text, icons, dots and tints on the dark background.
+  successStrong: '#065F46',
+  infoStrong: '#4361EE',
+  errorStrong: '#DC2626',
 
   ink1: '#EDEAF5',
   ink2: 'rgba(237,234,245,0.66)',

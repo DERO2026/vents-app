@@ -38,7 +38,9 @@ import { isMobileNativeForAiGate } from '../../lib/platform';
 //   an unexpected check_and_reserve_ai_usage error. Nothing here ever
 //   fails open past a real, on, enforcement flag.
 
-const ACCENT_FILL = '#8E5CF7';
+// Solid fill under white text: #7B2FBE gives 7.0:1 (the brighter accent
+// #8E5CF7 is only 4.2:1, under WCAG AA's 4.5:1 for normal-size text).
+const ACCENT_STRONG = '#7B2FBE';
 const BG = '#0a0810';
 const SURFACE = '#120e1a';
 const ELEVATED = '#1c1726';
@@ -289,7 +291,7 @@ function PrimaryButton({ label, onClick }: { label: string; onClick: () => void 
         width: '100%',
         padding: '13px 16px',
         borderRadius: 12,
-        background: ACCENT_FILL,
+        background: ACCENT_STRONG,
         color: '#fff',
         fontWeight: 700,
         fontSize: 14,

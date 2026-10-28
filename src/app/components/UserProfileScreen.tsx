@@ -7,6 +7,7 @@ import { ReportModal } from './ReportModal';
 import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
 import { openExternalUrl } from '../../lib/externalLink';
+import { avatarFill } from '../../lib/avatarFill';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -349,7 +350,7 @@ export function UserProfileScreen({
               width: isOrganizerProfile ? '92px' : '96px',
               height: isOrganizerProfile ? '92px' : '96px',
               borderRadius: isOrganizerProfile ? '22px' : '50%',
-              background: (user.avatar_url && !avatarLoadFailed) ? 'transparent' : user.avatarColor,
+              background: (user.avatar_url && !avatarLoadFailed) ? 'transparent' : avatarFill(user.avatarColor),
               boxShadow: '0 0 0 3px rgba(168,85,247,0.3), 0 0 28px rgba(168,85,247,0.45)',
               display: 'flex',
               alignItems: 'center',
@@ -480,7 +481,7 @@ export function UserProfileScreen({
             style={{
               flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: '14px', border: 'none', cursor: 'pointer',
               fontWeight: 700, fontSize: '14px',
-              background: localFollowing ? 'rgba(255,255,255,0.08)' : '#8E5CF7',
+              background: localFollowing ? 'rgba(255,255,255,0.08)' : '#7B2FBE',
               boxShadow: localFollowing ? 'none' : '0 6px 20px rgba(168,85,247,0.35)',
               color: localFollowing ? '#f6f4f9' : '#fff',
             }}

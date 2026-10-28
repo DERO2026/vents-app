@@ -55,7 +55,7 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
                 width: '32px',
                 height: '32px',
                 borderRadius: '9px',
-                background: '#8E5CF7',
+                background: '#7B2FBE',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

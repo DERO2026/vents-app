@@ -174,7 +174,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <button
             onClick={() => window.location.reload()}
             style={{
-              background: '#8E5CF7',
+              background: '#7B2FBE',
               border: 'none',
               borderRadius: '14px',
               padding: '12px 28px',
@@ -2813,7 +2813,7 @@ export default function App() {
         </p>
         <button
           onClick={() => openExternalUrl('https://getvents.com')}
-          style={{ background: '#8E5CF7', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+          style={{ background: '#7B2FBE', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
         >
           Reload Vents
         </button>
@@ -2860,7 +2860,7 @@ export default function App() {
         <div
           style={{
             position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 10000, background: '#EF4444', borderRadius: '12px', padding: '10px 18px',
+            zIndex: 10000, background: '#DC2626', borderRadius: '12px', padding: '10px 18px',
             display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
           }}
         >
@@ -2878,7 +2878,7 @@ export default function App() {
         <div
           style={{
             position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 10000, background: '#22C55E', borderRadius: '12px', padding: '10px 18px',
+            zIndex: 10000, background: '#065F46', borderRadius: '12px', padding: '10px 18px',
             display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
           }}
         >
@@ -3592,7 +3592,7 @@ export default function App() {
                     }
                   } catch { /* user cancelled share sheet — not an error */ }
                 }}
-                style={{ height: '48px', padding: '0 28px', background: '#8E5CF7', border: 'none', borderRadius: '100px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+                style={{ height: '48px', padding: '0 28px', background: '#7B2FBE', border: 'none', borderRadius: '100px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
               >
                 Share Payment Link
               </button>

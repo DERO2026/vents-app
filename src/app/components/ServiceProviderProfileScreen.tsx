@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check, Bookmark, Share2, Link as LinkIcon } from 'lucide-react';
 import { shareLink } from '../../lib/shareLink';
 import { ServiceProvider, ProviderService } from './types';
-import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
+import { servicesColors, servicesFills, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
 import { fetchServiceProviderById, withProviderRatings } from '../../lib/serviceProviders';
 import { fetchServiceProviderCategories } from '../../lib/serviceProviderCategories';
 import { fetchActiveServicesForProvider } from '../../lib/providerServices';
@@ -431,7 +431,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             anywhere, so that part of the export isn't reproduced either. */}
         <div style={{ position: 'relative', margin: '-40px 20px 0', padding: '18px', borderRadius: '20px', background: 'rgba(20,12,30,0.85)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(16px)' }}>
           <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-            <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 0 0 3px rgba(8,5,15,0.9)', overflow: 'hidden' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: servicesFills.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 0 0 3px rgba(8,5,15,0.9)', overflow: 'hidden' }}>
               {coverPhoto ? null : provider.businessName.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -662,7 +662,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
               onClick={() => setActiveTab('services')}
               style={{
                 flex: 2, textAlign: 'center', padding: '15px 0', borderRadius: servicesRadii.md,
-                background: '#8E5CF7', border: 'none',
+                background: '#7B2FBE', border: 'none',
                 fontWeight: 700, fontSize: '14.5px', color: '#fff', cursor: 'pointer',
                 boxShadow: '0 8px 26px rgba(168,85,247,0.4)',
               }}
@@ -757,7 +757,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
               disabled={disabled}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                background: '#059669',
+                background: '#065F46',
                 border: 'none', borderRadius: servicesRadii.md, padding: '16px',
                 color: '#fff', fontSize: '16px', fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -778,7 +778,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           disabled={!onContactProvider}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-            background: selectedServices.length > 0 ? servicesColors.cardBg : (onContactProvider ? '#8E5CF7' : 'rgba(123,47,190,0.25)'),
+            background: selectedServices.length > 0 ? servicesColors.cardBg : (onContactProvider ? '#7B2FBE' : 'rgba(123,47,190,0.25)'),
             border: selectedServices.length > 0 ? `1px solid ${servicesColors.border}` : 'none',
             borderRadius: servicesRadii.md, padding: '16px',
             color: selectedServices.length > 0 ? servicesColors.textPrimary : (onContactProvider ? '#fff' : 'rgba(255,255,255,0.4)'),

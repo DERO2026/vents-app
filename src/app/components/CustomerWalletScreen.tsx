@@ -210,7 +210,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               width: '100%', padding: '14px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-              background: '#8E5CF7', color: ventsColors.white, fontWeight: 700, fontSize: '15px',
+              background: '#7B2FBE', color: ventsColors.white, fontWeight: 700, fontSize: '15px',
             }}
           >
             <Plus size={18} /> Deposit Funds
@@ -317,7 +317,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
               disabled={depositing}
               style={{
                 width: '100%', padding: '14px', borderRadius: '12px', border: 'none', cursor: depositing ? 'not-allowed' : 'pointer',
-                background: '#8E5CF7', color: ventsColors.white, fontWeight: 700, opacity: depositing ? 0.6 : 1,
+                background: '#7B2FBE', color: ventsColors.white, fontWeight: 700, opacity: depositing ? 0.6 : 1,
               }}
             >
               {depositing ? 'Processing…' : 'Continue to Paystack'}

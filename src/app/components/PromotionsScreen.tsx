@@ -249,7 +249,7 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
           onClick={onPromoteEvent}
           data-testid="promotions-promote-new"
           style={{
-            background: '#8E5CF7', border: 'none', borderRadius: '12px',
+            background: '#7B2FBE', border: 'none', borderRadius: '12px',
             padding: '9px 14px', color: ventsColors.white, fontSize: '13px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer', flexShrink: 0,
           }}
         >
@@ -311,7 +311,7 @@ export function PromotionsScreen({ onBack, currentUser, onPromoteEvent, onNaviga
                 onClick={onPromoteEvent}
                 data-testid="promotions-empty-cta"
                 style={{
-                  background: '#8E5CF7', border: 'none', borderRadius: '14px',
+                  background: '#7B2FBE', border: 'none', borderRadius: '14px',
                   padding: '12px 22px', color: ventsColors.white, fontSize: '14px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer', marginTop: '6px',
                 }}
               >

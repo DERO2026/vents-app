@@ -101,7 +101,7 @@ export function PermissionSheetHost() {
             <button
               onClick={() => { state.onContinue(); setState(null); }}
               style={{
-                background: '#8E5CF7',
+                background: '#7B2FBE',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '14px',
@@ -131,7 +131,7 @@ export function PermissionSheetHost() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                background: '#8E5CF7',
+                background: '#7B2FBE',
                 border: 'none',
                 borderRadius: '14px',
                 padding: '14px',

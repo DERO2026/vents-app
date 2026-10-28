@@ -38,7 +38,7 @@ export function PrimaryButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: '8px',
-        background: disabled ? 'rgba(255,255,255,0.05)' : ventsColors.accent,
+        background: disabled ? 'rgba(255,255,255,0.05)' : ventsColors.accentStrong,
         border: 'none',
         borderRadius: RADIUS[size],
         padding: '0 20px',

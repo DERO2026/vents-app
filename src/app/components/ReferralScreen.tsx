@@ -305,7 +305,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
             <button
               onClick={() => setConvertOpen(true)}
-              style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: canConvert ? '#8E5CF7' : 'rgba(255,255,255,0.08)', border: canConvert ? 'none' : '1px solid rgba(255,255,255,0.14)', fontWeight: 700, fontSize: '13.5px', color: canConvert ? '#fff' : '#9a93a8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: canConvert ? '#7B2FBE' : 'rgba(255,255,255,0.08)', border: canConvert ? 'none' : '1px solid rgba(255,255,255,0.14)', fontWeight: 700, fontSize: '13.5px', color: canConvert ? '#fff' : '#9a93a8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
               {!canConvert && <Lock size={12} />} Convert to Wallet
             </button>
@@ -414,7 +414,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <button
             onClick={handleFeaturedInPeople}
             disabled={featuredBusy || balance < FEATURE_IN_PEOPLE_COST_VC}
-            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#3B82F6' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
+            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#4361EE' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
           >
             {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · ${FEATURE_IN_PEOPLE_COST_VC.toLocaleString()} VC`}
           </button>
@@ -432,7 +432,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <button
             onClick={handleClaimProfileBonus}
             disabled={profileBonusBusy || profileBonusClaimed}
-            style={{ width: '100%', borderRadius: '12px', padding: '11px', background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : '#059669', border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none', color: profileBonusClaimed ? '#10B981' : '#fff', fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer' }}
+            style={{ width: '100%', borderRadius: '12px', padding: '11px', background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : '#065F46', border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none', color: profileBonusClaimed ? '#10B981' : '#fff', fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer' }}
           >
             {profileBonusClaimed ? '✓ Bonus claimed' : profileBonusBusy ? 'Checking…' : `Claim +${profileAward} VC`}
           </button>
@@ -714,7 +714,7 @@ function ConvertToWalletModal({
               data-testid="convert-continue-button"
               disabled={!canProceed}
               onClick={() => setStep('confirm')}
-              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '20px', background: canProceed ? '#8E5CF7' : 'rgba(255,255,255,0.06)', border: 'none', color: canProceed ? '#fff' : '#555C7A', fontWeight: 700, fontSize: '14.5px', cursor: canProceed ? 'pointer' : 'not-allowed' }}
+              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '20px', background: canProceed ? '#7B2FBE' : 'rgba(255,255,255,0.06)', border: 'none', color: canProceed ? '#fff' : '#555C7A', fontWeight: 700, fontSize: '14.5px', cursor: canProceed ? 'pointer' : 'not-allowed' }}
             >
               Continue
             </button>
@@ -744,7 +744,7 @@ function ConvertToWalletModal({
             <button
               data-testid="convert-confirm-button"
               onClick={runConversion}
-              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '18px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}
+              style={{ width: '100%', padding: '14px', borderRadius: '12px', marginTop: '18px', background: '#7B2FBE', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}
             >
               Confirm Conversion
             </button>
@@ -766,7 +766,7 @@ function ConvertToWalletModal({
               ◎ {successResult.vc_amount.toLocaleString()} VC converted to <span style={{ color: '#34D399', fontWeight: 700 }}>₦{successResult.wallet_credit_naira.toLocaleString()}</span> in your VENTS Wallet.
             </p>
             {onGoToWallet && (
-              <button onClick={() => { onClose(); onGoToWallet(); }} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <button onClick={() => { onClose(); onGoToWallet(); }} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#7B2FBE', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                 <Wallet size={16} /> View VENTS Wallet
               </button>
             )}
@@ -779,7 +779,7 @@ function ConvertToWalletModal({
             </div>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '8px' }}>Conversion failed</p>
             <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px', lineHeight: 1.5 }}>{errorMsg}</p>
-            <button data-testid="convert-retry-button" onClick={runConversion} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#8E5CF7', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}>Retry</button>
+            <button data-testid="convert-retry-button" onClick={runConversion} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#7B2FBE', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}>Retry</button>
             <button onClick={startOver} style={{ width: '100%', padding: '12px', marginTop: '8px', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '13px', cursor: 'pointer' }}>Start over</button>
           </div>
         )}

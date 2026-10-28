@@ -604,7 +604,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <div style={{ width: '100%', marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             onClick={() => { setPaymentFailed(null); handlePay(); }}
-            style={{ height: '56px', borderRadius: '16px', background: ventsColors.accent, border: 'none', fontSize: '17px', fontWeight: 700, color: ventsColors.white, cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}
+            style={{ height: '56px', borderRadius: '16px', background: ventsColors.accentStrong, border: 'none', fontSize: '17px', fontWeight: 700, color: ventsColors.white, cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}
           >
             Try again
           </button>
@@ -1060,7 +1060,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               style={{
                 width: '100%',
                 height: '52px',
-                background: '#8E5CF7',
+                background: '#7B2FBE',
                 border: 'none',
                 borderRadius: '100px',
                 padding: '0 24px',
@@ -1139,7 +1139,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
                 onClick={() => { setPaymentMethod('paystack'); setShowInsufficientSheet(false); }}
-                style={{ width: '100%', height: '54px', borderRadius: '16px', background: '#8E5CF7', border: 'none', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+                style={{ width: '100%', height: '54px', borderRadius: '16px', background: '#7B2FBE', border: 'none', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
               >
                 Pay {formatPrice(total)} by card instead
               </button>

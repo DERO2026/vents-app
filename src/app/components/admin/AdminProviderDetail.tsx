@@ -514,7 +514,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
             {serviceFormError && <p style={{ color: adminTheme.red, fontSize: 12, margin: 0 }}>{serviceFormError}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
               <button onClick={() => setServiceForm(null)} disabled={serviceSaving} style={{ flex: 1, height: 42, borderRadius: 10, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, color: adminTheme.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={submitServiceForm} disabled={serviceSaving} style={{ flex: 1, height: 42, borderRadius: 10, background: '#8E5CF7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: serviceSaving ? 'wait' : 'pointer', opacity: serviceSaving ? 0.7 : 1 }}>
+              <button onClick={submitServiceForm} disabled={serviceSaving} style={{ flex: 1, height: 42, borderRadius: 10, background: '#7B2FBE', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: serviceSaving ? 'wait' : 'pointer', opacity: serviceSaving ? 0.7 : 1 }}>
                 {serviceSaving ? 'Saving...' : serviceForm.editing ? 'Save Changes' : 'Add Service'}
               </button>
             </div>

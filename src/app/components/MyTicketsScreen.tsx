@@ -671,7 +671,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   {sub.count > 0 && (
                     <span style={{
                       minWidth: '16px', height: '16px', padding: '0 4px', borderRadius: '8px',
-                      background: ventsColors.accent, color: '#fff', fontSize: '10px', fontWeight: 800,
+                      background: ventsColors.accentStrong, color: '#fff', fontSize: '10px', fontWeight: 800,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       {sub.count}
@@ -717,7 +717,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         <button
                           onClick={() => handleAcceptTransfer(t)}
                           disabled={transferActionBusy === t.id}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: '#8E5CF7', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: '#7B2FBE', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
                         >
                           <Check size={13} /> {transferActionBusy === t.id ? 'Processing…' : `Accept & Pay ${formatPrice(t.feeKobo / 100)}`}
                         </button>
@@ -858,7 +858,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 }}
                 style={{
                   marginTop: activeTab === 'upcoming' ? '12px' : '0',
-                  background: '#8E5CF7',
+                  background: '#7B2FBE',
                   border: 'none',
                   borderRadius: '12px',
                   padding: '10px 24px',
@@ -1057,7 +1057,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         onClick={(e) => { e.stopPropagation(); onViewTicket(ticket); }}
                         style={{
                           flex: 1, height: '44px', display: 'flex', alignItems: 'center',
-                          justifyContent: 'center', gap: '6px', background: ventsColors.accent,
+                          justifyContent: 'center', gap: '6px', background: ventsColors.accentStrong,
                           border: 'none', borderRadius: '12px',
                           color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
                         }}
@@ -1096,7 +1096,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
                   </span>
                 </div>
-                <button onClick={closeTransferModal} style={{ width: '100%', background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Done
                 </button>
               </>
@@ -1125,7 +1125,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   <button
                     onClick={handleSendTransfer}
                     disabled={transferSending || !transferIdentifier.trim()}
-                    style={{ flex: 1, background: '#8E5CF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                    style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
                   >
                     {transferSending ? 'Sending…' : 'Send Request'}
                   </button>

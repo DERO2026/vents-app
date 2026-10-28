@@ -4,6 +4,7 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
 import { downloadBlob } from '../../lib/ticketImage';
+import { avatarFill } from '../../lib/avatarFill';
 
 interface AttendeeListScreenProps {
   onBack: () => void;
@@ -350,7 +351,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
           {/* Status filter */}
           <div style={{ display: 'flex', gap: '8px', padding: '0 16px 12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
             {(['all', 'checked-in', 'pending', 'cancelled'] as const).map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: '20px', border: 'none', background: statusFilter === s ? '#8E5CF7' : '#131629', color: statusFilter === s ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+              <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: '20px', border: 'none', background: statusFilter === s ? '#7B2FBE' : '#131629', color: statusFilter === s ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                 {s === 'all' ? 'All' : s === 'checked-in' ? 'Checked In' : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}
@@ -379,7 +380,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                     const StatusIcon = sc.icon;
                     return (
                       <div key={attendee.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: attendee.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', color: '#fff', fontWeight: 700, flexShrink: 0 }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: avatarFill(attendee.avatarColor), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', color: '#fff', fontWeight: 700, flexShrink: 0 }}>
                           {attendee.initials}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
