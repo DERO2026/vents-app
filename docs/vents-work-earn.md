@@ -147,7 +147,15 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 
 ## Tests
 
-- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 117 real-execution checks against local Postgres 16, with verbatim live maker-checker functions.
+- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 128 real-execution checks against local Postgres 16. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
+- **`scripts/local-pg-test/run-payout-gate-audit.sh`:** the 27-check security audit of the reward payout gate (2026-10-30). It covers:
+  - `payouts_enabled` is enforced inside the credit function, with no bypass by direct table write, internal function or admin action;
+  - two distinct admins, with the approver a super admin, and neither the representative nor the organizer able to request or approve their own reward;
+  - six concurrent retries crediting exactly once;
+  - `app_config.disable_payouts` and reward credit working independently;
+  - ordinary organizer withdrawals unchanged.
+
+  It refuses to run, before connecting, if any database URL or `PG*` connection variable is set, or if any environment value names a hosted database host. It connects only over the local Unix socket, then confirms the server is local and not Supabase-managed (no server address, no `supabase_admin` role). It creates and always drops its own `vents_local_pg_payout_gate_audit` database.
 - **`src/lib/representativeRewards.security.test.ts`:** static invariants.
 - **`src/lib/workRoles.test.ts`:** role state machine.
 - **`src/app/components/work/ventsWork.render.test.tsx`:** the screens.
