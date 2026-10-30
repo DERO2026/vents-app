@@ -23,7 +23,9 @@
 --      lower it (service_start_floor_at). The provider clock is 48 hours
 --      after the later of completion and that start. The customer can
 --      dispute a completed booking inside the same 48 hours; two admins
---      resolve it (request_admin_action 'resolve_booking_dispute').
+--      resolve it (request_admin_action 'resolve_booking_dispute'). Upheld
+--      for the customer, the booking becomes refundable through the
+--      existing booking refund path.
 --    A credit goes to on_hold_kobo (one earnings_holds row per order or
 --    booking). It is released by settle_earnings when nothing blocks it:
 --    a refund in progress on that order or booking (or, when a refund
@@ -253,7 +255,7 @@ ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS service_start_floor
 CREATE OR REPLACE FUNCTION public.booking_scheduled_start_at(p_date date, p_time time without time zone)
  RETURNS timestamptz
  LANGUAGE sql
- IMMUTABLE
+ STABLE
  SET search_path TO ''
 AS $function$
   SELECT CASE WHEN p_date IS NULL THEN NULL
@@ -296,6 +298,12 @@ BEGIN
           to_char(GREATEST(NEW.service_start_floor_at, v_start) AT TIME ZONE 'Africa/Lagos', 'YYYY-MM-DD HH24:MI') || ' Lagos';
       END IF;
     END IF;
+  END IF;
+
+  -- A completed booking never goes back to 'confirmed' (the live refund
+  -- revert/fail paths set that); it could otherwise be completed again.
+  IF TG_OP = 'UPDATE' AND OLD.completed_at IS NOT NULL AND NEW.status = 'confirmed' THEN
+    NEW.status := 'completed';
   END IF;
 
   IF TG_OP = 'UPDATE' AND OLD.completed_at IS NOT NULL THEN
@@ -454,8 +462,13 @@ $function$;
 
 -- Dual-control executor (approve_admin_action): payload {dispute_id,
 -- outcome: 'provider' | 'customer', note}. 'provider' lets the earnings
--- release; 'customer' keeps them held for a refund, which this migration
--- does not perform (see the PR for that open item).
+-- release. 'customer' keeps them held and makes the booking refundable:
+-- cancel_service_booking (patched below) then accepts this one completed
+-- booking, through the existing refund path -- a VENTS Wallet booking is
+-- refunded at once, a Paystack booking through api/wallet/refund-ticket and
+-- the refund webhooks. The customer gets the total paid back; the provider
+-- gives back the subtotal (from the held earnings, then the balance, then a
+-- recovery), exactly as for any booking refund.
 CREATE OR REPLACE FUNCTION public.execute_booking_dispute_resolution(p_admin_request_id uuid)
  RETURNS void
  LANGUAGE plpgsql
@@ -1103,7 +1116,9 @@ BEGIN
     IF w.approved_by IS NULL THEN
       RAISE EXCEPTION 'This withdrawal needs a second admin''s authorization before it can be paid';
     END IF;
-    SELECT b.recipient_code INTO v_recipient FROM public.organizer_bank_accounts b WHERE b.id = w.bank_account_id;
+    -- The authorized recipient, on an account the organizer still has active.
+    SELECT b.recipient_code INTO v_recipient FROM public.organizer_bank_accounts b
+     WHERE b.id = w.bank_account_id AND b.is_active;
     IF v_recipient IS DISTINCT FROM w.approved_recipient_code THEN
       RAISE EXCEPTION 'The bank account changed after this withdrawal was authorized; authorize it again';
     END IF;

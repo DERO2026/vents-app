@@ -5,7 +5,8 @@
 -- copies of the live definitions, because 0201 patches them in place and
 -- the test must prove the patch anchors match production text.
 
-ALTER TABLE public.users ADD COLUMN full_name text, ADD COLUMN username text;
+ALTER TABLE public.users ADD COLUMN full_name text, ADD COLUMN username text,
+  ADD COLUMN is_verified boolean DEFAULT false;  -- set by admin_approve_organizer_verification / admin_toggle_user_verified
 
 ALTER TABLE public.events
   ADD COLUMN event_date      timestamptz,

@@ -143,6 +143,13 @@ patches.append(('finalize_ticket_refund', [
 b = live['cancel_service_booking']
 blk, ind = money_block(b, 'v_booking.subtotal_kobo')
 patches.append(('cancel_service_booking', [
+    # A completed booking can be refunded only once two admins have upheld
+    # the customer's dispute (execute_booking_dispute_resolution).
+    ("  IF v_booking.status = 'completed' THEN\n    RAISE EXCEPTION 'A completed booking cannot be cancelled or refunded';\n  END IF;",
+     "  IF v_booking.status = 'completed' AND NOT EXISTS (\n"
+     "       SELECT 1 FROM public.service_booking_disputes d\n"
+     "        WHERE d.booking_id = v_booking.id AND d.status = 'resolved_for_customer') THEN\n"
+     "    RAISE EXCEPTION 'A completed booking cannot be cancelled or refunded';\n  END IF;"),
     (blk, helper_call(ind, [
         'v_provider_user_id, v_booking.subtotal_kobo',
         "'service_booking', v_booking.id::text",

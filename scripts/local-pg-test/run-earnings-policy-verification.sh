@@ -459,6 +459,50 @@ RQ=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('resolve_booking_d
 "${PSQL[@]}" -q -c "$(as "$ADMIN_B" "SELECT public.approve_admin_action('$RQ');")" >/dev/null
 complete_ago "$BKN" "3 days"
 expect_value "upheld for the customer, the earnings stay held for a refund" "$(blockers "$BKN")" "dispute_upheld"
+
+echo "== Upheld disputes: refund through the existing booking refund path =="
+expect_error "a completed booking whose dispute went to the provider cannot be refunded" "completed booking cannot be cancelled" \
+  "$(as "$ADMIN_A" "SELECT public.cancel_service_booking('$BKD', 'try anyway');")"
+expect_error "a completed booking with no upheld dispute cannot be refunded either" "completed booking cannot be cancelled" \
+  "$(as "$ADMIN_A" "SELECT public.cancel_service_booking('$BKF', 'try anyway');")"
+# BKN was paid by Paystack: the refund goes refund_pending, the API asks Paystack, the webhook finalizes.
+expect_value "upheld: an admin starts the refund of the completed booking (Paystack path: refund pending)" \
+  "$(val "$(as "$ADMIN_A" "SELECT public.cancel_service_booking('$BKN', 'Dispute upheld')->>'status';")")" "refund_pending"
+expect_value "a second refund call is a no-op (still one refund in flight)" \
+  "$(val "$(as "$ADMIN_A" "SELECT public.cancel_service_booking('$BKN', 'again')->>'status';")")/$(val "SELECT payment_status FROM public.service_bookings WHERE id = '$BKN';")" "refund_pending/refund_pending"
+"${PSQL[@]}" -q -c "UPDATE public.service_bookings SET refund_id = 'RF_bkn' WHERE id = '$BKN';"
+expect_value "if Paystack fails the refund, the booking stays completed (never back to confirmed) and stays held" \
+  "$(val "SELECT status FROM public.fail_service_booking_refund('RF_bkn', 'bank declined');")/$(val "SELECT status || '/' || payment_status FROM public.service_bookings WHERE id = '$BKN';")/$(blockers "$BKN")" \
+  "reverted/completed/paid/dispute_upheld"
+expect_value "the refund can then be started again" \
+  "$(val "$(as "$ADMIN_A" "SELECT public.cancel_service_booking('$BKN', 'Dispute upheld (retry)')->>'status';")")" "refund_pending"
+"${PSQL[@]}" -q -c "UPDATE public.service_bookings SET refund_id = 'RF_bkn2' WHERE id = '$BKN';"
+PROV_BEFORE=$(wallet "$PROV")
+expect_value "Paystack confirms: the provider gives back the subtotal from the held earnings" \
+  "$(val "SELECT status FROM public.finalize_service_booking_refund('RF_bkn2');")/$(hold_of "$(val "SELECT source_key FROM public.earnings_holds WHERE booking_id = '$BKN';")")" "finalized/0/100000/0"
+expect_value "a duplicate refund webhook is a no-op" "$(val "SELECT status FROM public.finalize_service_booking_refund('RF_bkn2');")" "already_refunded"
+# A VENTS Wallet booking: the refund completes in one step.
+BKW="00000000-0000-0000-0000-0000000003f8"
+"${PSQL[@]}" -q <<SQL
+INSERT INTO public.service_bookings (id, customer_id, provider_id, payment_status, payment_method, payment_ref, subtotal_kobo, fee_kobo, total_kobo, scheduled_date, scheduled_time) VALUES
+  ('$BKW', '$BUYER2', '$SP_ID', 'paid', 'wallet', 'BKW', 100000, 5000, 105000, (now() AT TIME ZONE 'Africa/Lagos')::date - 2, '09:00');
+INSERT INTO public.user_wallets (user_id, balance_kobo) VALUES ('$BUYER2', 0) ON CONFLICT (user_id) DO NOTHING;
+SQL
+"${PSQL[@]}" -q -o /dev/null -c "SELECT public.credit_provider_wallet_for_booking('$PROV', 100000, '$BKW', 'Service booking payment');"
+"${PSQL[@]}" -q -c "$(as "$PROV" "SELECT public.complete_service_booking('$BKW');")" >/dev/null
+"${PSQL[@]}" -q -c "$(as "$BUYER2" "SELECT public.dispute_service_booking('$BKW', 'Wrong service delivered');")" >/dev/null
+DSPW=$(val "SELECT id FROM public.service_booking_disputes WHERE booking_id = '$BKW';")
+"${PSQL[@]}" -q -c "$(approve "$ADMIN_B" "$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('resolve_booking_dispute', 'booking', '$BKW', 'test', '{\"dispute_id\":\"$DSPW\",\"outcome\":\"customer\",\"note\":\"Wrong service\"}'::jsonb)->>'id';")")")" >/dev/null
+CW_BEFORE=$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$BUYER2';")
+# Two admins click Refund at once: the booking row lock lets one refund through.
+( "${PSQL[@]}" -tA -c "BEGIN; SET LOCAL test.uid='$ADMIN_A'; SET LOCAL ROLE authenticated; SELECT public.cancel_service_booking('$BKW', 'Dispute upheld')->>'status'; SELECT pg_sleep(1); COMMIT;" >"$TMP/r1" 2>&1 & )
+sleep 0.3
+"${PSQL[@]}" -tA -c "SET test.uid='$ADMIN_B'; SET ROLE authenticated; SELECT public.cancel_service_booking('$BKW', 'Dispute upheld')->>'status';" >"$TMP/r2" 2>&1 || true; sleep 1
+expect_value "wallet booking: refunded once, the customer gets the total (fee included) back" \
+  "$(cat "$TMP/r1" "$TMP/r2" | grep -c '^refunded$')/$(cat "$TMP/r2" | grep -c 'already_refunded')/$(( $(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$BUYER2';") - CW_BEFORE ))" "1/1/105000"
+expect_value "and the provider gives back the subtotal from the held earnings" \
+  "$(hold_of "$(val "SELECT source_key FROM public.earnings_holds WHERE booking_id = '$BKW';")")" "0/100000/0"
+expect_value "upheld-dispute refunds reconcile" "$(reconciled)" "0"
 expect_error "after the window closes a dispute is refused" "dispute window for this booking has closed" \
   "$(as "$BUYER" "SELECT public.dispute_service_booking('00000000-0000-0000-0000-0000000003f4', 'too late');")"
 
@@ -495,6 +539,10 @@ expect_error "it cannot be authorized twice" "already authorized" "$(approve "$A
 expect_error "a bank recipient changed after authorization blocks the payout" "bank account changed" \
   "$(as "$ADMIN_A" "SELECT * FROM public.admin_claim_payout_for_processing('$WD');")"
 "${PSQL[@]}" -q -c "UPDATE public.organizer_bank_accounts SET recipient_code = 'RCP_org' WHERE id = '$BANK';"
+"${PSQL[@]}" -q -c "UPDATE public.organizer_bank_accounts SET is_active = false WHERE id = '$BANK';"
+expect_error "a bank account deactivated after authorization blocks the payout" "bank account changed" \
+  "$(as "$ADMIN_A" "SELECT * FROM public.admin_claim_payout_for_processing('$WD');")"
+"${PSQL[@]}" -q -c "UPDATE public.organizer_bank_accounts SET is_active = true WHERE id = '$BANK';"
 expect_value "the authorized request is claimed exactly once" "$(claim "$WD")/$(claim "$WD")" "true/false"
 expect_value "Paystack success completes it" "$(val "SELECT status FROM public.complete_organizer_payout('$WD');")/$(wallet "$ORG")" "completed/0/0/0"
 expect_value "duplicate success webhook does nothing" "$(val "SELECT status FROM public.complete_organizer_payout('$WD');")" "already_completed"

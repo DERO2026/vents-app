@@ -913,7 +913,10 @@ END;
 $function$;
 
 -- An organizer is verified when their organizer (CAC) verification request
--- has been approved by an admin (admin_approve_organizer_verification).
+-- was approved (admin_approve_organizer_verification, which also sets
+-- users.is_verified) AND that verification still stands: admins revoke it
+-- with admin_toggle_user_verified (is_verified = false) or by removing the
+-- organizer capability, and a deleted account never qualifies.
 CREATE OR REPLACE FUNCTION public.earn_organizer_is_verified(p_organizer_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -923,6 +926,9 @@ CREATE OR REPLACE FUNCTION public.earn_organizer_is_verified(p_organizer_id uuid
 AS $function$
   SELECT EXISTS (SELECT 1 FROM public.organizer_verification_requests v
                   WHERE v.user_id = p_organizer_id AND v.status = 'approved')
+     AND EXISTS (SELECT 1 FROM public.users u
+                  WHERE u.id = p_organizer_id AND u.is_verified IS TRUE AND u.is_organizer
+                    AND u.deleted_at IS NULL)
 $function$;
 
 -- ---------------------------------------------------------------------------

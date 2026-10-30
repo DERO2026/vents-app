@@ -1758,4 +1758,47 @@ BEGIN
 END;
 $function$;
 
+-- fail_service_booking_refund (not patched by 0203; md5 dce69756ccc75511c4932281c5e5ee19 = production).
+CREATE OR REPLACE FUNCTION public.fail_service_booking_refund(p_refund_id text, p_reason text)
+ RETURNS TABLE(status text, actor_email text, actor_name text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_booking record;
+BEGIN
+  SELECT id, customer_id, payment_status, refund_initiated_by
+    INTO v_booking
+    FROM public.service_bookings
+   WHERE refund_id = p_refund_id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  IF v_booking.payment_status <> 'refund_pending' THEN
+    RETURN QUERY SELECT 'not_pending'::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  UPDATE public.service_bookings
+     SET payment_status = 'paid', status = 'confirmed', refund_id = NULL
+   WHERE id = v_booking.id;
+
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (
+    v_booking.refund_initiated_by, 'refund_service_booking_failed', v_booking.customer_id,
+    jsonb_build_object('booking_id', v_booking.id, 'refund_id', p_refund_id, 'reason', p_reason),
+    'webhook'
+  );
+
+  RETURN QUERY
+  SELECT 'reverted'::text, u.email, u.full_name
+    FROM public.users u WHERE u.id = v_booking.refund_initiated_by;
+END;
+$function$;
+
 RESET check_function_bodies;

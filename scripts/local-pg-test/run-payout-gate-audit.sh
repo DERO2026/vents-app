@@ -133,6 +133,7 @@ INSERT INTO public.users (id, role, is_organizer, full_name) VALUES
 -- organizer starts verified; the negative case is tested explicitly.
 INSERT INTO public.organizer_verification_requests (user_id, status)
   SELECT id, 'approved' FROM public.users WHERE is_organizer;
+UPDATE public.users SET is_verified = true WHERE is_organizer;  -- as admin_approve_organizer_verification does
 SQL
 for r in "$REP" "$REP2"; do "${PSQL[@]}" -q -c "$(as "$r" "SELECT public.register_as_recruiter('R', NULL);")" >/dev/null; done
 link() {  # link <representative> <organizer>: invite + accept, which attributes the organizer

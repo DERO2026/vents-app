@@ -83,6 +83,7 @@ INSERT INTO public.users (id, role, is_organizer, full_name) VALUES
 -- organizer starts verified; the negative case is tested explicitly.
 INSERT INTO public.organizer_verification_requests (user_id, status)
   SELECT id, 'approved' FROM public.users WHERE is_organizer;
+UPDATE public.users SET is_verified = true WHERE is_organizer;  -- as admin_approve_organizer_verification does
 SQL
 for r in "$REP" "$REP2" "$ADMIN_REP"; do
   "${PSQL[@]}" -q -c "$(as "$r" "SELECT public.register_as_recruiter('R', NULL);")" >/dev/null
@@ -274,6 +275,13 @@ expect_error "an organizer without an approved verification blocks the reward" "
 "${PSQL[@]}" -q -c "INSERT INTO public.organizer_verification_requests (user_id, status) VALUES ('$ORG', 'pending');" >/dev/null
 expect_error "a pending (not yet approved) verification still blocks it" "approved organizer verification" "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":true}")")"
 "${PSQL[@]}" -q -c "UPDATE public.organizer_verification_requests SET status = 'approved' WHERE user_id = '$ORG';" >/dev/null
+"${PSQL[@]}" -q -c "UPDATE public.users SET is_verified = false WHERE id = '$ORG';" >/dev/null
+expect_error "an approved request whose verification an admin later revoked (is_verified = false) blocks the reward" "approved organizer verification" \
+  "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":true}")")"
+"${PSQL[@]}" -q -c "UPDATE public.users SET is_verified = true, is_organizer = false WHERE id = '$ORG';" >/dev/null
+expect_error "an organizer whose organizer capability was removed does not qualify" "approved organizer verification" \
+  "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":true}")")"
+"${PSQL[@]}" -q -c "UPDATE public.users SET is_organizer = true WHERE id = '$ORG';" >/dev/null
 expect_value "refused approvals left the claim under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$C1';")" "pending_review"
 expect_ok "second admin approves the reward" "$(approve "$ADMIN_B" "$R")"
 expect_value "approval records the event and organizer verification" \
@@ -293,6 +301,10 @@ expect_error "an admin who is the representative cannot request approval of thei
 expect_value "the representative-admin's claim is still under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$C3';")" "pending_review"
 
 echo "== Funding against realized profit =="
+"${PSQL[@]}" -q -c "UPDATE public.users SET is_verified = false WHERE id = '$ORG';" >/dev/null
+expect_error "a verification revoked by an admin (is_verified = false) after approval blocks the claim" "no longer verified" \
+  "$(as "$REP" "SELECT public.claim_representative_reward('$C1', gen_random_uuid());")"
+"${PSQL[@]}" -q -c "UPDATE public.users SET is_verified = true WHERE id = '$ORG';" >/dev/null
 "${PSQL[@]}" -q -c "UPDATE public.organizer_verification_requests SET status = 'rejected' WHERE user_id = '$ORG';" >/dev/null
 expect_error "a verification revoked after approval blocks the claim" "no longer verified" \
   "$(as "$REP" "SELECT public.claim_representative_reward('$C1', gen_random_uuid());")"

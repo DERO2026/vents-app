@@ -158,7 +158,8 @@ export function AdminPayoutsScreen() {
   const [disputes, setDisputes] = useState<any[]>([]);
   const loadDisputes = async () => {
     const { data, error } = await supabase.from('service_booking_disputes' as any)
-      .select('id, booking_id, reason, opened_at').eq('status', 'open').order('opened_at', { ascending: true }).limit(50);
+      .select('id, booking_id, reason, opened_at, status, resolution_note').in('status', ['open', 'resolved_for_customer'])
+      .order('opened_at', { ascending: true }).limit(50);
     setDisputes(error ? [] : ((data as any[]) || []));
   };
   useEffect(() => { loadDisputes(); }, []);
@@ -174,6 +175,27 @@ export function AdminPayoutsScreen() {
     });
     if (error) { flash(false, error.message || 'Could not request the resolution'); return; }
     flash(true, 'Resolution requested — a different super admin must approve it in Admin Actions.');
+  };
+  // Upheld for the customer (two admins already decided): refund through the
+  // existing booking refund path. A VENTS Wallet booking is refunded at once;
+  // a Paystack booking goes refund_pending and the refund webhook finishes it.
+  // The database refuses a completed booking without an upheld dispute.
+  const refundDisputedBooking = async (d: any) => {
+    if (!window.confirm('Refund the customer in full for this booking? The provider gives back their earnings for it.')) return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = d.booking_id;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const res = await fetch(apiUrl('/api/v1/wallet/refund-ticket'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session?.access_token}` },
+        body: JSON.stringify({ booking_id: d.booking_id, reason: `Dispute upheld: ${d.resolution_note || 'customer complaint'}` }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Refund failed');
+      flash(true, json.status === 'refund_pending' ? 'Refund sent to Paystack — it completes when Paystack confirms.' : 'Customer refunded.');
+      await loadDisputes();
+    } catch (e: any) { flash(false, e.message || 'Refund failed'); } finally { actionInFlightRef.current = null; }
   };
 
   const handleApprove = async (id: string) => {
@@ -355,12 +377,18 @@ export function AdminPayoutsScreen() {
 
       {disputes.length > 0 && (
         <div data-testid="admin-booking-disputes" style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: adminTheme.amber }}>Open booking disputes ({disputes.length})</p>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: adminTheme.amber }}>Booking disputes ({disputes.length})</p>
           {disputes.map((d) => (
             <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: adminTheme.text }}>
-              <span style={{ flex: 1 }}>{new Date(d.opened_at).toLocaleString('en-NG')} · {d.reason}</span>
-              <button onClick={() => requestDisputeResolution(d, 'provider')} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Pay provider</button>
-              <button onClick={() => requestDisputeResolution(d, 'customer')} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Uphold customer</button>
+              <span style={{ flex: 1 }}>{new Date(d.opened_at).toLocaleString('en-NG')} · {d.reason}{d.status === 'resolved_for_customer' ? ' · UPHELD' : ''}</span>
+              {d.status === 'open' ? (
+                <>
+                  <button onClick={() => requestDisputeResolution(d, 'provider')} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Pay provider</button>
+                  <button onClick={() => requestDisputeResolution(d, 'customer')} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Uphold customer</button>
+                </>
+              ) : (
+                <button data-testid="dispute-refund" onClick={() => refundDisputedBooking(d)} disabled={payoutsDisabled} style={{ background: 'rgba(248,113,113,.12)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 8, padding: '4px 8px', color: adminTheme.red, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Refund customer</button>
+              )}
             </div>
           ))}
         </div>
