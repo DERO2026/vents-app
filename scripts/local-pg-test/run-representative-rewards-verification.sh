@@ -123,7 +123,7 @@ expect_value "the dual-admin legacy reconciliation gate is still closed" \
   "$(val "SELECT legacy_commission_reconciled::text FROM public.earn_settings;")" "false"
 expect_value "no database function except the reconciliation gate and snapshot references commission" \
   "$(val "SELECT string_agg(p.proname, ',' ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosrc ILIKE '%commission%';")" \
-  "claim_representative_reward,earn_execute_admin_action,get_my_representative_rewards"
+  "claim_representative_reward,earn_execute_admin_action,get_my_representative_performance,get_my_representative_rewards"
 
 echo "== Attribution =="
 # An installed app that still sends the old 10000 split value.
@@ -540,6 +540,36 @@ expect_value "a non-representative gets no representative profile" \
   "$(val "$(as "$OTHER" "SELECT (public.get_my_representative_rewards()->'representative')::text;")")" "null"
 expect_value "organizer sees confirmations addressed to them only" \
   "$(val "$(as "$ORG" "SELECT jsonb_array_length(public.get_my_referral_confirmations());")")" "1"
+echo "== Representative dashboard (get_my_representative_performance) =="
+PERF() { val "$(as "$REP" "SELECT public.get_my_representative_performance()$1;")"; }
+expect_value "the funnel counts invitations straight from recruiter_partnerships" \
+  "$(PERF "->'funnel'->>'invitations_sent'")/$(PERF "->'funnel'->>'partnerships_active'")" \
+  "$(val "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id = '$REP';")/$(val "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id = '$REP' AND status = 'accepted';")"
+expect_value "attributed organizers match the attribution table and the rewards API" \
+  "$(PERF "->'funnel'->>'organizers_attributed'")" "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_rewards()->'attributions');")")"
+expect_value "the lifecycle covers every claim exactly once (counts add up to the claims list)" \
+  "$(val "$(as "$REP" "SELECT sum((v->>'count')::int) FROM jsonb_each(public.get_my_representative_performance()->'lifecycle') AS e(k, v);")")" \
+  "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_rewards()->'claims');")")"
+expect_value "paid rewards in the lifecycle equal the representative_reward credits in the earnings ledger" \
+  "$(PERF "->'lifecycle'->'credited'->>'amount_kobo'")" \
+  "$(val "SELECT COALESCE(sum(amount_kobo), 0) - COALESCE((SELECT sum(amount_kobo) FROM public.organizer_transactions WHERE organizer_id = '$REP' AND type = 'representative_reward_reversal'), 0) FROM public.organizer_transactions WHERE organizer_id = '$REP' AND type = 'representative_reward';")"
+expect_value "six months of history, newest first, this month's count matching the rewards API" \
+  "$(PERF "->'months'->0->>'qualifying'")/$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_performance()->'months');")")" \
+  "$(val "$(as "$REP" "SELECT public.get_my_representative_rewards()->>'qualifying_this_month';")")/6"
+expect_value "the wallet figures are the caller's own earnings wallet" \
+  "$(PERF "->'wallet'->>'balance_kobo'")" "$(val "SELECT COALESCE((SELECT balance_kobo FROM public.organizer_wallets WHERE organizer_id = '$REP'), 0);")"
+expect_value "expenses are summarised by status, matching the table" \
+  "$(val "$(as "$REP" "SELECT sum((v->>'count')::int) FROM jsonb_each(public.get_my_representative_performance()->'expenses') AS e(k, v);")")" \
+  "$(val "SELECT count(*) FROM public.representative_expenses WHERE representative_id = '$REP';")"
+PERFJSON=$(val "$(as "$REP" "SELECT public.get_my_representative_performance()::text;")")
+if echo "$PERFJSON" | grep -q "fee_candidate_kobo\|available_kobo\|reserved_kobo"; then
+  fail "the dashboard leaks VENTS profit figures"; else pass "the dashboard exposes no VENTS profit figures"; fi
+expect_value "a non-representative gets no dashboard" \
+  "$(val "$(as "$OTHER" "SELECT (public.get_my_representative_performance()->'representative')::text;")")" "null"
+expect_error "anonymous callers cannot read it" "permission denied" \
+  "SET ROLE anon; SELECT public.get_my_representative_performance();"
+expect_value "it is read-only (STABLE)" "$(val "SELECT provolatile FROM pg_proc WHERE proname = 'get_my_representative_performance';")" "s"
+
 expect_error "non-admins cannot read the admin overview" "Admin access required" \
   "$(as "$REP" "SELECT public.admin_get_vents_earn_overview();")"
 expect_ok "admins can read the admin overview" "$(as "$SUB" "SELECT public.admin_get_vents_earn_overview();")"

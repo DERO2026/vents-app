@@ -85,6 +85,7 @@ import { RepresentativesScreen } from './components/RepresentativesScreen';
 import { VentsWorkScreen } from './components/work/VentsWorkScreen';
 import { VentsEarningsScreen } from './components/work/VentsEarningsScreen';
 import { RepresentativeRewardsScreen } from './components/work/RepresentativeRewardsScreen';
+import { RepresentativeDashboardScreen } from './components/work/RepresentativeDashboardScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
@@ -1201,6 +1202,15 @@ export default function App() {
   // catalog is being managed -- set right before navigating to
   // 'manage-provider-services' from ServiceProviderSetupScreen.
   const [manageServicesProviderId, setManageServicesProviderId] = useState<string | null>(null);
+  // VENTS Work: open the caller's own provider bookings (the existing
+  // ServiceBookingsScreen, provider mode), resolving their provider id.
+  const openProviderBookings = async () => {
+    if (!currentUser?.id) return;
+    const { data } = await supabase.from('service_providers').select('id').eq('user_id', currentUser.id).maybeSingle();
+    if (!data?.id) return;
+    setManageServicesProviderId(data.id);
+    navigateTo('provider-service-bookings');
+  };
   // Single shared discovery-country state for both Home and Services (Stage
   // B) -- previously each screen kept its own local country state
   // (HomeScreen's own `countryFilter`, and this `discoveryCountryIso` for
@@ -3843,7 +3853,11 @@ export default function App() {
               onBack={goBack}
               onNavigate={(target) => navigateTo(target as Screen)}
               onOpenCreatorStudio={openCreatorStudio}
+              onOpenProviderBookings={openProviderBookings}
             />
+          )}
+          {screen === 'representative-dashboard' && (
+            <RepresentativeDashboardScreen currentUser={currentUser} onBack={goBack} onNavigate={(target) => navigateTo(target as Screen)} />
           )}
           {screen === 'vents-earnings' && (
             <VentsEarningsScreen currentUser={currentUser} onBack={goBack} onNavigate={(target) => navigateTo(target as Screen)} />
@@ -3854,7 +3868,7 @@ export default function App() {
 
           {/* ── VENTS REPRESENTATIVES (recruiter partnership frontend) ── */}
           {screen === 'representatives' && (
-            <RepresentativesScreen onBack={goBack} currentUser={currentUser} focusPartnership={representativesFocus} onOpenRewards={() => navigateTo('representative-rewards')} />
+            <RepresentativesScreen onBack={goBack} currentUser={currentUser} focusPartnership={representativesFocus} onOpenRewards={() => navigateTo('representative-dashboard')} />
           )}
 
           {/* ── TICKET REFUND (attendee side) ── */}

@@ -461,6 +461,25 @@ const RPC_FIXTURES: Record<string, any> = {
   get_my_referral_confirmations: [
     { id: 'claim-confirm-1', status: 'pending_organizer', created_at: new Date().toISOString(), representative_name: 'Adaeze Okonkwo', event_title: 'Lagos Music Festival' },
   ],
+  // Consistent with get_my_representative_rewards below (2 claims: one
+  // approved, one awaiting approval; 3 attributed organizers).
+  get_my_representative_performance: {
+    representative: { status: 'active', created_at: '2026-10-03T09:00:00Z' },
+    programme_open: false, payouts_enabled: false, current_month: '2026-10-01',
+    rate_review_threshold: 9, base_reward_kobo: 5000000, settlement_hold_days: 7,
+    funnel: { invitations_sent: 5, invitations_pending: 2, invitations_accepted: 3, invitations_declined: 0, partnerships_active: 3,
+      organizers_attributed: 3, organizers_hosting: 2, organizers_qualified: 1, organizers_paid: 0 },
+    lifecycle: {
+      pending_organizer: { count: 0, amount_kobo: 0 }, pending_review: { count: 1, amount_kobo: 5000000 },
+      approved: { count: 1, amount_kobo: 5000000 }, funded: { count: 0, amount_kobo: 0 }, credited: { count: 0, amount_kobo: 0 },
+      rejected: { count: 0, amount_kobo: 0 }, reversed: { count: 0, amount_kobo: 0 },
+    },
+    months: ['2026-10-01', '2026-09-01', '2026-08-01', '2026-07-01', '2026-06-01', '2026-05-01'].map((m, i) => ({
+      month: m, qualifying: i === 0 ? 1 : 0, rate_kobo: 5000000, submitted: i === 0 ? 2 : 0, paid_kobo: 0,
+    })),
+    expenses: { submitted: { count: 1, amount_kobo: 250000 }, approved: { count: 0, amount_kobo: 0 }, rejected: { count: 0, amount_kobo: 0 } },
+    wallet: { balance_kobo: 0, pending_kobo: 0, on_hold_kobo: 0 },
+  },
   get_my_representative_rewards: {
     representative: { id: 'rep-1', status: 'active', created_at: '2026-10-03T09:00:00Z', display_name: 'Adaeze Okonkwo' },
     payouts_enabled: false, programme_open: false, current_month: '2026-10-01', current_rate_kobo: 5000000,

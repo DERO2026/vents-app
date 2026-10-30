@@ -25,7 +25,7 @@ vi.mock('../SettingsScreen', () => ({ CACVerificationScreen: () => <div data-tes
 
 function chain(result: any, error: any = null) {
   const obj: any = {
-    select: () => obj, eq: () => obj, order: () => obj, limit: () => obj, in: () => obj,
+    select: () => obj, eq: () => obj, order: () => obj, limit: () => obj, in: () => obj, is: () => obj,
     maybeSingle: () => Promise.resolve({ data: Array.isArray(result) ? result[0] ?? null : result, error }),
     then: (resolve: any, reject: any) => Promise.resolve({ data: result, error }).then(resolve, reject),
   };
@@ -45,12 +45,17 @@ beforeEach(() => {
     recruiters: null,
     organizer_wallets: null,
     organizer_withdrawal_requests: [],
+    recruiter_partnerships: [],
+    earnings_recoveries: [],
   };
   rpcs = {
     vc_tier_and_multiplier_for_user: { data: [{ tier: 'silver', lifetime_earned: 4900 }], error: null },
     get_my_referral_confirmations: { data: [], error: null },
     get_my_wallet: { data: [{ balance_kobo: 320000 }], error: null },
     get_my_representative_rewards: { data: { representative: null }, error: null },
+    // Not deployed in these tests unless a test sets it.
+    get_my_representative_performance: { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } },
+    get_earnings_holds: { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } },
   };
   getVcBalanceMock.mockResolvedValue({ spendable: 1250 });
   fromMock.mockImplementation((t: string) => {

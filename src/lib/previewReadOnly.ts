@@ -48,7 +48,10 @@ export const PREVIEW_ALLOWED_RPCS: ReadonlySet<string> = new Set([
   'my_latest_service_provider_verification', 'resolve_username_to_email', 'search_direct_messages',
   // Migration 0201 (not in production yet): STABLE, no writes, helpers STABLE.
   'admin_get_event_profit_candidate', 'admin_get_vents_earn_overview',
-  'get_my_referral_confirmations', 'get_my_representative_rewards',
+  'get_my_referral_confirmations', 'get_my_representative_performance', 'get_my_representative_rewards',
+  // Migration 0203 (not in production yet): STABLE, no writes; its only
+  // callee, earnings_hold_state, is STABLE and only reads.
+  'get_earnings_holds',
 ]);
 
 const BLOCKED_TABLE_METHODS = ['insert', 'update', 'upsert', 'delete'] as const;

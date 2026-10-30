@@ -50,7 +50,7 @@ describe('partnership notifications route to Representatives', () => {
   });
 
   it('RepresentativesScreen receives the focus, and the focus is cleared when the user leaves the screen', () => {
-    expect(src).toMatch(/<RepresentativesScreen onBack=\{goBack\} currentUser=\{currentUser\} focusPartnership=\{representativesFocus\} onOpenRewards=\{\(\) => navigateTo\('representative-rewards'\)\} \/>/);
+    expect(src).toMatch(/<RepresentativesScreen onBack=\{goBack\} currentUser=\{currentUser\} focusPartnership=\{representativesFocus\} onOpenRewards=\{\(\) => navigateTo\('representative-dashboard'\)\} \/>/);
     expect(src).toMatch(/if \(screen !== 'representatives'\) setRepresentativesFocus\(null\);/);
   });
 });

@@ -117,24 +117,47 @@ export function claimStateView(status: ClaimStatus, opts: { payoutsEnabled: bool
     case 'pending_organizer':
       return { label: 'Pending', tone: 'wait', detail: 'Waiting for the organizer to confirm' };
     case 'pending_review':
-      return { label: 'Pending', tone: 'wait', detail: 'Organizer confirmed · VENTS is reviewing' };
+      return { label: 'Awaiting approval', tone: 'wait', detail: 'Organizer confirmed · two VENTS admins are reviewing' };
     case 'approved':
       return opts.fundingAvailable
         ? { label: 'Approved', tone: 'on', detail: 'Ready to claim' }
         : { label: 'Approved', tone: 'on', detail: 'Waiting for VENTS profit to fund it' };
     case 'funded':
       return opts.payoutsEnabled
-        ? { label: 'Funded', tone: 'on', detail: 'Funded · claim to add it to your earnings wallet' }
-        : { label: 'Funded', tone: 'on', detail: 'Funded · once payouts start, come back and tap Add to earnings wallet' };
+        ? { label: 'Available', tone: 'on', detail: 'Funded · claim to add it to your earnings wallet' }
+        : { label: 'Available', tone: 'on', detail: 'Funded · once payouts start, come back and tap Add to earnings wallet' };
     case 'credited':
       // A credit is a past event: the money may since have been withdrawn,
       // so the earnings wallet, not this row, shows what is available now.
-      return { label: 'Credited', tone: 'on', detail: 'Added to your earnings wallet' };
+      return { label: 'Paid', tone: 'on', detail: 'Added to your earnings wallet' };
     case 'rejected':
       return { label: 'Rejected', tone: 'off', detail: 'Not approved' };
     case 'reversed':
       return { label: 'Reversed', tone: 'off', detail: 'Reversed by VENTS' };
   }
+}
+
+// The reward lifecycle as the representative sees it, in order. Each stage
+// is exactly one server status (get_my_representative_performance counts
+// them the same way); 'rejected' is shown apart from the lifecycle.
+export const REWARD_STAGES: { status: ClaimStatus; label: string; hint: string }[] = [
+  { status: 'pending_organizer', label: 'Pending', hint: 'Organizer to confirm' },
+  { status: 'pending_review', label: 'Awaiting approval', hint: 'Two VENTS admins review' },
+  { status: 'approved', label: 'Approved', hint: 'Funded from VENTS profit' },
+  { status: 'funded', label: 'Available', hint: 'Add to your earnings wallet' },
+  { status: 'credited', label: 'Paid', hint: 'In your earnings wallet' },
+  { status: 'reversed', label: 'Reversed', hint: 'Taken back by VENTS' },
+];
+
+// A backend function this build calls but the database does not have yet
+// (a migration not applied), or one the read-only Preview refuses. Screens
+// show an honest "not available yet" state for these, never a fake value.
+export function isBackendUnavailable(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const code = error.code ?? '';
+  const msg = error.message ?? '';
+  return code === 'PGRST202' || code === '42883' || code === 'PREVIEW_READ_ONLY'
+    || /could not find the function|does not exist|schema cache/i.test(msg);
 }
 
 const ELIGIBILITY_REASON_TEXT: Record<string, string> = {

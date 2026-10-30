@@ -332,6 +332,7 @@ export type Screen =
   | 'vents-work'
   | 'vents-earnings'
   | 'representative-rewards'
+  | 'representative-dashboard'
   | 'org-dashboard'
   | 'create-event'
   | 'manage-events'

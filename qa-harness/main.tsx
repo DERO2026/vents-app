@@ -45,6 +45,7 @@ import { RepresentativesScreen } from '../src/app/components/RepresentativesScre
 import { VentsWorkScreen } from '../src/app/components/work/VentsWorkScreen';
 import { VentsEarningsScreen } from '../src/app/components/work/VentsEarningsScreen';
 import { RepresentativeRewardsScreen } from '../src/app/components/work/RepresentativeRewardsScreen';
+import { RepresentativeDashboardScreen, type RepTab } from '../src/app/components/work/RepresentativeDashboardScreen';
 import { AdminEarnScreen } from '../src/app/components/admin/AdminEarnScreen';
 import { AdminDashboard } from '../src/app/components/admin/AdminDashboard';
 import { AdminUsersList } from '../src/app/components/admin/AdminUsersList';
@@ -237,6 +238,13 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'representative-dashboard': () => (
     <RepresentativesScreen onBack={() => {}} currentUser={{ id: 'rep-1', role: 'user', full_name: 'Adaeze Okonkwo', username: 'adaeze' }}
       onOpenRewards={() => {}} />
+  ),
+  ...Object.fromEntries((['overview', 'monthly', 'rewards', 'team', 'expenses'] as RepTab[]).map((t) => [
+    `rep-${t}`, () => <RepresentativeDashboardScreen currentUser={{ id: 'rep-1' }} onBack={() => {}} onNavigate={() => {}} initialTab={t} />,
+  ])),
+  'vents-work-provider': () => (
+    <VentsWorkScreen currentUser={{ id: 'org-1', role: 'user', isOrganizer: true, is_service_provider: true, is_verified: true }}
+      onBack={() => {}} onNavigate={() => {}} onOpenCreatorStudio={() => {}} onOpenProviderBookings={() => {}} />
   ),
   'representative-rewards': () => (
     <RepresentativeRewardsScreen currentUser={{ id: 'rep-1' }} onBack={() => {}} onNavigate={() => {}} />

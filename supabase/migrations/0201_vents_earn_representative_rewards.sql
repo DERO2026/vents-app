@@ -1290,6 +1290,86 @@ BEGIN
 END;
 $function$;
 
+-- Representative dashboard: the recruitment funnel, six months of
+-- performance, the reward lifecycle and the earnings wallet, for the caller
+-- only. Read-only. Counts come from the same tables and rules the money
+-- functions use (representative_qualifying_count, the claim statuses); no
+-- figure here is derived or estimated on the client.
+CREATE OR REPLACE FUNCTION public.get_my_representative_performance()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_rep public.recruiters;
+  s public.earn_settings;
+  v_month date := date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;
+  v_wallet jsonb;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  SELECT * INTO v_rep FROM public.recruiters WHERE id = v_uid;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('representative', NULL);
+  END IF;
+  SELECT * INTO s FROM public.earn_settings;
+  -- to_jsonb so columns added later (0203's on_hold_kobo) are read when present.
+  SELECT to_jsonb(w) INTO v_wallet FROM public.organizer_wallets w WHERE w.organizer_id = v_uid;
+
+  RETURN jsonb_build_object(
+    'representative', jsonb_build_object('status', v_rep.status, 'created_at', v_rep.created_at),
+    'programme_open', s.legacy_commission_reconciled,
+    'payouts_enabled', s.payouts_enabled,
+    'current_month', v_month,
+    'rate_review_threshold', s.rate_review_threshold,
+    'base_reward_kobo', s.base_reward_kobo,
+    'settlement_hold_days', s.settlement_hold_days,
+    'funnel', jsonb_build_object(
+      'invitations_sent', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid),
+      'invitations_pending', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'pending'),
+      'invitations_accepted', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status IN ('accepted', 'revoked')),
+      'invitations_declined', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'declined'),
+      'partnerships_active', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'accepted'),
+      'organizers_attributed', (SELECT count(*) FROM public.representative_attributions a WHERE a.representative_id = v_uid),
+      'organizers_hosting', (SELECT count(DISTINCT a.organizer_id) FROM public.representative_attributions a
+                               JOIN public.events ev ON ev.organizer_id = a.organizer_id
+                              WHERE a.representative_id = v_uid AND ev.created_at >= a.attributed_at AND ev.deleted_at IS NULL),
+      'organizers_qualified', (SELECT count(DISTINCT c.organizer_id) FROM public.representative_reward_claims c
+                                WHERE c.representative_id = v_uid AND c.status IN ('approved', 'funded', 'credited')),
+      'organizers_paid', (SELECT count(DISTINCT c.organizer_id) FROM public.representative_reward_claims c
+                           WHERE c.representative_id = v_uid AND c.status = 'credited')),
+    'lifecycle', (SELECT jsonb_object_agg(st, jsonb_build_object('count', n, 'amount_kobo', amt))
+                    FROM (SELECT x.st, count(c.id) AS n, COALESCE(sum(c.amount_kobo), 0) AS amt
+                            FROM unnest(ARRAY['pending_organizer', 'pending_review', 'approved', 'funded', 'credited',
+                                              'rejected', 'reversed']) AS x(st)
+                            LEFT JOIN public.representative_reward_claims c
+                              ON c.status = x.st AND c.representative_id = v_uid
+                           GROUP BY x.st) q),
+    'months', (SELECT jsonb_agg(jsonb_build_object(
+                  'month', m.month,
+                  'qualifying', public.representative_qualifying_count(v_uid, m.month),
+                  'rate_kobo', public.representative_reward_rate_kobo(v_uid, m.month),
+                  'submitted', (SELECT count(*) FROM public.representative_reward_claims c
+                                 WHERE c.representative_id = v_uid AND c.reward_month = m.month),
+                  'paid_kobo', (SELECT COALESCE(sum(c.amount_kobo), 0) FROM public.representative_reward_claims c
+                                 WHERE c.representative_id = v_uid AND c.reward_month = m.month AND c.status = 'credited'))
+                  ORDER BY m.month DESC)
+                 FROM (SELECT (v_month - make_interval(months => g))::date AS month FROM generate_series(0, 5) g) m),
+    'expenses', (SELECT jsonb_object_agg(st, jsonb_build_object('count', n, 'amount_kobo', amt))
+                   FROM (SELECT x.st, count(e.id) AS n, COALESCE(sum(e.amount_kobo), 0) AS amt
+                           FROM unnest(ARRAY['submitted', 'approved', 'rejected']) AS x(st)
+                           LEFT JOIN public.representative_expenses e ON e.status = x.st AND e.representative_id = v_uid
+                          GROUP BY x.st) q),
+    'wallet', jsonb_build_object(
+      'balance_kobo', COALESCE((v_wallet->>'balance_kobo')::bigint, 0),
+      'pending_kobo', COALESCE((v_wallet->>'pending_kobo')::bigint, 0),
+      'on_hold_kobo', COALESCE((v_wallet->>'on_hold_kobo')::bigint, 0))
+  );
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.get_my_referral_confirmations()
  RETURNS jsonb
  LANGUAGE sql
@@ -1440,6 +1520,7 @@ BEGIN
     'public.claim_representative_reward(uuid,uuid)',
     'public.submit_representative_expense(text,bigint,text,date,uuid,uuid)',
     'public.get_my_representative_rewards()',
+    'public.get_my_representative_performance()',
     'public.get_my_referral_confirmations()',
     'public.admin_get_vents_earn_overview()',
     'public.admin_get_event_profit_candidate(uuid)'

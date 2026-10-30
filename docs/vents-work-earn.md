@@ -166,3 +166,24 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 - **`src/lib/representativeRewards.security.test.ts`:** static invariants.
 - **`src/lib/workRoles.test.ts`:** role state machine.
 - **`src/app/components/work/ventsWork.render.test.tsx`:** the screens.
+
+
+## Representative dashboard (Batch E)
+
+`RepresentativeDashboardScreen` (route `representative-dashboard`), opened from the VENTS Work hub (Representative row and shortcut) and from the Representatives screen.
+
+| Tab | Shows | Source | Actions |
+|---|---|---|---|
+| Overview | earnings wallet (withdrawable, withdrawal pending, on hold), this month's qualifying organizers against the rate-review threshold, recruitment funnel (invited → accepted → attributed → hosted → qualified → paid), reward lifecycle with counts and amounts | `get_my_representative_performance()` (0201, read-only); before 0201, invitation counts from `recruiter_partnerships` | Withdraw (earnings wallet), Invite |
+| Monthly | last six months: qualifying count, rate, submitted, paid | same | — |
+| Rewards | every claim, filterable by stage: Pending → Awaiting approval → Approved → Available → Paid → Reversed (Rejected separately); referred organizers | `get_my_representative_rewards()` | Submit for review, Claim / Add to earnings wallet (one idempotency key per attempt), Open earnings wallet |
+| Team | active partnerships, invitations awaiting a reply, history | `recruiter_partnerships` (RLS) | Find and invite, Withdraw invitation, End partnership (confirmed first) |
+| Expenses | totals by status, filter, decision reasons, submission | `get_my_representative_rewards()` + performance totals | Send for approval (two admins decide) |
+
+**Rules shown are the server's rules:**
+- the qualifying event ended and finished its 7-day settlement;
+- the organizer is verified and confirms the referral;
+- two admins review;
+- rewards are paid into the earnings wallet once VENTS profit covers them.
+
+**When the 0201 functions are missing or refused:** a missing function, or the read-only Preview refusing one, shows "Representative rewards are not switched on yet". No reward figures are shown in that state, and invitation counts and the team still work. A real error (for example, not authenticated) is shown as an error.

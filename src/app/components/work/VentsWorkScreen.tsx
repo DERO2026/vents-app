@@ -8,7 +8,7 @@ import { CACVerificationScreen } from '../SettingsScreen';
 import { OrganizerRequestSheet } from './OrganizerRequestSheet';
 import { useWorkStatus, type WorkUser } from './useWorkStatus';
 import {
-  workPage, workScroll, WorkBar, MLabel, MCard, Row, Ico, Pill, Tiles, Tile, ErrorNote, WorkButton,
+  workPage, workScroll, WorkBar, MLabel, MCard, Row, Ico, Pill, Tiles, Tile, ErrorNote, WorkButton, Chev,
 } from './workUi';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -18,11 +18,13 @@ interface Confirmation { id: string; status: string; representative_name: string
 // VENTS Work hub (approved mockup B): earnings first, then roles, then
 // opportunities. Every role row opens that role's existing flow in
 // whatever state the person is in; nothing here grants a capability.
-export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreatorStudio }: {
+export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreatorStudio, onOpenProviderBookings }: {
   currentUser: (WorkUser & { full_name?: string | null; email?: string }) | null;
   onBack: () => void;
   onNavigate: (screen: string) => void;
   onOpenCreatorStudio: () => void;
+  // Opens the caller's own provider bookings (resolves their provider id).
+  onOpenProviderBookings?: () => void;
 }) {
   const status = useWorkStatus(currentUser);
   const [withdrawableKobo, setWithdrawableKobo] = useState<number | null>(null);
@@ -54,6 +56,7 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
 
   const isStaff = currentUser.role === 'admin' || currentUser.role === 'sub-admin' || currentUser.id === ROOT_UID;
   const isVerified = currentUser.is_verified === true || currentUser.id === ROOT_UID;
+  const isProviderActive = currentUser.is_service_provider === true && status.providerProfileStatus !== 'suspended';
   const rows: { row: RoleRow; icon: { tone: 'p' | 'c'; glyph: string } }[] = [
     { row: organizerRole({ isOrganizer: !!currentUser.isOrganizer, isStaff, isVerified, request: status.organizerRequest }), icon: { tone: 'p', glyph: '★' } },
     { row: providerRole({ isProvider: currentUser.is_service_provider === true, isStaff, request: status.providerRequest, profileStatus: status.providerProfileStatus }), icon: { tone: 'c', glyph: '✦' } },
@@ -67,7 +70,9 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
       case 'organizer-studio': onOpenCreatorStudio(); break;
       case 'provider-verify': onNavigate('service-provider-verify'); break;
       case 'provider-setup': onNavigate('service-provider-setup'); break;
-      case 'representative': onNavigate('representatives'); break;
+      // An active representative lands on their dashboard; anyone else on
+      // the existing join / invitations screen.
+      case 'representative': onNavigate(status.representative === 'active' ? 'representative-dashboard' : 'representatives'); break;
       case 'support': onNavigate('help-support'); break;
       case 'none': break;
     }
@@ -137,6 +142,34 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
               onClick={status.loading || row.action === 'none' ? undefined : () => open(row.action)} />
           ))}
         </MCard>
+
+        {/* Shortcuts for the roles the person actually holds, each opening an
+            existing screen. Shown only once the role is active. */}
+        {!status.loading && (currentUser.isOrganizer || isProviderActive || status.representative === 'active') && (
+          <>
+            <MLabel>Shortcuts</MLabel>
+            <MCard testId="work-shortcuts">
+              {currentUser.isOrganizer && (
+                <>
+                  <Row testId="shortcut-studio" icon={<Ico tone="p">★</Ico>} title="Creator Studio" sub="Create and manage your events" right={<Chev />} onClick={onOpenCreatorStudio} />
+                  <Row testId="shortcut-events" icon={<Ico tone="p">☰</Ico>} title="Manage events" sub="Edit, sales and attendees" right={<Chev />} onClick={() => onNavigate('manage-events')} />
+                </>
+              )}
+              {isProviderActive && (
+                <>
+                  {onOpenProviderBookings && (
+                    <Row testId="shortcut-bookings" icon={<Ico tone="c">✦</Ico>} title="Service bookings" sub="Confirm, complete and refund bookings" right={<Chev />} onClick={onOpenProviderBookings} />
+                  )}
+                  <Row testId="shortcut-services" icon={<Ico tone="c">✎</Ico>} title="Your services" sub="Profile, services and location" right={<Chev />} onClick={() => onNavigate('service-provider-setup')} />
+                </>
+              )}
+              {status.representative === 'active' && (
+                <Row testId="shortcut-representative" icon={<Ico tone="p">⇄</Ico>} title="Representative dashboard" sub="Funnel, monthly performance, rewards and team" right={<Chev />} onClick={() => onNavigate('representative-dashboard')} />
+              )}
+              <Row testId="shortcut-wallet" icon={<Ico tone="g">₦</Ico>} title="Earnings wallet" sub="Withdraw to your bank · statement" right={<Chev />} onClick={() => onNavigate('wallet')} />
+            </MCard>
+          </>
+        )}
 
         <MLabel>Opportunities</MLabel>
         <MCard>

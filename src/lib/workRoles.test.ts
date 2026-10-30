@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { organizerRole, providerRole, representativeRole, claimStateView, formatNaira, toRequestStatus } from './workRoles';
+import { organizerRole, providerRole, representativeRole, claimStateView, formatNaira, toRequestStatus, REWARD_STAGES, isBackendUnavailable } from './workRoles';
 
 // VENTS Work role rows: every state in approved mockup E, for all three roles.
 
@@ -60,16 +60,37 @@ describe('reward claim states', () => {
     claimStateView(s, { payoutsEnabled, fundingAvailable });
   it('maps every server status to a clear earning state', () => {
     expect(v('pending_organizer').label).toBe('Pending');
-    expect(v('pending_review').label).toBe('Pending');
+    expect(v('pending_review').label).toBe('Awaiting approval');
     expect(v('approved').detail).toMatch(/Waiting for VENTS profit/);
     expect(v('approved', false, true).detail).toBe('Ready to claim');
     expect(v('funded').detail).toMatch(/once payouts start, come back and tap Add to earnings wallet/);
     expect(v('funded', true).detail).toMatch(/claim to add it/);
     // Historical: the reward may since have been withdrawn.
-    expect(v('credited').label).toBe('Credited');
+    expect(v('funded').label).toBe('Available');
+    expect(v('credited').label).toBe('Paid');
     expect(v('credited').detail).toBe('Added to your earnings wallet');
     expect(v('rejected').label).toBe('Rejected');
     expect(v('reversed').label).toBe('Reversed');
+  });
+});
+
+describe('reward lifecycle', () => {
+  it('lists the approved stages in order, each a single server status', () => {
+    expect(REWARD_STAGES.map((s) => s.label)).toEqual(['Pending', 'Awaiting approval', 'Approved', 'Available', 'Paid', 'Reversed']);
+    expect(new Set(REWARD_STAGES.map((s) => s.status)).size).toBe(REWARD_STAGES.length);
+  });
+  it('labels match claimStateView for every stage', () => {
+    for (const st of REWARD_STAGES) expect(claimStateView(st.status, { payoutsEnabled: true, fundingAvailable: true }).label).toBe(st.label);
+  });
+});
+
+describe('isBackendUnavailable', () => {
+  it('recognises a missing function and the read-only Preview, nothing else', () => {
+    expect(isBackendUnavailable({ code: 'PGRST202', message: 'Could not find the function' })).toBe(true);
+    expect(isBackendUnavailable({ code: 'PREVIEW_READ_ONLY' })).toBe(true);
+    expect(isBackendUnavailable({ message: 'function public.x() does not exist' })).toBe(true);
+    expect(isBackendUnavailable({ message: 'Not authenticated' })).toBe(false);
+    expect(isBackendUnavailable(null)).toBe(false);
   });
 });
 
