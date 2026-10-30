@@ -46,15 +46,22 @@ describe('Become an Organizer: no instant self-promotion path', () => {
   it('setActiveView passed to ProfileScreen never grants the organizer role itself -- it only switches nav state for an account that already has it', () => {
     const wiring = appTsxSrc.match(/setActiveView=\{\(view\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? '';
     expect(wiring).not.toMatch(/promote_to_organizer/);
-    // Guards against switching the view to 'organizer' for an account that
-    // holds neither the independent Organizer capability (isOrganizer) nor
-    // the admin role.
-    expect(wiring).toMatch(/currentUser\.isOrganizer[\s\S]*?return;/);
+    expect(wiring).toMatch(/if \(view === 'organizer'\) \{\s*openCreatorStudio\(\);/);
+    // openCreatorStudio (shared with VENTS Work) guards against switching
+    // the view to 'organizer' for an account that holds neither the
+    // independent Organizer capability (isOrganizer) nor the admin role.
+    const studio = appTsxSrc.match(/const openCreatorStudio = useCallback\(\(\) => \{[\s\S]*?\}, \[currentUser\]\);/)?.[0] ?? '';
+    expect(studio).not.toMatch(/promote_to_organizer/);
+    expect(studio).toMatch(/if \(!currentUser \|\| !\(currentUser\.isOrganizer \|\| currentUser\.role === 'admin'\)\) return;/);
   });
 
-  it('"Become an Organizer" in ProfileScreen submits an application to organizer_requests, reviewed elsewhere', () => {
-    expect(profileScreenSrc).toMatch(/onClick=\{\(\) => setShowOrgRequestModal\(true\)\}/);
-    expect(profileScreenSrc).toMatch(/\.from\('organizer_requests'\)\s*\n\s*\.insert\(\[\{ user_id: currentUser\.id/);
+  it('"Become an Organizer" (VENTS Work) submits an application to organizer_requests, reviewed elsewhere', () => {
+    const components = join(__dirname, '..', 'app', 'components', 'work');
+    const hub = readFileSync(join(components, 'VentsWorkScreen.tsx'), 'utf8');
+    const sheet = readFileSync(join(components, 'OrganizerRequestSheet.tsx'), 'utf8');
+    expect(hub).toMatch(/case 'organizer-apply': setShowOrgSheet\(true\); break;/);
+    expect(sheet).toMatch(/\.from\('organizer_requests'\)\s*\n\s*\.insert\(\[\{ user_id: userId/);
+    expect(hub + sheet).not.toMatch(/promote_to_organizer/);
   });
 });
 

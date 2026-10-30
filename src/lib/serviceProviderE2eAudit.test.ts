@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { providerRole } from './workRoles';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -55,12 +56,16 @@ describe('ServiceProviderVerificationScreen: an approved applicant never sees th
 });
 
 describe('Admin/Sub-Admin Services access: bypasses capability gate, RLS-protected server-side', () => {
-  it('ProfileScreen computes canAccessProviderSetup from role OR capability, not capability alone', () => {
-    expect(profileScreenSrc).toMatch(/const canAccessProviderSetup = currentUser\?\.is_service_provider === true \|\| isAdminOrSubAdminForServices \|\| spRequestStatus === 'approved';/);
+  it('VENTS Work grants provider setup from role OR capability OR an approved request, not capability alone', () => {
+    const base = { isProvider: false, isStaff: false, request: 'none' as const, profileStatus: null };
+    expect(providerRole(base).action).toBe('provider-verify');
+    expect(providerRole({ ...base, isProvider: true }).action).toBe('provider-setup');
+    expect(providerRole({ ...base, isStaff: true }).action).toBe('provider-setup');
+    expect(providerRole({ ...base, request: 'approved' }).action).toBe('provider-setup');
   });
 
-  it('both the setup button and the own-listing fetch gate on canAccessProviderSetup', () => {
-    expect(profileScreenSrc).toMatch(/if \(!currentUser\?\.id \|\| !canAccessProviderSetup\)/);
-    expect(profileScreenSrc).toMatch(/\{canAccessProviderSetup \? \(/);
+  it('the hub passes staff status (admin, sub-admin, root) into the provider row', () => {
+    const hub = readFileSync(join(__dirname, '..', 'app', 'components', 'work', 'VentsWorkScreen.tsx'), 'utf8');
+    expect(hub).toMatch(/providerRole\(\{ isProvider: currentUser\.is_service_provider === true, isStaff,/);
   });
 });

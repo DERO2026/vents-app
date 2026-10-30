@@ -20,54 +20,56 @@ import { join } from 'node:path';
 // direct privileged access instead) -- no code defect found. Tests below
 // lock that correct behavior in against regression.
 
+// The Become-an-Organizer / Become-a-Service-Provider entry points moved
+// from Profile into the VENTS Work hub; their state machine is
+// workRoles.organizerRole / providerRole, tested here by behavior.
+import { organizerRole, providerRole, type ProviderInputs } from './workRoles';
+
 let profileScreenSrc: string;
+let hubSrc: string;
 
 beforeAll(() => {
-  profileScreenSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'ProfileScreen.tsx'), 'utf8');
+  const components = join(__dirname, '..', 'app', 'components');
+  profileScreenSrc = readFileSync(join(components, 'ProfileScreen.tsx'), 'utf8');
+  hubSrc = readFileSync(join(components, 'work', 'VentsWorkScreen.tsx'), 'utf8');
 });
+
+const sp = (o: Partial<ProviderInputs> = {}): ProviderInputs =>
+  ({ isProvider: false, isStaff: false, request: 'none', profileStatus: null, ...o });
 
 describe('Issue 3: approved Service Provider application is never a dead end', () => {
   it('tracks the real DB status (pending vs approved) instead of collapsing both into one bucket', () => {
-    expect(profileScreenSrc).toMatch(/useState<'idle' \| 'pending' \| 'approved'>\('idle'\)/);
-    expect(profileScreenSrc).toMatch(/setSpRequestStatus\(data\.status === 'rejected' \? 'idle' : data\.status === 'approved' \? 'approved' : 'pending'\)/);
+    expect(providerRole(sp({ request: 'pending' })).action).toBe('provider-verify');
+    expect(providerRole(sp({ request: 'approved' })).action).toBe('provider-setup');
   });
 
-  it('canAccessProviderSetup trusts spRequestStatus === \'approved\' directly, not only the possibly-stale currentUser.is_service_provider poll', () => {
-    const line = profileScreenSrc.match(/const canAccessProviderSetup = [^\n]+;/)?.[0] ?? '';
-    expect(line).toMatch(/spRequestStatus === 'approved'/);
+  it('an approved request opens setup directly, not only once the possibly-stale is_service_provider poll catches up', () => {
+    expect(providerRole(sp({ request: 'approved', isProvider: false })).action).toBe('provider-setup');
   });
 
-  it('the pending-application CTA is always clickable (opens the application/status view) -- never a no-op click', () => {
-    const block = profileScreenSrc.match(/\) : \(\s*<div className="px-4 mb-3">\s*\{\/\* Pending is the ONLY state[\s\S]*?<\/div>\s*\)\}/)?.[0] ?? '';
-    expect(block).toMatch(/onClick=\{\(\) => onNavigate\('service-provider-verify'\)\}/);
-    // The old dead-click bug pattern.
-    expect(block).not.toMatch(/if \(spRequestStatus === 'already'\) return;/);
+  it('the pending-application row is always clickable (opens the application/status view) -- never a no-op click', () => {
+    const r = providerRole(sp({ request: 'pending' }));
+    expect(r.pill.label).toBe('In review');
+    expect(hubSrc).toMatch(/case 'provider-verify': onNavigate\('service-provider-verify'\); break;/);
   });
 
   it('an approved application routes straight to provider setup, not back into the application-status screen', () => {
-    // canAccessProviderSetup being true (which now includes the 'approved'
-    // case) renders the setup/edit branch, not the application CTA branch --
-    // so 'approved' never reaches the pending-style button at all.
-    expect(profileScreenSrc).toMatch(/\{canAccessProviderSetup \? \(/);
+    expect(hubSrc).toMatch(/case 'provider-setup': onNavigate\('service-provider-setup'\); break;/);
   });
 });
 
 describe('Issues 4 & 5: Become an Organizer / Become a Service Provider capability gating', () => {
   it('a normal user (not organizer/admin/sub-admin) sees "Become an Organizer"', () => {
-    expect(profileScreenSrc).toMatch(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/);
-    expect(profileScreenSrc).toMatch(/Become an Organizer/);
+    expect(organizerRole({ isOrganizer: false, isStaff: false, isVerified: false, request: 'none' }).subtitle).toBe('Become an Organizer');
   });
 
   it('admin and sub-admin are explicitly excluded from the Become-an-Organizer application CTA', () => {
-    const gate = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \([\s\S]*?\)\}\n\n\s*\{\/\* Become Organizer modal/)?.[0] ?? '';
-    expect(gate).toMatch(/!isAdmin && !isSubAdmin/);
+    expect(organizerRole({ isOrganizer: false, isStaff: true, isVerified: false, request: 'none' }).action).toBe('organizer-studio');
+    expect(hubSrc).toMatch(/const isStaff = currentUser\.role === 'admin' \|\| currentUser\.role === 'sub-admin' \|\| currentUser\.id === ROOT_UID;/);
   });
 
   it('admin/sub-admin/root get direct Service Provider setup access, never the application CTA', () => {
-    const line = profileScreenSrc.match(/const isAdminOrSubAdminForServices = [^\n]+;/)?.[0] ?? '';
-    expect(line).toMatch(/currentUser\?\.role === 'admin' \|\| currentUser\?\.role === 'sub-admin' \|\| currentUser\?\.id === ROOT_UID/);
-    const canAccessLine = profileScreenSrc.match(/const canAccessProviderSetup = [^\n]+;/)?.[0] ?? '';
-    expect(canAccessLine).toMatch(/isAdminOrSubAdminForServices/);
+    expect(providerRole(sp({ isStaff: true })).action).toBe('provider-setup');
   });
 
   it('admin/sub-admin retain direct Admin Dashboard access', () => {

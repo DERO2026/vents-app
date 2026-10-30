@@ -417,10 +417,11 @@ describe('RepresentativesScreen', () => {
     expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
   });
 
-  it('describes the commission arrangement as the full, fixed VENTS commission -- never "5%" or a negotiable split', async () => {
+  it('describes the fixed ₦50,000 qualifying-organizer reward -- never the retired 10% commission, "5%" or a negotiable split', async () => {
     recruiterRowExists = false;
     await mount();
-    expect(container.textContent).toMatch(/full commission/i);
+    expect(container.textContent).toMatch(/₦50,000 reward/);
+    expect(container.textContent).not.toMatch(/10%|commission/i);
     expect(container.textContent).not.toMatch(/5%/);
     expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
   });

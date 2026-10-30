@@ -50,6 +50,13 @@ function describe(r: ActionRequest): string {
     reject_payout: `${who} requested to reject a payout`,
     toggle_user_verified: `${who} requested to change verification of ${label}`,
     credit_vents_cents: `${who} requested to credit ${r.payload?.amount ?? '?'} VC to ${label}`,
+    earn_approve_reward: `${who} requested to APPROVE a representative reward (${label})`,
+    earn_reject_reward: `${who} requested to reject a representative reward (${label})`,
+    earn_reverse_reward: `${who} requested to REVERSE a representative reward (${label})`,
+    earn_recognize_event_profit: `${who} requested to recognize realized profit (${label})`,
+    earn_set_monthly_rate: `${who} requested a higher representative rate (${label})`,
+    earn_decide_expense: `${who} requested an expense decision (${label})`,
+    earn_update_settings: `${who} requested a VENTS Earn settings change (${label})`,
   };
   return map[r.action_type] || `${who} requested: ${r.action_type} ${label}`;
 }
