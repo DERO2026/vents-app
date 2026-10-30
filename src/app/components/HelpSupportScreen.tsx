@@ -42,7 +42,11 @@ const FAQS = [
   },
   {
     q: 'How do organisers withdraw their earnings?',
-    a: 'Go to your Organiser Dashboard → Wallet → Withdraw. Enter your bank details and the amount. Ticket earnings become withdrawable 48 hours after your event ends (service earnings 48 hours after the booking is completed). Each withdrawal is approved by two VENTS admins, then usually arrives within 1–3 business days. Minimum withdrawal is ₦100.',
+    a: 'Go to your Organiser Dashboard → Wallet → Withdraw. Enter your bank details and the amount. Ticket earnings become withdrawable 48 hours after your event ends (service earnings 48 hours after the booking is marked completed, or after its scheduled time if that is later). Earnings stay on hold while a refund, a payment dispute or a VENTS review affecting them is open. Each withdrawal is approved by two VENTS admins before it is sent; how long it then takes to arrive depends on our payment provider and your bank. Minimum withdrawal is ₦100.',
+  },
+  {
+    q: 'Something went wrong with a service booking. What can I do?',
+    a: 'Open My Service Bookings and tap "Report a problem" on the completed booking. You can do this for 48 hours after it is marked completed (or after its scheduled time, if that is later). VENTS keeps the provider\'s payment for that booking on hold while we review what happened.',
   },
   {
     q: 'How do I delete my account?',

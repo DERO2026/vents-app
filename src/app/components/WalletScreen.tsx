@@ -45,6 +45,10 @@ const HOLD_BLOCKER_TEXT: Record<string, string> = {
   event_deleted: 'the event was removed',
   event_hidden_by_admin: 'the event is under review',
   booking_cancelled: 'the booking was cancelled',
+  refund_pending_unlinked: 'a refund on this event is being processed',
+  customer_dispute: 'the customer reported a problem; VENTS is reviewing it',
+  dispute_upheld: 'VENTS upheld the customer\'s complaint',
+  event_end_unknown: 'the event has no end time',
 };
 
 // A ledger row's metadata is a free-form jsonb column -- older rows (or

@@ -139,6 +139,16 @@ async function readRawBody(req): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+const DISPUTE_EVENTS = new Set(['charge.dispute.create', 'charge.dispute.remind', 'charge.dispute.resolve']);
+
+// Every place a dispute payload might carry the disputed payment's
+// reference (see the dispute block in the webhook handler), de-duplicated,
+// strings only, in order of confidence.
+export function disputeReferenceCandidates(data: any): string[] {
+  const raw = [data?.transaction?.reference, data?.transaction_reference, data?.reference];
+  return [...new Set(raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim()))];
+}
+
 export default async function handler(req, res) {
   // F17 follow-up: a request stream that errors mid-read (client
   // disconnect, proxy reset, etc.) must not escape as an uncaught
@@ -742,19 +752,26 @@ async function handleWebhook(req, res, rawBody: Buffer) {
   // ── Payment disputes (chargebacks) ─────────────────────────────────────
   // 0203: a dispute on a ticket or booking payment freezes that sale's held
   // earnings (an admin hold, never lifted automatically) so they cannot be
-  // withdrawn while Paystack decides. Already-released earnings are logged
-  // for an admin instead. Idempotent per dispute id; resolutions are left to
-  // an admin (admin_set_earnings_hold), who sees the outcome in Paystack.
-  if (event?.event === 'charge.dispute.create' || event?.event === 'charge.dispute.remind') {
-    const disputedReference = event.data?.transaction?.reference;
+  // withdrawn while Paystack decides; charge.dispute.resolve only records
+  // Paystack's outcome for the admin who lifts the hold.
+  //
+  // The payload shape is NOT verified against Paystack's own documentation
+  // here (paystack.com is unreachable from where this was written). A
+  // third-party SDK types data.transaction as the full charge (with
+  // .reference) and also has a top-level data.reference; Paystack's dispute
+  // API object is commonly shown with data.transaction_reference. So every
+  // candidate is passed and the database uses the first that names a held
+  // sale or booking; an event naming none is logged for admins, not lost.
+  if (DISPUTE_EVENTS.has(event?.event)) {
+    const candidates = disputeReferenceCandidates(event.data);
     const disputeId = event.data?.id != null ? String(event.data.id) : null;
-    if (!disputedReference) {
-      console.error('[Paystack webhook] dispute event missing transaction.reference', event.data?.id);
+    if (candidates.length === 0) {
+      console.error('[Paystack webhook] dispute event has no usable reference', event.data?.id);
       return res.status(200).json({ received: true });
     }
     try {
-      const status = await callProjectAdminRpc<string>('place_payment_dispute_hold', [disputedReference, disputeId]);
-      console.log(`[Paystack webhook] ${event.event} -> place_payment_dispute_hold:`, status, 'for', disputedReference);
+      const status = await callProjectAdminRpc<string>('place_payment_dispute_hold', [candidates, disputeId, event.event]);
+      console.log(`[Paystack webhook] ${event.event} -> place_payment_dispute_hold:`, status, 'for', candidates.join(','));
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
       hadTransientFailure = true;

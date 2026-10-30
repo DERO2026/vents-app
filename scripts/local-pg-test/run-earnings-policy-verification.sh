@@ -67,6 +67,7 @@ E_W1="00000000-0000-0000-0000-0000000003e5"
 E_S2="00000000-0000-0000-0000-0000000003e6"
 E_B1="00000000-0000-0000-0000-0000000003e7"
 E_B2="00000000-0000-0000-0000-0000000003e8"
+E_B3="00000000-0000-0000-0000-0000000003e9"
 ORG3="00000000-0000-0000-0000-0000000003a4"
 EVENT2="00000000-0000-0000-0000-0000000003e2"
 BANK="00000000-0000-0000-0000-0000000003d1"
@@ -151,6 +152,7 @@ INSERT INTO public.events (id, organizer_id, title, event_date, status, ticket_t
   ('$E_S2', '$ORG', 'Second season', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
   ('$E_B1', '$ORG3', 'Blockers 1', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
   ('$E_B2', '$ORG3', 'Blockers 2', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_B3', '$ORG3', 'Reported', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
   ('$EVENT2', '$ORG_ADMIN', 'Admin gig', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 5000}]');
 INSERT INTO public.promo_codes (code, discount_percentage) VALUES ('TEN', 10);
 INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_code, account_number, account_name, recipient_code, is_active) VALUES
@@ -284,13 +286,21 @@ B1X=$(buy "$BUYER2" "$E_B1" 1); confirm "$B1X" 1040000 >/dev/null
 B2=$(buy "$BUYER" "$E_B2" 1); confirm "$B2" 1040000 >/dev/null
 end_event "$E_B1"
 "${PSQL[@]}" -q -c "$(as "$ORG3" "SELECT public.refund_ticket('$(first_ticket "$B1X")', 'duplicate order');")" >/dev/null
-expect_value "a pending refund on the event blocks the release of its other sales" "$(blockers "$B1")/$(settle "$ORG3")" \
-  'refund_pending/{"released_kobo": 0, "recovered_kobo": 0}'
+expect_value "a refund in progress holds only its own order: the other sale on the event releases" \
+  "$(blockers "$B1X")/$(blockers "$B1")/$(settle "$ORG3")" 'refund_pending//{"released_kobo": 950000, "recovered_kobo": 0}'
 "${PSQL[@]}" -q -c "UPDATE public.tickets SET refund_id = 'RF_b1x' WHERE id = '$(first_ticket "$B1X")';"
-"${PSQL[@]}" -q -c "SELECT public.finalize_ticket_refund('RF_b1x');" >/dev/null
-expect_value "once the refund completes, the sale releases" "$(blockers "$B1")/$(settle "$ORG3")" \
-  '/{"released_kobo": 950000, "recovered_kobo": 0}'
+# The refund webhook and a settlement race: both serialize on the wallet;
+# the refund takes the order's own held net, and nothing is released twice.
+( "${PSQL[@]}" -tA -c "BEGIN; SELECT status FROM public.finalize_ticket_refund('RF_b1x'); SELECT pg_sleep(1); COMMIT;" >"$TMP/f1" 2>&1 & )
+sleep 0.3
+"${PSQL[@]}" -tA -c "SET test.uid='$ORG3'; SELECT public.settle_my_earnings();" >"$TMP/f2" 2>&1; sleep 1
+expect_value "refund completion racing a settlement: refunded from its hold, nothing released" \
+  "$(grep -c finalized "$TMP/f1")/$(hold_of "$B1X")/$(wallet "$ORG3")" "1/0/950000/0/950000/0/950000"
+expect_value "a duplicate refund webhook is a no-op" "$(val "SELECT status FROM public.finalize_ticket_refund('RF_b1x');")/$(wallet "$ORG3")" "already_refunded/950000/0/950000"
+"${PSQL[@]}" -q -c "INSERT INTO public.tickets (id, event_id, amount, payment_status, status, payment_ref) VALUES ('00000000-0000-0000-0000-0000000003ff', '$E_B2', 10000, 'refund_pending', 'cancelled', NULL);"
 end_event "$E_B2"
+expect_value "a refund that cannot be tied to an order holds the whole event (conservative)" "$(blockers "$B2")" "refund_pending_unlinked"
+"${PSQL[@]}" -q -c "UPDATE public.tickets SET payment_status = 'refunded' WHERE id = '00000000-0000-0000-0000-0000000003ff';"
 expect_value "after its end + 48h, a sale has no blockers" "$(blockers "$B2")" ""
 "${PSQL[@]}" -q -c "UPDATE public.events SET end_date = now() + interval '1 day' WHERE id = '$E_B2';"
 expect_value "postponing the event delays the release" "$(blockers "$B2")" "not_yet"
@@ -305,7 +315,11 @@ expect_value "a deleted event blocks the release" "$(blockers "$B2")" "event_del
 "${PSQL[@]}" -q -c "UPDATE public.events SET deleted_at = NULL WHERE id = '$E_B2';"
 HB2=$(val "SELECT id FROM public.earnings_holds WHERE source_key = '$B2';")
 expect_value "a Paystack dispute freezes the sale's held earnings (idempotent)" \
-  "$(val "SELECT public.place_payment_dispute_hold('$B2', 'DSP_1');")/$(val "SELECT public.place_payment_dispute_hold('$B2', 'DSP_1');")/$(blockers "$B2")" "held/already_held/payment_dispute"
+  "$(val "SELECT public.place_payment_dispute_hold(ARRAY[NULL, '$B2'], 'DSP_1', 'charge.dispute.create');")/$(val "SELECT public.place_payment_dispute_hold(ARRAY['$B2'], 'DSP_1', 'charge.dispute.remind');")/$(blockers "$B2")" "held/already_held/payment_dispute"
+expect_value "a dispute naming no known payment is logged, not lost" \
+  "$(val "SELECT public.place_payment_dispute_hold(ARRAY['nope', ''], 'DSP_X', 'charge.dispute.create');")/$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'payment_dispute_unmatched';")" "not_found/1"
+expect_value "Paystack resolving the dispute is recorded but does not lift the hold" \
+  "$(val "SELECT public.place_payment_dispute_hold(ARRAY['$B2'], 'DSP_1', 'charge.dispute.resolve');")/$(blockers "$B2")/$(val "SELECT dispute_resolution FROM public.earnings_holds WHERE source_key = '$B2';")" "resolution_recorded/payment_dispute/paystack_resolved"
 expect_value "the cron does not release disputed earnings" "$(val "SELECT public.release_matured_earnings()->>'released_kobo';")/$(wallet "$ORG3")" "0/950000/0/950000"
 expect_error "a sub-admin cannot lift a hold" "Super Admin access required" "$(as "$SUB" "SELECT public.admin_set_earnings_hold('$HB2', false, 'x');")"
 expect_error "a hold cannot be lifted without a reason" "A reason is required" "$(as "$ADMIN_B" "SELECT public.admin_set_earnings_hold('$HB2', false, ' ');")"
@@ -318,7 +332,7 @@ expect_value "an admin hold blocks the release" "$(blockers "$B2")/$(settle "$OR
 "${PSQL[@]}" -q -c "$(as "$ADMIN_A" "SELECT public.admin_set_earnings_hold('$HB2', false, 'Complaint closed');")" >/dev/null
 expect_value "lifted, the cron releases it" "$(val "SELECT public.release_matured_earnings()->>'released_kobo';")/$(wallet "$ORG3")" "950000/1900000/0/0"
 expect_value "a dispute after release is logged for admins, not silently ignored" \
-  "$(val "SELECT public.place_payment_dispute_hold('$B2', 'DSP_2');")/$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'payment_dispute_after_release';")" "already_released/1"
+  "$(val "SELECT public.place_payment_dispute_hold(ARRAY['$B2'], 'DSP_2', 'charge.dispute.create');")/$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'payment_dispute_after_release';")" "already_released/1"
 expect_value "the client listing shows release times and blockers, own wallet only" \
   "$(val "$(as "$ORG" "SELECT count(*) FROM public.get_earnings_holds();")")" "0"
 expect_error "an organizer cannot list someone else's holds" "Not authorized" "$(as "$ORG" "SELECT * FROM public.get_earnings_holds('$ORG3');")"
@@ -370,7 +384,8 @@ expect_value "provider cancels: the customer gets the total back, the provider's
 expect_value "a booking refund with nothing to debit becomes a receivable" \
   "$(val "SELECT status FROM public.finalize_service_booking_refund('RF_bk2');")/$(val "SELECT source_kind || '/' || amount_kobo FROM public.earnings_recoveries WHERE owner_id = '$PROV';")" "finalized/service_booking_refund/300000"
 "${PSQL[@]}" -q -c "INSERT INTO public.service_bookings (id, customer_id, provider_id, payment_status, payment_method, payment_ref, subtotal_kobo, fee_kobo, total_kobo) VALUES
-  ('00000000-0000-0000-0000-0000000003f4', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BK3', 200000, 10000, 210000);"
+  ('00000000-0000-0000-0000-0000000003f4', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BK3', 200000, 10000, 210000);
+  UPDATE public.service_bookings SET scheduled_date = (now() AT TIME ZONE 'Africa/Lagos')::date - 4, scheduled_time = '10:00' WHERE id = '00000000-0000-0000-0000-0000000003f4';"
 "${PSQL[@]}" -q -o /dev/null -c "SELECT public.credit_provider_wallet_for_booking('$PROV', 200000, '00000000-0000-0000-0000-0000000003f4', 'Service booking payment');"
 expect_value "a paid booking is held until it is completed, however long it waits" \
   "$(blockers "00000000-0000-0000-0000-0000000003f4")" "not_completed"
@@ -389,6 +404,73 @@ expect_value "a smaller release recovers part of the receivable; the rest stays 
   "$(settle "$PROV")/$(wallet "$PROV")/$(val "SELECT recovered_kobo || '/' || (settled_at IS NULL)::text FROM public.earnings_recoveries WHERE owner_id = '$PROV';")" \
   '{"released_kobo": 200000, "recovered_kobo": 200000}/0/0/0/200000/true'
 expect_value "bookings reconcile" "$(reconciled)" "0"
+
+echo "== Provider completion: no early completion, customer dispute window =="
+BKF="00000000-0000-0000-0000-0000000003f5"; BKN="00000000-0000-0000-0000-0000000003f6"; BKD="00000000-0000-0000-0000-0000000003f7"
+"${PSQL[@]}" -q <<SQL
+INSERT INTO public.service_bookings (id, customer_id, provider_id, payment_status, payment_method, payment_ref, subtotal_kobo, fee_kobo, total_kobo, scheduled_date, scheduled_time) VALUES
+  ('$BKF', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BKF', 100000, 5000, 105000, (now() AT TIME ZONE 'Africa/Lagos')::date + 3, '18:00'),
+  ('$BKN', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BKN', 100000, 5000, 105000, NULL, NULL),
+  ('$BKD', '$BUYER2', '$SP_ID', 'paid', 'paystack', 'BKD', 100000, 5000, 105000, (now() AT TIME ZONE 'Africa/Lagos')::date - 2, '09:00');
+SQL
+for b in "$BKF" "$BKN" "$BKD"; do "${PSQL[@]}" -q -o /dev/null -c "SELECT public.credit_provider_wallet_for_booking('$PROV', 100000, '$b', 'Service booking payment');"; done
+expect_value "the scheduled start is read as Lagos time (18:00 WAT = 17:00 UTC)" \
+  "$(val "SELECT to_char(service_start_floor_at AT TIME ZONE 'UTC', 'HH24:MI') FROM public.service_bookings WHERE id = '$BKF';")" "17:00"
+expect_error "a provider cannot complete a booking before its scheduled time" "before its scheduled time" \
+  "$(as "$PROV" "SELECT public.complete_service_booking('$BKF');")"
+"${PSQL[@]}" -q -c "UPDATE public.service_bookings SET scheduled_date = (now() AT TIME ZONE 'Africa/Lagos')::date - 5 WHERE id = '$BKF';"
+expect_error "moving the booking date earlier does not let the provider complete it early" "before its scheduled time" \
+  "$(as "$PROV" "SELECT public.complete_service_booking('$BKF');")"
+expect_value "the start floor never moves earlier; postponing raises it" \
+  "$(val "SELECT (service_start_floor_at > now())::text FROM public.service_bookings WHERE id = '$BKF';")/$(val "WITH u AS (UPDATE public.service_bookings SET scheduled_date = (now() AT TIME ZONE 'Africa/Lagos')::date + 9 WHERE id = '$BKF' RETURNING (service_start_floor_at > now() + interval '8 days')::text AS ok) SELECT ok FROM u;")" "true/true"
+expect_error "a provider cannot complete a booking that has no scheduled date" "only VENTS can mark it complete" \
+  "$(as "$PROV" "SELECT public.complete_service_booking('$BKN');")"
+expect_error "a direct status write by the table owner is held to the same rule (trigger)" "before its scheduled time" \
+  "UPDATE public.service_bookings SET status = 'completed' WHERE id = '$BKF';"
+expect_ok "an admin who is not the provider may complete it (audited)" "$(as "$ADMIN_A" "SELECT public.complete_service_booking('$BKF');")"
+expect_value "but the provider's 48 hours still start at the scheduled time, not at the early completion" \
+  "$(val "SELECT ((public.earnings_hold_state(id)->>'release_at')::timestamptz = (SELECT service_start_floor_at FROM public.service_bookings WHERE id = '$BKF') + interval '48 hours')::text FROM public.earnings_holds WHERE booking_id = '$BKF';")/$(blockers "$BKF")" "true/not_yet"
+expect_value "the admin completion is in the audit log" "$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'complete_service_booking' AND admin_id = '$ADMIN_A' AND details->>'booking_id' = '$BKF';")" "1"
+expect_ok "a provider completes a booking once its time has passed" "$(as "$PROV" "SELECT public.complete_service_booking('$BKD');")"
+expect_error "only the customer can dispute" "Only the customer" "$(as "$BUYER" "SELECT public.dispute_service_booking('$BKD', 'not my booking');")"
+expect_error "an uncompleted booking cannot be disputed" "Only a completed booking" "$(as "$BUYER" "SELECT public.dispute_service_booking('$BKN', 'not done yet');")"
+# Two dispute attempts at once: one wins, the other is refused.
+( "${PSQL[@]}" -tA -c "BEGIN; SET LOCAL test.uid='$BUYER2'; SET LOCAL ROLE authenticated; SELECT public.dispute_service_booking('$BKD', 'Provider never showed up'); SELECT pg_sleep(1); COMMIT;" >"$TMP/d1" 2>&1 & )
+sleep 0.3
+"${PSQL[@]}" -tA -c "SET test.uid='$BUYER2'; SET ROLE authenticated; SELECT public.dispute_service_booking('$BKD', 'Provider never showed up');" >"$TMP/d2" 2>&1 || true; sleep 1
+expect_value "two simultaneous disputes: exactly one is opened" \
+  "$(cat "$TMP/d1" "$TMP/d2" | grep -c '"status": "open"')/$(grep -c 'already been disputed' "$TMP/d2")/$(val "SELECT count(*) FROM public.service_booking_disputes WHERE booking_id = '$BKD';")" "1/1/1"
+complete_ago "$BKD"
+expect_value "an open dispute keeps the earnings held after 48 hours" "$(blockers "$BKD")/$(val "SELECT public.release_matured_earnings()->>'released_kobo';")" "customer_dispute/0"
+DSP=$(val "SELECT id FROM public.service_booking_disputes WHERE booking_id = '$BKD';")
+RQ=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('resolve_booking_dispute', 'booking', '$BKD', 'test', '{\"dispute_id\":\"$DSP\",\"outcome\":\"maybe\",\"note\":\"x\"}'::jsonb)->>'id';")")
+expect_error "an unknown outcome is refused" "outcome must be" "$(as "$ADMIN_B" "SELECT public.approve_admin_action('$RQ');")"
+RQ=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('resolve_booking_dispute', 'booking', '$BKD', 'test', '{\"dispute_id\":\"$DSP\",\"outcome\":\"provider\",\"note\":\"Photos show the job done\"}'::jsonb)->>'id';")")
+expect_error "the requesting admin cannot also approve the resolution" "Cannot approve your own request" "$(as "$ADMIN_A" "SELECT public.approve_admin_action('$RQ');")"
+expect_ok "a second admin approves the resolution" "$(as "$ADMIN_B" "SELECT public.approve_admin_action('$RQ');")"
+expect_value "resolved for the provider, the earnings release (once)" \
+  "$(val "SELECT status FROM public.service_booking_disputes WHERE id = '$DSP';")/$(val "SELECT public.release_matured_earnings()->>'released_kobo';")/$(val "SELECT public.release_matured_earnings()->>'released_kobo';")" "resolved_for_provider/100000/0"
+"${PSQL[@]}" -q -c "UPDATE public.service_bookings SET scheduled_date = (now() AT TIME ZONE 'Africa/Lagos')::date - 2 WHERE id = '$BKN';"
+"${PSQL[@]}" -q -c "$(as "$ADMIN_A" "SELECT public.complete_service_booking('$BKN');")" >/dev/null
+complete_ago "$BKN" "47 hours"
+expect_ok "the customer disputes inside the window" "$(as "$BUYER" "SELECT public.dispute_service_booking('$BKN', 'Only half the work was done');")"
+DSP2=$(val "SELECT id FROM public.service_booking_disputes WHERE booking_id = '$BKN';")
+RQ=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('resolve_booking_dispute', 'booking', '$BKN', 'test', '{\"dispute_id\":\"$DSP2\",\"outcome\":\"customer\",\"note\":\"Work incomplete\"}'::jsonb)->>'id';")")
+"${PSQL[@]}" -q -c "$(as "$ADMIN_B" "SELECT public.approve_admin_action('$RQ');")" >/dev/null
+complete_ago "$BKN" "3 days"
+expect_value "upheld for the customer, the earnings stay held for a refund" "$(blockers "$BKN")" "dispute_upheld"
+expect_error "after the window closes a dispute is refused" "dispute window for this booking has closed" \
+  "$(as "$BUYER" "SELECT public.dispute_service_booking('00000000-0000-0000-0000-0000000003f4', 'too late');")"
+
+echo "== Reports never hold earnings by themselves =="
+B3=$(buy "$BUYER2" "$E_B3" 1); confirm "$B3" 1040000 >/dev/null
+RPT=$(val "WITH i AS (INSERT INTO public.reports (reporter_id, target_type, target_id, reason) VALUES ('$BUYER', 'event', '$E_B3', 'scam') RETURNING id) SELECT id FROM i;")
+end_event "$E_B3"
+expect_value "a user report alone blocks nothing" "$(blockers "$B3")" ""
+expect_error "a non-admin cannot hold earnings for a report" "Admin access required" "$(as "$BUYER" "SELECT public.admin_hold_earnings_for_report('$RPT', 'x');")"
+expect_value "an admin reviewing the report holds the event's unreleased earnings, linked to the report" \
+  "$(val "$(as "$SUB" "SELECT public.admin_hold_earnings_for_report('$RPT', 'Reviewing scam report')->>'holds_placed';")")/$(blockers "$B3")/$(val "SELECT (admin_hold_report_id = '$RPT')::text FROM public.earnings_holds WHERE source_key = '$B3';")" "1/admin_hold/true"
+expect_value "the report hold is audited" "$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'earnings_hold_placed' AND details->>'report_id' = '$RPT';")" "1"
 
 echo "== Rule 3: two-admin withdrawal authorization =="
 expect_error "an unauthorized withdrawal cannot be claimed for Paystack" "needs a second admin" \

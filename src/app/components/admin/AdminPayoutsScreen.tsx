@@ -151,6 +151,31 @@ export function AdminPayoutsScreen() {
 
   useEffect(() => { load(); }, [statusFilter]);
 
+  // 0203: open customer disputes of completed bookings. Each is decided by
+  // two admins (request here, approve in Admin Actions); until then the
+  // provider's earnings for that booking stay held. Empty (and hidden) on a
+  // database without 0203.
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const loadDisputes = async () => {
+    const { data, error } = await supabase.from('service_booking_disputes' as any)
+      .select('id, booking_id, reason, opened_at').eq('status', 'open').order('opened_at', { ascending: true }).limit(50);
+    setDisputes(error ? [] : ((data as any[]) || []));
+  };
+  useEffect(() => { loadDisputes(); }, []);
+  const requestDisputeResolution = async (d: any, outcome: 'provider' | 'customer') => {
+    const note = window.prompt(outcome === 'provider'
+      ? 'Why should the provider be paid? (shown to the approving admin)'
+      : 'Why is the customer right? (the earnings stay held for a refund)');
+    if (!note?.trim()) return;
+    const { error } = await supabase.rpc('request_admin_action' as any, {
+      p_action_type: 'resolve_booking_dispute', p_target_type: 'booking', p_target_id: d.booking_id,
+      p_target_label: `Booking dispute ${String(d.id).slice(0, 8)}`,
+      p_payload: { dispute_id: d.id, outcome, note: note.trim() },
+    });
+    if (error) { flash(false, error.message || 'Could not request the resolution'); return; }
+    flash(true, 'Resolution requested — a different super admin must approve it in Admin Actions.');
+  };
+
   const handleApprove = async (id: string) => {
     if (actionInFlightRef.current) return;
     actionInFlightRef.current = id;
@@ -328,6 +353,18 @@ export function AdminPayoutsScreen() {
         </button>
       </div>
 
+      {disputes.length > 0 && (
+        <div data-testid="admin-booking-disputes" style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: adminTheme.amber }}>Open booking disputes ({disputes.length})</p>
+          {disputes.map((d) => (
+            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: adminTheme.text }}>
+              <span style={{ flex: 1 }}>{new Date(d.opened_at).toLocaleString('en-NG')} · {d.reason}</span>
+              <button onClick={() => requestDisputeResolution(d, 'provider')} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Pay provider</button>
+              <button onClick={() => requestDisputeResolution(d, 'customer')} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Uphold customer</button>
+            </div>
+          ))}
+        </div>
+      )}
       {loadError && <div style={{ background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: '10px 14px', color: adminTheme.red, fontSize: 12 }}>{loadError}</div>}
 
       {loading ? (

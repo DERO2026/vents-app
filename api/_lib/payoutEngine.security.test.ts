@@ -227,13 +227,9 @@ describe('webhook source', () => {
     expect(src).toMatch(/await callProjectAdminTableRpc<any>\('complete_organizer_payout', \[lookupKey\]\)/);
   });
 
-  it('a Paystack dispute freezes the disputed sale\'s held earnings (0203)', () => {
+  it('Paystack dispute events reach the dispute hold (0203; behaviour in paystackDispute.security.test.ts)', () => {
     const src = readFileSync(join(__dirname, '..', 'webhook', 'paystack.ts'), 'utf8');
-    expect(src).toMatch(/event\?\.event === 'charge\.dispute\.create' \|\| event\?\.event === 'charge\.dispute\.remind'/);
-    expect(src).toMatch(/callProjectAdminRpc<string>\('place_payment_dispute_hold', \[disputedReference, disputeId\]\)/);
-    // A failure asks Paystack to retry rather than silently dropping the dispute.
-    const block = src.slice(src.indexOf("'charge.dispute.create'"), src.indexOf('Organizer payout transfer status'));
-    expect(block).toMatch(/hadTransientFailure = true;/);
+    expect(src).toMatch(/callProjectAdminRpc<string>\('place_payment_dispute_hold', \[candidates, disputeId, event\.event\]\)/);
   });
 
   it('approval never builds a time-based reference any more', async () => {

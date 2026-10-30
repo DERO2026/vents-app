@@ -18,18 +18,25 @@
 --    - Service-provider earnings become withdrawable exactly 48 hours
 --      after the booking is marked completed (service_bookings.completed_at,
 --      stamped once by trigger).
+--    - A provider cannot mark a booking complete before its scheduled
+--      start (Africa/Lagos); rescheduling can raise that start, never
+--      lower it (service_start_floor_at). The provider clock is 48 hours
+--      after the later of completion and that start. The customer can
+--      dispute a completed booking inside the same 48 hours; two admins
+--      resolve it (request_admin_action 'resolve_booking_dispute').
 --    A credit goes to on_hold_kobo (one earnings_holds row per order or
 --    booking). It is released by settle_earnings when nothing blocks it:
---    a pending refund on the event or booking, a deleted or admin-hidden
---    event, a cancelled booking, an admin hold, or a Paystack dispute
---    (which places an admin hold). Release runs on every withdrawal request,
---    when the owner opens their wallet, and in the scheduled cron, which is
---    hourly through pg_cron when that extension is installed and daily
---    through Vercel otherwise. A withdrawal request settles first, so money
---    is withdrawable at exactly the 48-hour mark even between cron runs.
---    Every release records the rule and the times it used (release_basis).
---    All times are timestamptz and the delay is interval '48 hours'
---    (absolute, independent of the session TimeZone and of DST).
+--    a refund in progress on that order or booking (or, when a refund
+--    cannot be tied to an order, on the event), a deleted or admin-hidden
+--    event, a cancelled booking, an open or upheld customer dispute, an
+--    admin hold (placed directly or while reviewing a user report -- a
+--    report alone never holds anything), or a Paystack dispute. Release
+--    runs on every withdrawal request, when the owner opens their wallet,
+--    and in the scheduled cron (daily on Vercel; hourly through pg_cron
+--    when that extension is installed). A withdrawal request settles
+--    first, so money is withdrawable at exactly the 48-hour mark. Every
+--    release records the rule and times it used (release_basis). All
+--    times are timestamptz and the delay is interval '48 hours'.
 --    Balances that already exist before this migration stay available.
 --    Representative rewards keep their separate 7-day hold (0201). A
 --    reversed payout returns to the available balance.
@@ -214,13 +221,15 @@ CREATE TABLE IF NOT EXISTS public.earnings_holds (
   admin_hold_by     uuid,
   admin_hold_reason text,
   dispute_reference text,
+  dispute_resolution text,           -- what Paystack later reported (never lifts the hold by itself)
+  admin_hold_report_id uuid REFERENCES public.reports(id) ON DELETE RESTRICT,
   released_at   timestamptz,
   -- The rule, times and checks the release was decided on (audit).
   release_basis jsonb,
   created_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT earnings_holds_source_once UNIQUE (source_kind, source_key),
   CONSTRAINT earnings_holds_has_subject CHECK (
-    (source_kind = 'ticket_sale' AND event_id IS NOT NULL AND event_end_at_sale IS NOT NULL)
+    (source_kind = 'ticket_sale' AND event_id IS NOT NULL)
     OR (source_kind = 'service_booking' AND booking_id IS NOT NULL)),
   CONSTRAINT earnings_holds_adds_up CHECK (amount_kobo + refunded_kobo + released_kobo = original_kobo),
   CONSTRAINT earnings_holds_released_empty CHECK (released_at IS NULL OR amount_kobo = 0)
@@ -234,13 +243,61 @@ CREATE INDEX IF NOT EXISTS earnings_holds_open_by_booking ON public.earnings_hol
 -- (complete_service_booking today).
 ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS completed_by uuid;
+-- The earliest the service can have happened: the scheduled start, kept as a
+-- floor that rescheduling can raise but never lower.
+ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS service_start_floor_at timestamptz;
+
+-- scheduled_date/scheduled_time are a local date and time with no zone;
+-- VENTS operates in Nigeria, so they are read as Africa/Lagos (UTC+1, no
+-- DST). NULL when there is no scheduled date.
+CREATE OR REPLACE FUNCTION public.booking_scheduled_start_at(p_date date, p_time time without time zone)
+ RETURNS timestamptz
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  SELECT CASE WHEN p_date IS NULL THEN NULL
+              ELSE (p_date + COALESCE(p_time, time '00:00')) AT TIME ZONE 'Africa/Lagos' END;
+$function$;
+
+-- No backfill (it would rewrite existing bookings and fire their triggers):
+-- the trigger below sets the floor on a booking's next write, including the
+-- one that completes it, and every check reads GREATEST(floor, schedule).
+
 CREATE OR REPLACE FUNCTION public.service_bookings_stamp_completion()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
 AS $function$
+DECLARE
+  v_start timestamptz := public.booking_scheduled_start_at(NEW.scheduled_date, NEW.scheduled_time);
+  v_provider uuid;
 BEGIN
+  -- Floor: never lowered, whoever edits the dates.
+  IF TG_OP = 'UPDATE' THEN
+    NEW.service_start_floor_at := GREATEST(OLD.service_start_floor_at, v_start);
+  ELSE
+    NEW.service_start_floor_at := v_start;
+  END IF;
+
+  IF NEW.status = 'completed' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'completed') THEN
+    -- Approved rule: a provider cannot mark a booking complete before its
+    -- scheduled service time. Only an admin who is not the provider may
+    -- complete one without a schedule or early (complete_service_booking
+    -- logs who did it).
+    SELECT sp.user_id INTO v_provider FROM public.service_providers sp WHERE sp.id = NEW.provider_id;
+    IF NOT public.is_admin() OR auth.uid() IS NOT DISTINCT FROM v_provider THEN
+      IF NEW.service_start_floor_at IS NULL THEN
+        RAISE EXCEPTION 'This booking has no scheduled date, so only VENTS can mark it complete';
+      END IF;
+      IF now() < GREATEST(NEW.service_start_floor_at, v_start) THEN
+        RAISE EXCEPTION 'A booking cannot be marked complete before its scheduled time (%)',
+          to_char(GREATEST(NEW.service_start_floor_at, v_start) AT TIME ZONE 'Africa/Lagos', 'YYYY-MM-DD HH24:MI') || ' Lagos';
+      END IF;
+    END IF;
+  END IF;
+
   IF TG_OP = 'UPDATE' AND OLD.completed_at IS NOT NULL THEN
     NEW.completed_at := OLD.completed_at;   -- never moved once set
     NEW.completed_by := OLD.completed_by;
@@ -321,6 +378,127 @@ BEGIN
 END;
 $function$;
 
+-- Customer disputes of a completed booking, opened inside the dispute window
+-- (the same 48 hours the provider's earnings are held) and decided by two
+-- admins (request_admin_action 'resolve_booking_dispute').
+CREATE TABLE IF NOT EXISTS public.service_booking_disputes (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id   uuid NOT NULL REFERENCES public.service_bookings(id) ON DELETE RESTRICT,
+  customer_id  uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
+  reason       text NOT NULL CHECK (length(trim(reason)) BETWEEN 5 AND 2000),
+  status       text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved_for_provider', 'resolved_for_customer')),
+  opened_at    timestamptz NOT NULL DEFAULT now(),
+  resolved_at  timestamptz,
+  admin_request_id uuid REFERENCES public.admin_action_requests(id) ON DELETE RESTRICT,
+  resolution_note text,
+  CONSTRAINT service_booking_disputes_resolved CHECK ((status = 'open') = (resolved_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS service_booking_disputes_one_per_booking ON public.service_booking_disputes (booking_id);
+ALTER TABLE public.service_booking_disputes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.service_booking_disputes FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.service_booking_disputes TO authenticated;
+DROP POLICY IF EXISTS service_booking_disputes_parties_read ON public.service_booking_disputes;
+CREATE POLICY service_booking_disputes_parties_read ON public.service_booking_disputes
+  FOR SELECT TO authenticated USING (
+    customer_id = (SELECT auth.uid()) OR public.is_admin()
+    OR EXISTS (SELECT 1 FROM public.service_bookings b JOIN public.service_providers sp ON sp.id = b.provider_id
+                WHERE b.id = booking_id AND sp.user_id = (SELECT auth.uid())));
+
+CREATE OR REPLACE FUNCTION public.booking_dispute_window()
+ RETURNS interval
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  SELECT interval '48 hours';
+$function$;
+
+-- The customer disputes a completed booking. Serialized with settlement on
+-- the provider's wallet row, so a dispute inside the window always beats
+-- the release, and a release after the window is never undone by one.
+CREATE OR REPLACE FUNCTION public.dispute_service_booking(p_booking_id uuid, p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  b record;
+  v_id uuid;
+  v_until timestamptz;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF p_reason IS NULL OR length(trim(p_reason)) < 5 THEN RAISE EXCEPTION 'Please describe the problem'; END IF;
+  PERFORM public.check_rate_limit('booking_dispute:' || auth.uid()::text, 10, 3600);
+  SELECT sb.id, sb.customer_id, sb.status, sb.completed_at, sb.service_start_floor_at, sp.user_id AS provider_user_id
+    INTO b FROM public.service_bookings sb JOIN public.service_providers sp ON sp.id = sb.provider_id
+   WHERE sb.id = p_booking_id;
+  IF NOT FOUND OR b.customer_id IS DISTINCT FROM auth.uid() THEN RAISE EXCEPTION 'Only the customer can dispute this booking'; END IF;
+  IF b.status <> 'completed' OR b.completed_at IS NULL THEN RAISE EXCEPTION 'Only a completed booking can be disputed'; END IF;
+  PERFORM 1 FROM public.organizer_wallets w WHERE w.organizer_id = b.provider_user_id FOR UPDATE;
+  v_until := GREATEST(b.completed_at, b.service_start_floor_at) + public.booking_dispute_window();
+  IF now() >= v_until THEN RAISE EXCEPTION 'The dispute window for this booking has closed'; END IF;
+  INSERT INTO public.service_booking_disputes (booking_id, customer_id, reason)
+  VALUES (b.id, auth.uid(), trim(p_reason))
+  ON CONFLICT (booking_id) DO NOTHING RETURNING id INTO v_id;
+  IF v_id IS NULL THEN RAISE EXCEPTION 'This booking has already been disputed'; END IF;
+  INSERT INTO public.notifications (user_id, type, title, body)
+  VALUES (b.provider_user_id, 'booking', 'Booking disputed',
+          'The customer disputed a completed booking. Its earnings stay on hold until VENTS reviews it.');
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), 'service_booking_disputed', b.provider_user_id,
+          jsonb_build_object('booking_id', b.id, 'dispute_id', v_id, 'reason', trim(p_reason)), public.actor_role());
+  RETURN jsonb_build_object('dispute_id', v_id, 'status', 'open');
+END;
+$function$;
+
+-- Dual-control executor (approve_admin_action): payload {dispute_id,
+-- outcome: 'provider' | 'customer', note}. 'provider' lets the earnings
+-- release; 'customer' keeps them held for a refund, which this migration
+-- does not perform (see the PR for that open item).
+CREATE OR REPLACE FUNCTION public.execute_booking_dispute_resolution(p_admin_request_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  r public.admin_action_requests;
+  d public.service_booking_disputes;
+  v_provider uuid;
+  v_outcome text;
+BEGIN
+  SELECT * INTO r FROM public.admin_action_requests WHERE id = p_admin_request_id;
+  IF NOT FOUND OR r.action_type <> 'resolve_booking_dispute' THEN RAISE EXCEPTION 'Not a booking dispute resolution'; END IF;
+  IF NOT public.is_super_admin() THEN RAISE EXCEPTION 'Super Admin access required'; END IF;
+  IF r.requested_by = auth.uid() THEN RAISE EXCEPTION 'Cannot approve your own request'; END IF;
+  v_outcome := r.payload->>'outcome';
+  IF jsonb_typeof(r.payload->'outcome') IS DISTINCT FROM 'string' OR v_outcome NOT IN ('provider', 'customer') THEN
+    RAISE EXCEPTION 'payload.outcome must be "provider" or "customer"';
+  END IF;
+  IF jsonb_typeof(r.payload->'note') IS DISTINCT FROM 'string' OR length(trim(r.payload->>'note')) = 0 THEN
+    RAISE EXCEPTION 'payload.note (the reason for the decision) is required';
+  END IF;
+  SELECT * INTO d FROM public.service_booking_disputes
+   WHERE id = NULLIF(r.payload->>'dispute_id', '')::uuid FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Dispute not found'; END IF;
+  IF d.status <> 'open' THEN RAISE EXCEPTION 'Dispute already %', d.status; END IF;
+  SELECT sp.user_id INTO v_provider FROM public.service_bookings b JOIN public.service_providers sp ON sp.id = b.provider_id WHERE b.id = d.booking_id;
+  IF r.requested_by IN (v_provider, d.customer_id) OR auth.uid() IN (v_provider, d.customer_id) THEN
+    RAISE EXCEPTION 'A party to the booking cannot request or approve its dispute resolution';
+  END IF;
+  UPDATE public.service_booking_disputes
+     SET status = CASE v_outcome WHEN 'provider' THEN 'resolved_for_provider' ELSE 'resolved_for_customer' END,
+         resolved_at = now(), admin_request_id = r.id, resolution_note = trim(r.payload->>'note')
+   WHERE id = d.id;
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), 'service_booking_dispute_resolved', v_provider,
+          jsonb_build_object('dispute_id', d.id, 'booking_id', d.booking_id, 'outcome', v_outcome,
+                             'requested_by', r.requested_by, 'note', trim(r.payload->>'note')),
+          public.actor_role());
+END;
+$function$;
+
 -- When a hold may be released, and what (if anything) blocks it now.
 -- {release_at, blockers[], rule, ...}; releasable when blockers is [].
 CREATE OR REPLACE FUNCTION public.earnings_hold_state(p_hold_id uuid)
@@ -354,26 +532,43 @@ BEGIN
     -- postponing delays the release, moving the end earlier does not hasten it.
     v_end := GREATEST(h.event_end_at_sale, public.event_effective_end_at(e.event_date, e.end_date));
     v_release := v_end + public.earnings_release_delay();
+    IF v_end IS NULL THEN v_blockers := array_append(v_blockers, 'event_end_unknown'); END IF;
     IF e.deleted_at IS NOT NULL THEN v_blockers := array_append(v_blockers, 'event_deleted'); END IF;
     IF e.hidden THEN v_blockers := array_append(v_blockers, 'event_hidden_by_admin'); END IF;
-    IF EXISTS (SELECT 1 FROM public.tickets t WHERE t.event_id = h.event_id AND t.payment_status = 'refund_pending') THEN
+    -- A refund in progress holds only the order it belongs to (the hold's
+    -- source_key is that order's payment_ref). A refund that cannot be tied
+    -- to an order (no payment_ref) holds the whole event, conservatively.
+    IF EXISTS (SELECT 1 FROM public.tickets t WHERE t.payment_ref = h.source_key AND t.payment_status = 'refund_pending') THEN
       v_blockers := array_append(v_blockers, 'refund_pending');
     END IF;
-    IF now() < v_release THEN v_blockers := array_append(v_blockers, 'not_yet'); END IF;
+    IF EXISTS (SELECT 1 FROM public.tickets t WHERE t.event_id = h.event_id AND t.payment_ref IS NULL
+                AND t.payment_status = 'refund_pending') THEN
+      v_blockers := array_append(v_blockers, 'refund_pending_unlinked');
+    END IF;
+    IF v_release IS NOT NULL AND now() < v_release THEN v_blockers := array_append(v_blockers, 'not_yet'); END IF;
     RETURN jsonb_build_object('rule', 'event_end_plus_48h', 'event_end_at', v_end, 'event_end_at_sale', h.event_end_at_sale,
                               'release_at', v_release, 'checked_at', now(), 'blockers', to_jsonb(v_blockers));
   END IF;
 
-  SELECT sb.status, sb.payment_status, sb.completed_at INTO b FROM public.service_bookings sb WHERE sb.id = h.booking_id;
-  v_release := b.completed_at + public.earnings_release_delay();
+  SELECT sb.status, sb.payment_status, sb.completed_at, sb.service_start_floor_at INTO b
+    FROM public.service_bookings sb WHERE sb.id = h.booking_id;
+  -- 48 hours after the later of completion and the scheduled start, so
+  -- neither an early completion nor a date change moves the clock earlier.
+  v_release := GREATEST(b.completed_at, b.service_start_floor_at) + public.earnings_release_delay();
   IF b.status = 'cancelled' THEN v_blockers := array_append(v_blockers, 'booking_cancelled'); END IF;
   IF b.payment_status IN ('refund_pending', 'refunded') THEN v_blockers := array_append(v_blockers, 'refund_pending'); END IF;
+  IF EXISTS (SELECT 1 FROM public.service_booking_disputes d WHERE d.booking_id = h.booking_id AND d.status = 'open') THEN
+    v_blockers := array_append(v_blockers, 'customer_dispute');
+  ELSIF EXISTS (SELECT 1 FROM public.service_booking_disputes d WHERE d.booking_id = h.booking_id AND d.status = 'resolved_for_customer') THEN
+    v_blockers := array_append(v_blockers, 'dispute_upheld');
+  END IF;
   IF b.status IS DISTINCT FROM 'completed' OR b.completed_at IS NULL THEN
     v_blockers := array_append(v_blockers, 'not_completed');
   ELSIF now() < v_release THEN
     v_blockers := array_append(v_blockers, 'not_yet');
   END IF;
   RETURN jsonb_build_object('rule', 'booking_completed_plus_48h', 'completed_at', b.completed_at,
+                            'service_start_floor_at', b.service_start_floor_at,
                             'release_at', v_release, 'checked_at', now(), 'blockers', to_jsonb(v_blockers));
 END;
 $function$;
@@ -612,22 +807,70 @@ BEGIN
      SET admin_hold_at = CASE WHEN p_hold THEN COALESCE(admin_hold_at, now()) END,
          admin_hold_by = CASE WHEN p_hold THEN COALESCE(admin_hold_by, auth.uid()) END,
          admin_hold_reason = CASE WHEN p_hold THEN COALESCE(admin_hold_reason, trim(p_reason)) END,
-         dispute_reference = CASE WHEN p_hold THEN dispute_reference END
+         dispute_reference = CASE WHEN p_hold THEN dispute_reference END,
+         admin_hold_report_id = CASE WHEN p_hold THEN admin_hold_report_id END
    WHERE id = h.id;
   INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
   VALUES (auth.uid(), CASE WHEN p_hold THEN 'earnings_hold_placed' ELSE 'earnings_hold_lifted' END, h.owner_id,
           jsonb_build_object('hold_id', h.id, 'source_kind', h.source_kind, 'source_key', h.source_key,
                              'amount_kobo', h.amount_kobo, 'reason', trim(p_reason),
-                             'previous_hold_reason', h.admin_hold_reason, 'dispute_reference', h.dispute_reference),
+                             'previous_hold_reason', h.admin_hold_reason, 'dispute_reference', h.dispute_reference,
+                             'report_id', h.admin_hold_report_id),
           public.actor_role());
   RETURN jsonb_build_object('hold_id', h.id, 'admin_hold', p_hold);
 END;
 $function$;
 
--- Paystack charge.dispute.* (server only): freeze the disputed sale's held
--- earnings. Never lifted automatically; an admin lifts it after review.
--- If the earnings were already released, the dispute is logged for admins.
-CREATE OR REPLACE FUNCTION public.place_payment_dispute_hold(p_reference text, p_dispute_id text)
+-- An admin reviewing a user report holds the earnings it concerns: every
+-- unreleased sale of the reported event, or every unreleased hold of the
+-- reported user. Reports never do this by themselves. Each hold names the
+-- report (admin_hold_report_id) and is audited; lifting is the usual
+-- super-admin path (admin_set_earnings_hold).
+CREATE OR REPLACE FUNCTION public.admin_hold_earnings_for_report(p_report_id uuid, p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  rp public.reports;
+  h public.earnings_holds;
+  v_count integer := 0;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
+  IF p_reason IS NULL OR trim(p_reason) = '' THEN RAISE EXCEPTION 'A reason is required'; END IF;
+  SELECT * INTO rp FROM public.reports WHERE id = p_report_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Report not found'; END IF;
+  FOR h IN SELECT * FROM public.earnings_holds x
+            WHERE x.released_at IS NULL AND x.admin_hold_at IS NULL
+              AND ((rp.target_type = 'event' AND x.event_id = rp.target_id)
+                OR (rp.target_type = 'user' AND x.owner_id = rp.target_id))
+            ORDER BY x.created_at FOR UPDATE
+  LOOP
+    IF h.owner_id = auth.uid() THEN RAISE EXCEPTION 'An admin cannot place a hold on their own earnings'; END IF;
+    UPDATE public.earnings_holds
+       SET admin_hold_at = now(), admin_hold_by = auth.uid(), admin_hold_reason = trim(p_reason),
+           admin_hold_report_id = rp.id
+     WHERE id = h.id;
+    INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+    VALUES (auth.uid(), 'earnings_hold_placed', h.owner_id,
+            jsonb_build_object('hold_id', h.id, 'report_id', rp.id, 'reason', trim(p_reason), 'amount_kobo', h.amount_kobo),
+            public.actor_role());
+    v_count := v_count + 1;
+  END LOOP;
+  RETURN jsonb_build_object('report_id', rp.id, 'holds_placed', v_count);
+END;
+$function$;
+
+-- Paystack charge.dispute.* (server only).
+-- Paystack's dispute payload is not verified in this repository (see
+-- docs/money-flow-audit.md): the caller passes every candidate reference
+-- it found (data.transaction.reference, data.transaction_reference,
+-- data.reference) and the first that names a held sale or booking wins.
+-- create/remind freeze the held earnings (never lifted automatically);
+-- resolve records Paystack's outcome on the hold for the admin who lifts it.
+-- Already-released earnings are logged for admins. Idempotent per dispute.
+CREATE OR REPLACE FUNCTION public.place_payment_dispute_hold(p_references text[], p_dispute_id text, p_event text)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -635,35 +878,61 @@ CREATE OR REPLACE FUNCTION public.place_payment_dispute_hold(p_reference text, p
 AS $function$
 DECLARE
   v_ref text;
+  v_cand text;
+  v_found text;
   h public.earnings_holds;
 BEGIN
-  IF p_reference IS NULL OR p_reference = '' THEN RETURN 'not_found'; END IF;
-  SELECT x.payment_ref INTO v_ref FROM public.get_pending_purchase_owner(p_reference) x;
-  SELECT * INTO h FROM public.earnings_holds
-   WHERE (source_kind = 'ticket_sale' AND source_key = COALESCE(v_ref, p_reference))
-      OR (source_kind = 'service_booking' AND booking_id = (SELECT sb.id FROM public.service_bookings sb WHERE sb.payment_ref = p_reference LIMIT 1))
-   LIMIT 1;
-  IF NOT FOUND THEN RETURN 'not_found'; END IF;
+  IF p_event NOT IN ('charge.dispute.create', 'charge.dispute.remind', 'charge.dispute.resolve') THEN
+    RAISE EXCEPTION 'Unsupported dispute event %', p_event;
+  END IF;
+  FOREACH v_cand IN ARRAY COALESCE(p_references, ARRAY[]::text[]) LOOP
+    CONTINUE WHEN v_cand IS NULL OR v_cand = '';
+    v_ref := NULL;
+    SELECT x.payment_ref INTO v_ref FROM public.get_pending_purchase_owner(v_cand) x;
+    SELECT * INTO h FROM public.earnings_holds
+     WHERE (source_kind = 'ticket_sale' AND source_key = COALESCE(v_ref, v_cand))
+        OR (source_kind = 'service_booking' AND booking_id = (SELECT sb.id FROM public.service_bookings sb WHERE sb.payment_ref = v_cand LIMIT 1))
+     LIMIT 1;
+    IF FOUND THEN v_found := v_cand; EXIT; END IF;
+  END LOOP;
+  IF v_found IS NULL THEN
+    INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+    VALUES (NULL, 'payment_dispute_unmatched', NULL,
+            jsonb_build_object('references', to_jsonb(p_references), 'dispute_id', p_dispute_id, 'event', p_event), 'webhook');
+    RETURN 'not_found';
+  END IF;
   PERFORM 1 FROM public.organizer_wallets w WHERE w.organizer_id = h.owner_id FOR UPDATE;
   SELECT * INTO h FROM public.earnings_holds WHERE id = h.id FOR UPDATE;
+
+  IF p_event = 'charge.dispute.resolve' THEN
+    IF h.dispute_reference IS NOT DISTINCT FROM COALESCE(p_dispute_id, v_found) THEN
+      UPDATE public.earnings_holds SET dispute_resolution = 'paystack_resolved' WHERE id = h.id;
+    END IF;
+    INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+    VALUES (NULL, 'payment_dispute_resolved_by_paystack', h.owner_id,
+            jsonb_build_object('hold_id', h.id, 'reference', v_found, 'dispute_id', p_dispute_id,
+                               'still_held', h.released_at IS NULL AND h.admin_hold_at IS NOT NULL), 'webhook');
+    RETURN 'resolution_recorded';
+  END IF;
 
   IF h.released_at IS NOT NULL THEN
     INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
     VALUES (NULL, 'payment_dispute_after_release', h.owner_id,
-            jsonb_build_object('hold_id', h.id, 'reference', p_reference, 'dispute_id', p_dispute_id), 'webhook');
+            jsonb_build_object('hold_id', h.id, 'reference', v_found, 'dispute_id', p_dispute_id), 'webhook');
     RETURN 'already_released';
   END IF;
-  IF h.dispute_reference IS NOT DISTINCT FROM p_dispute_id AND h.admin_hold_at IS NOT NULL THEN
+  IF h.admin_hold_at IS NOT NULL AND h.dispute_reference IS NOT DISTINCT FROM COALESCE(p_dispute_id, v_found) THEN
     RETURN 'already_held';
   END IF;
   UPDATE public.earnings_holds
      SET admin_hold_at = COALESCE(admin_hold_at, now()),
          admin_hold_reason = COALESCE(admin_hold_reason, 'Paystack payment dispute ' || COALESCE(p_dispute_id, '')),
-         dispute_reference = COALESCE(p_dispute_id, p_reference)
+         dispute_reference = COALESCE(p_dispute_id, v_found)
    WHERE id = h.id;
   INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
   VALUES (NULL, 'earnings_hold_placed', h.owner_id,
-          jsonb_build_object('hold_id', h.id, 'reason', 'payment_dispute', 'reference', p_reference, 'dispute_id', p_dispute_id),
+          jsonb_build_object('hold_id', h.id, 'reason', 'payment_dispute', 'reference', v_found, 'dispute_id', p_dispute_id,
+                             'event', p_event),
           'webhook');
   RETURN 'held';
 END;
@@ -791,6 +1060,8 @@ BEGIN
     EXECUTE replace(v_def, v_anchor,
       E'      IF r.action_type = ''authorize_withdrawal'' THEN\n' ||
       E'        PERFORM public.execute_withdrawal_authorization(r.id);\n' ||
+      E'      ELSIF r.action_type = ''resolve_booking_dispute'' THEN\n' ||
+      E'        PERFORM public.execute_booking_dispute_resolution(r.id);\n' ||
       E'      ELSIF r.action_type LIKE ''earn\\_%'' THEN\n');
   END IF;
 
@@ -801,7 +1072,7 @@ BEGIN
     IF v_count <> 1 THEN
       RAISE EXCEPTION 'request_admin_action anchor found % times (expected 1; is 0201 applied?)', v_count;
     END IF;
-    EXECUTE replace(v_def, v_anchor, v_anchor || E',\n    ''authorize_withdrawal''');
+    EXECUTE replace(v_def, v_anchor, v_anchor || E',\n    ''authorize_withdrawal'', ''resolve_booking_dispute''');
   END IF;
 END
 $patch$;
@@ -932,7 +1203,8 @@ BEGIN
     'public.earnings_place_hold(uuid,text,text,bigint,uuid)',
     'public.earnings_hold_state(uuid)',
     'public.service_bookings_stamp_completion()',
-    'public.place_payment_dispute_hold(text,text)',
+    'public.place_payment_dispute_hold(text[],text,text)',
+    'public.execute_booking_dispute_resolution(uuid)',
     'public.earnings_debit_for_refund(uuid,bigint,text,text,text,text,text,uuid,jsonb,uuid,text,text)',
     'public.settle_earnings(uuid)',
     'public.execute_withdrawal_authorization(uuid)',
@@ -948,6 +1220,10 @@ BEGIN
     'public.earnings_release_delay()',
     'public.get_earnings_holds(uuid)',
     'public.admin_set_earnings_hold(uuid,boolean,text)',
+    'public.admin_hold_earnings_for_report(uuid,text)',
+    'public.dispute_service_booking(uuid,text)',
+    'public.booking_dispute_window()',
+    'public.booking_scheduled_start_at(date,time without time zone)',
     'public.settle_my_earnings()',
     'public.admin_earnings_reconciliation()'
   ] LOOP
@@ -956,7 +1232,7 @@ BEGIN
   END LOOP;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'project_admin') THEN
     GRANT EXECUTE ON FUNCTION public.release_matured_earnings(integer) TO project_admin;
-    GRANT EXECUTE ON FUNCTION public.place_payment_dispute_hold(text, text) TO project_admin;
+    GRANT EXECUTE ON FUNCTION public.place_payment_dispute_hold(text[], text, text) TO project_admin;
   END IF;
 END
 $grants$;

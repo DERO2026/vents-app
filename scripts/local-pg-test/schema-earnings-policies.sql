@@ -85,3 +85,12 @@ CREATE TABLE IF NOT EXISTS public.checkins (
 CREATE OR REPLACE FUNCTION public.get_pending_purchase_owner(p_reference text)
  RETURNS TABLE(payment_ref text, owner_id uuid, payer_id uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS
 $$ SELECT payment_ref, user_id, payer_id FROM public.pending_purchases WHERE payment_ref = p_reference LIMIT 1 $$;
+-- reports, as live (0002 + 0005).
+CREATE TABLE IF NOT EXISTS public.reports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), reporter_id uuid NOT NULL,
+  target_type text NOT NULL CHECK (target_type IN ('event', 'user')), target_id uuid NOT NULL,
+  reason text NOT NULL, details text,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed', 'actioned', 'dismissed')),
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS scheduled_date date, ADD COLUMN IF NOT EXISTS scheduled_time time without time zone;
