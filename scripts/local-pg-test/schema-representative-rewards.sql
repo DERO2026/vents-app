@@ -1,0 +1,250 @@
+-- Loaded AFTER schema-vents-earn.sql + 0193/0196/0197 to give migration
+-- 0201 the rest of what it touches. Hand-approximated from production
+-- (read-only information_schema / pg_get_functiondef, 2026-10-30); NOT the
+-- real schema. request_admin_action / approve_admin_action are verbatim
+-- copies of the live definitions, because 0201 patches them in place and
+-- the test must prove the patch anchors match production text.
+
+ALTER TABLE public.users ADD COLUMN full_name text, ADD COLUMN username text;
+
+ALTER TABLE public.events
+  ADD COLUMN event_date      timestamptz,
+  ADD COLUMN end_date        timestamptz,
+  ADD COLUMN status          text DEFAULT 'live',
+  ADD COLUMN hidden_by_admin boolean DEFAULT false,
+  ADD COLUMN deleted_at      timestamptz,
+  ADD COLUMN created_at      timestamptz DEFAULT now();
+
+CREATE TABLE public.tickets (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id            uuid NOT NULL REFERENCES public.events(id),
+  user_id             uuid,
+  amount              numeric NOT NULL DEFAULT 0,
+  discount_percentage numeric,
+  payment_status      text NOT NULL DEFAULT 'paid',
+  status              text DEFAULT 'active'
+);
+
+CREATE TABLE public.organizer_transactions (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organizer_id   uuid NOT NULL,
+  type           text NOT NULL,
+  amount_kobo    bigint NOT NULL,
+  ticket_sale_id uuid,
+  metadata       jsonb,
+  created_at     timestamptz DEFAULT now()
+);
+
+CREATE TABLE public.pending_purchases (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id   uuid NOT NULL,
+  status     text NOT NULL DEFAULT 'pending',
+  expires_at timestamptz
+);
+
+CREATE TABLE public.admin_logs (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id       uuid,
+  action         text,
+  target_user_id uuid,
+  details        jsonb,
+  created_at     timestamptz DEFAULT now(),
+  actor_role     text
+);
+
+-- Verbatim constraint and partial unique indexes from production.
+CREATE TABLE public.user_wallets (
+  user_id      uuid PRIMARY KEY,
+  balance_kobo bigint NOT NULL DEFAULT 0 CHECK (balance_kobo >= 0),
+  created_at   timestamptz DEFAULT now(),
+  updated_at   timestamptz DEFAULT now()
+);
+CREATE TABLE public.user_wallet_transactions (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      uuid NOT NULL,
+  type         text NOT NULL,
+  amount_kobo  bigint NOT NULL,
+  description  text,
+  reference_id text,
+  metadata     jsonb,
+  created_at   timestamptz DEFAULT now(),
+  CONSTRAINT user_wallet_transactions_type_check CHECK ((type = ANY (ARRAY['deposit'::text, 'spend'::text, 'refund'::text, 'vc_conversion'::text])))
+);
+CREATE UNIQUE INDEX user_wallet_transactions_deposit_ref_idx ON public.user_wallet_transactions USING btree (reference_id) WHERE ((type = 'deposit'::text) AND (reference_id IS NOT NULL));
+CREATE UNIQUE INDEX user_wallet_transactions_spend_ref_idx ON public.user_wallet_transactions USING btree (reference_id) WHERE ((type = 'spend'::text) AND (reference_id IS NOT NULL));
+CREATE UNIQUE INDEX user_wallet_transactions_refund_ref_idx ON public.user_wallet_transactions USING btree (reference_id) WHERE ((type = 'refund'::text) AND (reference_id IS NOT NULL));
+CREATE UNIQUE INDEX user_wallet_transactions_vc_conversion_ref_idx ON public.user_wallet_transactions USING btree (reference_id) WHERE ((type = 'vc_conversion'::text) AND (reference_id IS NOT NULL));
+
+CREATE TABLE public.admin_action_requests (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  action_type       text NOT NULL,
+  target_type       text,
+  target_id         uuid,
+  target_label      text,
+  payload           jsonb NOT NULL DEFAULT '{}'::jsonb,
+  previous_values   jsonb,
+  requested_changes jsonb,
+  requested_by      uuid NOT NULL,
+  requested_by_role text,
+  status            text NOT NULL DEFAULT 'pending' CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
+  reviewed_by       uuid,
+  review_reason     text,
+  device            text,
+  ip                text,
+  requested_at      timestamptz DEFAULT now(),
+  reviewed_at       timestamptz,
+  seen_at           timestamptz
+);
+
+CREATE OR REPLACE FUNCTION public.is_root() RETURNS boolean LANGUAGE sql STABLE AS
+$$ SELECT auth.uid() = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832'::uuid $$;
+CREATE OR REPLACE FUNCTION public.is_super_admin() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS
+$$ SELECT public.is_root() OR EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin') $$;
+CREATE OR REPLACE FUNCTION public.actor_role() RETURNS text LANGUAGE sql STABLE AS
+$$ SELECT COALESCE((SELECT role FROM public.users WHERE id = auth.uid()), 'none') $$;
+CREATE OR REPLACE FUNCTION public.client_ip() RETURNS text LANGUAGE sql STABLE AS $$ SELECT '127.0.0.1'::text $$;
+
+-- Live definition (pg_get_functiondef, 2026-10-30), verbatim.
+CREATE OR REPLACE FUNCTION public.request_admin_action(p_action_type text, p_target_type text, p_target_id uuid, p_target_label text, p_payload jsonb DEFAULT '{}'::jsonb, p_previous_values jsonb DEFAULT NULL::jsonb, p_requested_changes jsonb DEFAULT NULL::jsonb, p_device text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_row public.admin_action_requests;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Admin access required to submit an action request';
+  END IF;
+
+  IF p_action_type NOT IN (
+    'organizer_verification_approve', 'organizer_verification_reject',
+    'hide_event', 'reinstate_event', 'soft_delete_event',
+    'restore_deleted_event', 'restore_event',
+    'toggle_event_featured',
+    'set_user_role', 'suspend_user', 'unsuspend_user',
+    'soft_delete_user', 'reinstate_user', 'toggle_user_verified',
+    'credit_vents_cents', 'debit_vents_cents',
+    'approve_payout', 'reject_payout', 'cancel_payout',
+    'decide_organizer_request', 'decide_service_provider_request'
+  ) THEN
+    RAISE EXCEPTION 'Unknown action_type: % (no executor is mapped for it)', p_action_type;
+  END IF;
+
+  INSERT INTO public.admin_action_requests (
+    action_type, target_type, target_id, target_label, payload,
+    previous_values, requested_changes, requested_by, requested_by_role, device, ip
+  ) VALUES (
+    p_action_type, p_target_type, p_target_id, p_target_label, COALESCE(p_payload, '{}'::jsonb),
+    p_previous_values, p_requested_changes, auth.uid(), public.actor_role(), p_device,
+    public.client_ip()
+  ) RETURNING * INTO v_row;
+
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), 'action_requested',
+          CASE WHEN p_target_type = 'user' THEN p_target_id ELSE NULL END,
+          jsonb_build_object('request_id', v_row.id, 'action_type', p_action_type,
+                             'target_type', p_target_type, 'target_id', p_target_id,
+                             'target_label', p_target_label,
+                             'device', p_device, 'ip', v_row.ip),
+          public.actor_role());
+
+  RETURN to_jsonb(v_row);
+END; $function$;
+
+-- Live definition (pg_get_functiondef, 2026-10-30), verbatim.
+CREATE OR REPLACE FUNCTION public.approve_admin_action(p_request_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  r public.admin_action_requests;
+BEGIN
+  IF NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Super Admin access required (your role: %)', COALESCE((SELECT role FROM public.users WHERE id = auth.uid()),'none');
+  END IF;
+
+  SELECT * INTO r FROM public.admin_action_requests WHERE id = p_request_id FOR UPDATE;
+  IF r.id IS NULL THEN RAISE EXCEPTION 'Request not found'; END IF;
+  IF r.status <> 'pending' THEN RAISE EXCEPTION 'Request already %', r.status; END IF;
+
+  IF r.requested_by = auth.uid() THEN
+    RAISE EXCEPTION 'Cannot approve your own request';
+  END IF;
+
+  CASE r.action_type
+    WHEN 'organizer_verification_approve' THEN PERFORM public.admin_approve_organizer_verification((r.payload->>'request_id')::uuid);
+    WHEN 'organizer_verification_reject'  THEN PERFORM public.admin_reject_organizer_verification((r.payload->>'request_id')::uuid, r.payload->>'reason');
+    WHEN 'hide_event'             THEN PERFORM public.admin_hide_event(r.target_id, r.payload->>'reason');
+    WHEN 'reinstate_event'        THEN PERFORM public.admin_reinstate_event(r.target_id);
+    WHEN 'soft_delete_event'      THEN PERFORM public.soft_delete_event(r.target_id, r.payload->>'reason');
+    WHEN 'restore_deleted_event'  THEN PERFORM public.admin_restore_deleted_event(r.target_id);
+    WHEN 'restore_event'          THEN PERFORM public.admin_restore_deleted_event(r.target_id);
+    WHEN 'set_user_role'          THEN PERFORM public.admin_set_user_role(r.target_id, r.payload->>'new_role');
+    WHEN 'suspend_user'           THEN PERFORM public.admin_suspend_user(r.target_id, NULLIF(r.payload->>'banned_until','')::timestamptz, r.payload->>'reason');
+    WHEN 'unsuspend_user'         THEN PERFORM public.admin_unsuspend_user(r.target_id);
+    WHEN 'soft_delete_user'       THEN PERFORM public.admin_soft_delete_user(r.target_id, r.payload->>'reason');
+    WHEN 'reinstate_user'         THEN PERFORM public.admin_reinstate_user(r.target_id);
+    WHEN 'toggle_user_verified'   THEN PERFORM public.admin_toggle_user_verified(r.target_id, (r.payload->>'verified')::boolean, r.payload->>'reason');
+    WHEN 'set_organizer_capability' THEN
+      IF r.payload->>'is_organizer' IS NULL OR r.payload->>'is_organizer' NOT IN ('true', 'false') THEN
+        RAISE EXCEPTION 'set_organizer_capability requires a boolean payload.is_organizer (got: %)', r.payload->>'is_organizer';
+      END IF;
+      PERFORM public.admin_set_organizer_capability(r.target_id, (r.payload->>'is_organizer')::boolean);
+    WHEN 'set_service_provider_capability' THEN
+      IF r.payload->>'is_service_provider' IS NULL OR r.payload->>'is_service_provider' NOT IN ('true', 'false') THEN
+        RAISE EXCEPTION 'set_service_provider_capability requires a boolean payload.is_service_provider (got: %)', r.payload->>'is_service_provider';
+      END IF;
+      PERFORM public.admin_set_service_provider_capability(r.target_id, (r.payload->>'is_service_provider')::boolean);
+    WHEN 'credit_vents_cents'     THEN PERFORM public.admin_credit_vents_cents(r.target_id, (r.payload->>'amount')::numeric, r.payload->>'reason');
+    WHEN 'debit_vents_cents'      THEN PERFORM public.admin_debit_vents_cents(r.target_id, (r.payload->>'amount')::integer, r.payload->>'reason');
+    WHEN 'approve_payout'         THEN PERFORM public.admin_mark_payout_processing((r.payload->>'request_id')::uuid, r.payload->>'paystack_reference', r.payload->>'transfer_code');
+    WHEN 'reject_payout'          THEN PERFORM public.admin_reject_organizer_payout((r.payload->>'request_id')::uuid, r.payload->>'reason');
+    WHEN 'cancel_payout'          THEN PERFORM public.admin_cancel_processing_payout((r.payload->>'request_id')::uuid, r.payload->>'reason');
+    WHEN 'toggle_event_featured'  THEN
+      IF r.payload->>'featured' IS NULL OR r.payload->>'featured' NOT IN ('true', 'false') THEN
+        RAISE EXCEPTION 'toggle_event_featured requires a boolean payload.featured (got: %)', r.payload->>'featured';
+      END IF;
+      PERFORM public.admin_set_event_featured(
+        r.target_id,
+        (r.payload->>'featured')::boolean,
+        COALESCE((r.payload->>'duration_days')::integer, 14));
+    WHEN 'toggle_event_trending' THEN
+      IF r.payload->>'trending' IS NULL OR r.payload->>'trending' NOT IN ('true', 'false') THEN
+        RAISE EXCEPTION 'toggle_event_trending requires a boolean payload.trending (got: %)', r.payload->>'trending';
+      END IF;
+      PERFORM public.admin_set_event_trending(r.target_id, (r.payload->>'trending')::boolean);
+    WHEN 'decide_organizer_request' THEN PERFORM public.admin_decide_organizer_request(
+                                      (r.payload->>'request_id')::uuid,
+                                      COALESCE((r.payload->>'approve')::boolean, false),
+                                      r.payload->>'reason');
+    WHEN 'decide_service_provider_request' THEN PERFORM public.admin_decide_service_provider_request(
+                                      (r.payload->>'request_id')::uuid,
+                                      r.payload->>'status',
+                                      r.payload->>'admin_note');
+    ELSE RAISE EXCEPTION 'No executor mapped for action_type: %', r.action_type;
+  END CASE;
+
+  UPDATE public.admin_action_requests
+     SET status = 'approved', reviewed_by = auth.uid(), reviewed_at = now(), seen_at = COALESCE(seen_at, now())
+   WHERE id = p_request_id RETURNING * INTO r;
+
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), 'action_approved', CASE WHEN r.target_type = 'user' THEN r.target_id ELSE NULL END,
+          jsonb_build_object('request_id', r.id, 'action_type', r.action_type, 'requested_by', r.requested_by,
+                             'target_label', r.target_label, 'reviewer_ip', public.client_ip(),
+                             'previous_values', r.previous_values, 'requested_changes', r.requested_changes),
+          public.actor_role());
+
+  INSERT INTO public.notifications (user_id, type, title, body, read, icon)
+  VALUES (r.requested_by, 'broadcast', 'Your request has been approved',
+          format('Your request (%s) was approved and executed.', COALESCE(r.target_label, r.action_type)), false, '✅');
+
+  RETURN to_jsonb(r);
+END; $function$;
+
+GRANT EXECUTE ON FUNCTION public.request_admin_action(text,text,uuid,text,jsonb,jsonb,jsonb,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_admin_action(uuid) TO authenticated;
