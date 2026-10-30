@@ -9,6 +9,13 @@ For the full iOS-specific walkthrough (Xcode, Info.plist, signing,
 capabilities), see **[IOS_LAUNCH_CHECKLIST.md](IOS_LAUNCH_CHECKLIST.md)** —
 this file only summarizes iOS status, that one has the step-by-step.
 
+**Top-level status and priorities (2026-10-30):** see
+**[docs/LAUNCH_READINESS_MASTER.md](docs/LAUNCH_READINESS_MASTER.md)**. It
+reconciles this file with the iOS checklist, `MASTER_AUDIT.md`, the design
+checklists, the money-flow audit and open PRs. It also separates launch
+blockers from future work and gives the execution order. This file keeps
+the store, build, infrastructure and on-device detail.
+
 ---
 
 ## 1. Google Play Store Policy & Compliance
@@ -142,6 +149,12 @@ against this codebase.*
 
 ## 9. Backend / Infrastructure
 
+> **Stale in parts (2026-10-30).** Production now serves the Supabase app
+> with live data (57 users, 106 paid tickets), so the "not set in
+> Production" items below no longer describe the live system. They have not
+> been re-verified item by item; see INF-1 in
+> `docs/LAUNCH_READINESS_MASTER.md` before relying on this section.
+
 **Superseded — rewritten to reflect the current Supabase backend.** The
 previous version of this section described fixing bugs in an
 InsForge-backed `api/webhook/paystack.ts` and cited `INSFORGE_API_KEY`
@@ -265,6 +278,8 @@ still missing or genuinely unverified, stated explicitly either way.*
 - [x] Representative dashboard header (mockup D), Rewards screen (claims, eligible events, expenses), and Admin Console → VENTS Earn (all decisions dual-control).
 - [x] Migration 0201 (attribution, claims, realized-profit pool with locked reservations, idempotent credit to the withdrawable earnings wallet through the existing ledger and payout flow, expenses, monthly rate review, append-only audit), verified by 203 local checks.
 - [ ] **Apply 0201 to production** (needs approval).
+- [x] Payout engine safety fixes (no double payouts, reversals returned, fixed transfer reference, reconciliation report) in migration 0202 and the payout API, verified by 49 local checks and 15 mocked API tests. See `docs/money-flow-audit.md`.
+- [ ] **Apply 0202 to production** (needs approval; before enabling reward credit).
 - [x] **Reward credits go to the withdrawable earnings wallet** (decided 2026-10-30, implemented in 0201).
 - [x] Retired 10% commission wiring removed (0201): invitations no longer promise commission sharing or store a split; legacy values, the snapshot and the reconciliation gate are kept.
 - [ ] Management records the legacy 10% reconciliation through dual control. Reward approvals stay blocked until then.
