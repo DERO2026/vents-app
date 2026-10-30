@@ -25,15 +25,73 @@ CREATE TABLE public.tickets (
   status              text DEFAULT 'active'
 );
 
-CREATE TABLE public.organizer_transactions (
+-- Earnings wallet, ledger and withdrawals: columns, constraints and
+-- indexes verbatim from production (2026-10-30). Representative rewards
+-- (0201) credit this wallet, so the live payout functions below run against
+-- it in the test.
+CREATE TABLE public.organizer_wallets (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organizer_id         uuid NOT NULL UNIQUE,
+  balance_kobo         bigint NOT NULL DEFAULT 0 CHECK (balance_kobo >= 0),
+  total_earned_kobo    bigint NOT NULL DEFAULT 0,
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  total_withdrawn_kobo bigint NOT NULL DEFAULT 0,
+  pending_kobo         bigint NOT NULL DEFAULT 0
+);
+
+CREATE TABLE public.organizer_bank_accounts (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organizer_id   uuid NOT NULL,
-  type           text NOT NULL,
-  amount_kobo    bigint NOT NULL,
-  ticket_sale_id uuid,
-  metadata       jsonb,
-  created_at     timestamptz DEFAULT now()
+  bank_name      text,
+  account_number text,
+  account_name   text,
+  created_at     timestamptz DEFAULT now(),
+  updated_at     timestamptz DEFAULT now(),
+  bank_code      text,
+  recipient_code text,
+  is_default     boolean DEFAULT false,
+  is_active      boolean DEFAULT true
 );
+
+CREATE TABLE public.organizer_withdrawal_requests (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organizer_id       uuid NOT NULL,
+  amount_kobo        bigint NOT NULL CHECK (amount_kobo > 0),
+  status             text NOT NULL DEFAULT 'pending' CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text, 'rejected'::text, 'cancelled'::text]))),
+  bank_account_id    uuid REFERENCES public.organizer_bank_accounts(id) ON DELETE SET NULL,
+  admin_note         text,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now(),
+  paystack_reference text,
+  transfer_code      text,
+  resolved_by        uuid,
+  bank_name          text,
+  bank_code          text,
+  account_number     text,
+  account_name       text,
+  idempotency_key    text
+);
+CREATE UNIQUE INDEX uniq_organizer_withdraw_idempotency ON public.organizer_withdrawal_requests USING btree (organizer_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+CREATE TABLE public.organizer_transactions (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organizer_id          uuid NOT NULL,
+  type                  text NOT NULL,
+  amount_kobo           bigint NOT NULL,
+  description           text,
+  ticket_sale_id        uuid,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  withdrawal_request_id uuid REFERENCES public.organizer_withdrawal_requests(id),
+  metadata              jsonb,
+  CONSTRAINT organizer_transactions_amount_kobo_check CHECK ((amount_kobo > 0)),
+  CONSTRAINT organizer_transactions_type_check CHECK ((type = ANY (ARRAY['credit'::text, 'debit'::text, 'payout'::text, 'cancelled_payout_refund'::text, 'refund'::text])))
+);
+
+CREATE TABLE public.app_config (id int PRIMARY KEY DEFAULT 1, disable_payouts boolean);
+INSERT INTO public.app_config (disable_payouts) VALUES (false);  -- live value
+CREATE OR REPLACE FUNCTION public.payouts_disabled() RETURNS boolean LANGUAGE sql STABLE SET search_path TO '' AS
+$$ SELECT COALESCE((SELECT disable_payouts FROM public.app_config LIMIT 1), true) $$;
+CREATE OR REPLACE FUNCTION public.is_email_verified() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT true $$;
 
 CREATE TABLE public.pending_purchases (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -248,3 +306,131 @@ END; $function$;
 
 GRANT EXECUTE ON FUNCTION public.request_admin_action(text,text,uuid,text,jsonb,jsonb,jsonb,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.approve_admin_action(uuid) TO authenticated;
+
+-- Live request_organizer_payout (verbatim) and complete_organizer_payout (its money-moving statements verbatim; returned rows simplified) -- pg_get_functiondef,
+-- 2026-10-30.
+CREATE OR REPLACE FUNCTION public.request_organizer_payout(p_amount_kobo bigint, p_bank_account_id uuid, p_idempotency_key text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_organizer_id uuid := auth.uid();
+  v_balance      bigint;
+  v_request_id   uuid;
+  v_account      public.organizer_bank_accounts;
+BEGIN
+  IF public.payouts_disabled() THEN
+    RAISE EXCEPTION 'payouts_disabled';
+  END IF;
+  IF v_organizer_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+  IF NOT public.is_email_verified() THEN
+    RAISE EXCEPTION 'Please verify your email before requesting a withdrawal';
+  END IF;
+  IF p_amount_kobo IS NULL OR p_amount_kobo <= 0 THEN
+    RAISE EXCEPTION 'Invalid amount';
+  END IF;
+  IF p_idempotency_key IS NOT NULL AND trim(p_idempotency_key) <> '' THEN
+    SELECT id INTO v_request_id
+    FROM public.organizer_withdrawal_requests
+    WHERE organizer_id = v_organizer_id AND idempotency_key = p_idempotency_key;
+    IF v_request_id IS NOT NULL THEN
+      RETURN v_request_id;
+    END IF;
+  END IF;
+  SELECT * INTO v_account FROM public.organizer_bank_accounts
+  WHERE id = p_bank_account_id AND organizer_id = v_organizer_id
+    AND is_active AND recipient_code IS NOT NULL;
+  IF v_account IS NULL THEN
+    RAISE EXCEPTION 'Bank account not verified';
+  END IF;
+  SELECT balance_kobo INTO v_balance
+  FROM public.organizer_wallets
+  WHERE organizer_id = v_organizer_id
+  FOR UPDATE;
+  IF v_balance IS NULL OR v_balance < p_amount_kobo THEN
+    RAISE EXCEPTION 'Insufficient balance';
+  END IF;
+  UPDATE public.organizer_wallets
+  SET balance_kobo = balance_kobo - p_amount_kobo,
+      pending_kobo = pending_kobo + p_amount_kobo,
+      updated_at = now()
+  WHERE organizer_id = v_organizer_id;
+  BEGIN
+    INSERT INTO public.organizer_withdrawal_requests
+      (organizer_id, amount_kobo, bank_account_id, status, bank_name, bank_code, account_number, account_name, idempotency_key)
+    VALUES
+      (v_organizer_id, p_amount_kobo, p_bank_account_id, 'pending',
+       v_account.bank_name, v_account.bank_code, v_account.account_number, v_account.account_name,
+       NULLIF(trim(COALESCE(p_idempotency_key, '')), ''))
+    RETURNING id INTO v_request_id;
+  EXCEPTION WHEN unique_violation THEN
+    UPDATE public.organizer_wallets
+    SET balance_kobo = balance_kobo + p_amount_kobo,
+        pending_kobo = GREATEST(0, pending_kobo - p_amount_kobo),
+        updated_at = now()
+    WHERE organizer_id = v_organizer_id;
+    SELECT id INTO v_request_id
+    FROM public.organizer_withdrawal_requests
+    WHERE organizer_id = v_organizer_id AND idempotency_key = p_idempotency_key;
+    RETURN v_request_id;
+  END;
+  RETURN v_request_id;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.complete_organizer_payout(p_request_id text)
+ RETURNS TABLE(status text, organizer_email text, organizer_name text, amount_kobo bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_id uuid;
+  v_organizer_id uuid;
+  v_amount_kobo bigint;
+  v_status text;
+  v_bank_name text;
+  v_account_number text;
+  v_account_name text;
+  v_rows int;
+BEGIN
+  SELECT r.id, r.organizer_id, r.amount_kobo, r.status, b.bank_name, b.account_number, b.account_name
+    INTO v_id, v_organizer_id, v_amount_kobo, v_status, v_bank_name, v_account_number, v_account_name
+  FROM public.organizer_withdrawal_requests r
+  JOIN public.organizer_bank_accounts b ON b.id = r.bank_account_id
+  WHERE r.id::text = p_request_id OR r.transfer_code = p_request_id OR r.paystack_reference = p_request_id
+  FOR UPDATE OF r;
+  IF v_organizer_id IS NULL THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::text, NULL::text, NULL::bigint;
+    RETURN;
+  END IF;
+  IF v_status = 'completed' THEN
+    RETURN QUERY SELECT 'already_completed'::text, NULL::text, NULL::text, v_amount_kobo;
+    RETURN;
+  END IF;
+  UPDATE public.organizer_withdrawal_requests
+  SET status = 'completed', updated_at = now()
+  WHERE id = v_id AND public.organizer_withdrawal_requests.status IN ('pending', 'processing');
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN QUERY SELECT 'already_completed'::text, NULL::text, NULL::text, v_amount_kobo;
+    RETURN;
+  END IF;
+  UPDATE public.organizer_wallets
+  SET pending_kobo = GREATEST(0, pending_kobo - v_amount_kobo),
+      total_withdrawn_kobo = COALESCE(total_withdrawn_kobo, 0) + v_amount_kobo,
+      updated_at = now()
+  WHERE organizer_id = v_organizer_id;
+  INSERT INTO public.organizer_transactions
+    (organizer_id, type, amount_kobo, description, withdrawal_request_id, metadata)
+  VALUES (v_organizer_id, 'payout', v_amount_kobo,
+    'Withdrawal to ' || COALESCE(v_bank_name, 'bank account') || ' — completed', v_id,
+    jsonb_build_object('bank_name', v_bank_name, 'account_number', v_account_number, 'account_name', v_account_name));
+  RETURN QUERY SELECT 'completed'::text, NULL::text, NULL::text, v_amount_kobo;
+END;
+$function$;
+GRANT EXECUTE ON FUNCTION public.request_organizer_payout(bigint, uuid, text) TO authenticated;

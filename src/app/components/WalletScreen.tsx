@@ -42,7 +42,7 @@ interface TxnMetadata {
 
 interface Transaction {
   id: string;
-  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund';
+  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund' | 'representative_reward' | 'representative_reward_reversal';
   amount_kobo: number;
   description: string | null;
   withdrawal_request_id: string | null;
@@ -84,12 +84,14 @@ type FeedItem =
 
 // Money actually leaving the wallet vs. coming into/back into it — used to
 // pick the icon, color, and +/- sign for each transaction row.
-const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund']);
+const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund', 'representative_reward']);
 const TYPE_LABELS: Record<string, string> = {
   credit: 'Ticket Sale',
   debit: 'Withdrawal',
   payout: 'Withdrawal',
   cancelled_payout_refund: 'Withdrawal Cancelled — Refunded',
+  representative_reward: 'Representative Reward',
+  representative_reward_reversal: 'Representative Reward Reversed',
 };
 
 const WITHDRAWAL_REQUEST_LABELS: Record<WithdrawalRequest['status'], string> = {
@@ -149,8 +151,14 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // can actually earn -- a plain attendee has no organizer_wallets row, so
   // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
   // can never use would be confusing, not just visually redundant.
-  const isEarner = !!currentUser?.isOrganizer || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.is_service_provider === true;
   const [wallet, setWallet] = useState<WalletData | null>(null);
+  // Representatives earn into this same wallet (VENTS Earn rewards, 0201)
+  // without holding an organizer or provider capability, so anyone with an
+  // earnings balance or history also gets the withdrawal and bank sections.
+  // request_organizer_payout itself has no capability gate; this only
+  // decides what the screen offers.
+  const hasEarnings = !!wallet && (wallet.total_earned_kobo > 0 || wallet.balance_kobo > 0 || wallet.pending_kobo > 0);
+  const isEarner = !!currentUser?.isOrganizer || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.is_service_provider === true || hasEarnings;
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);

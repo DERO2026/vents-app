@@ -22,9 +22,15 @@
 --     realized-profit balance covers it. Reservation locks the single pool
 --     row, so two claims can never spend the same profit. Each claim
 --     carries an idempotency key.
---   * Credit: funded rewards are credited to the representative's VENTS
---     Wallet (user_wallets), once, with a unique reference -- and only
---     while earn_settings.payouts_enabled is true. It ships false.
+--   * Credit: funded rewards are credited to the representative's
+--     WITHDRAWABLE EARNINGS WALLET (organizer_wallets, the same wallet and
+--     payout flow organizers and service providers already use), once per
+--     claim, as a 'representative_reward' ledger row in
+--     organizer_transactions -- and only while
+--     earn_settings.payouts_enabled is true. It ships false. From there the
+--     existing withdrawal flow (request_organizer_payout -> admin claim ->
+--     complete/fail/cancel) handles available -> pending -> withdrawn.
+--     The VENTS Wallet (user_wallets) and VENTS Cents are never touched.
 --   * Monthly counts by calendar month (Africa/Lagos). At 9+ qualifying
 --     organizers in a month, management MAY approve a higher rate for the
 --     next month through dual control. Nothing increases automatically.
@@ -436,7 +442,7 @@ CREATE TABLE public.representative_reward_claims (
   funded_at              timestamptz,
   funding_idempotency_key uuid,
   credited_at            timestamptz,
-  wallet_transaction_id  uuid,
+  earnings_transaction_id uuid,           -- organizer_transactions row of the credit
   rejected_at            timestamptz,
   reversed_at            timestamptz,
   decision_reason        text,
@@ -598,7 +604,8 @@ END;
 $function$;
 
 -- Representative: claim an approved reward. Reserves realized profit
--- (pool row locked) and, if payouts are enabled, credits the VENTS Wallet.
+-- (pool row locked) and, if payouts are enabled, credits the withdrawable
+-- earnings wallet.
 -- Idempotent per claim: the same key returns the existing result.
 CREATE OR REPLACE FUNCTION public.claim_representative_reward(p_claim_id uuid, p_idempotency_key uuid)
  RETURNS jsonb
@@ -658,43 +665,55 @@ BEGIN
     RETURN jsonb_build_object('status', 'funded', 'claim_id', c.id, 'payouts_enabled', false);
   END IF;
 
-  -- Credit the VENTS Wallet exactly once (unique reference per claim).
-  INSERT INTO public.user_wallets (user_id) VALUES (v_uid) ON CONFLICT (user_id) DO NOTHING;
-  PERFORM 1 FROM public.user_wallets WHERE user_id = v_uid FOR UPDATE;
-
-  INSERT INTO public.user_wallet_transactions (user_id, type, amount_kobo, description, reference_id, metadata)
-  VALUES (v_uid, 'earn_reward', c.amount_kobo, 'VENTS representative reward', 'rep_reward:' || c.id::text,
-          jsonb_build_object('claim_id', c.id, 'organizer_id', c.organizer_id, 'event_id', c.event_id))
-  ON CONFLICT (reference_id) WHERE (type = 'earn_reward' AND reference_id IS NOT NULL) DO NOTHING
+  -- Credit the earnings wallet exactly once: the ledger row is unique per
+  -- claim (organizer_transactions_rep_reward_once), so a retry inserts
+  -- nothing and moves no money. Ledger row first, then the balance, in one
+  -- transaction -- the same order credit_organizer_wallet uses.
+  INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, metadata)
+  VALUES (v_uid, 'representative_reward', c.amount_kobo, 'VENTS representative reward',
+          jsonb_build_object('representative_reward_claim_id', c.id, 'organizer_id', c.organizer_id,
+                             'event_id', c.event_id, 'reward_month', c.reward_month))
+  ON CONFLICT ((metadata->>'representative_reward_claim_id')) WHERE type = 'representative_reward' DO NOTHING
   RETURNING id INTO v_tx;
 
   IF v_tx IS NOT NULL THEN
-    UPDATE public.user_wallets SET balance_kobo = balance_kobo + c.amount_kobo, updated_at = now()
-     WHERE user_id = v_uid;
+    INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo)
+    VALUES (v_uid, c.amount_kobo, c.amount_kobo)
+    ON CONFLICT (organizer_id) DO UPDATE
+      SET balance_kobo      = public.organizer_wallets.balance_kobo + EXCLUDED.balance_kobo,
+          total_earned_kobo = public.organizer_wallets.total_earned_kobo + EXCLUDED.total_earned_kobo,
+          updated_at        = now();
     SELECT * INTO v_pool FROM public.earn_profit_pool WHERE id FOR UPDATE;
     PERFORM public.earn_pool_move('credit', c.amount_kobo, NULL, c.id, NULL);
   END IF;
 
   UPDATE public.representative_reward_claims
-     SET status = 'credited', credited_at = now(), wallet_transaction_id = COALESCE(v_tx, wallet_transaction_id),
+     SET status = 'credited', credited_at = now(), earnings_transaction_id = COALESCE(v_tx, earnings_transaction_id),
          updated_at = now()
    WHERE id = c.id RETURNING * INTO c;
-  PERFORM public.earn_audit('reward_claim', c.id, 'wallet_credited', v_uid,
-    jsonb_build_object('amount_kobo', c.amount_kobo, 'wallet_transaction_id', v_tx));
+  PERFORM public.earn_audit('reward_claim', c.id, 'earnings_wallet_credited', v_uid,
+    jsonb_build_object('amount_kobo', c.amount_kobo, 'earnings_transaction_id', v_tx));
 
   RETURN jsonb_build_object('status', 'credited', 'claim_id', c.id, 'payouts_enabled', true);
 END;
 $function$;
 
--- VENTS Wallet: allow the new transaction types, each reference unique.
-ALTER TABLE public.user_wallet_transactions DROP CONSTRAINT user_wallet_transactions_type_check;
-ALTER TABLE public.user_wallet_transactions ADD CONSTRAINT user_wallet_transactions_type_check
-  CHECK (type = ANY (ARRAY['deposit'::text, 'spend'::text, 'refund'::text, 'vc_conversion'::text,
-                           'earn_reward'::text, 'earn_reversal'::text]));
-CREATE UNIQUE INDEX user_wallet_transactions_earn_reward_ref_idx
-  ON public.user_wallet_transactions (reference_id) WHERE (type = 'earn_reward' AND reference_id IS NOT NULL);
-CREATE UNIQUE INDEX user_wallet_transactions_earn_reversal_ref_idx
-  ON public.user_wallet_transactions (reference_id) WHERE (type = 'earn_reversal' AND reference_id IS NOT NULL);
+-- Earnings ledger: two reward entry types, kept apart from 'credit' (which
+-- the wallet screen, analytics and the fee candidate all read as ticket or
+-- booking revenue), each written at most once per claim.
+ALTER TABLE public.organizer_transactions DROP CONSTRAINT organizer_transactions_type_check;
+ALTER TABLE public.organizer_transactions ADD CONSTRAINT organizer_transactions_type_check
+  CHECK (type = ANY (ARRAY['credit'::text, 'debit'::text, 'payout'::text, 'cancelled_payout_refund'::text,
+                           'refund'::text, 'representative_reward'::text, 'representative_reward_reversal'::text]));
+CREATE UNIQUE INDEX organizer_transactions_rep_reward_once
+  ON public.organizer_transactions ((metadata->>'representative_reward_claim_id'))
+  WHERE type = 'representative_reward';
+CREATE UNIQUE INDEX organizer_transactions_rep_reward_reversal_once
+  ON public.organizer_transactions ((metadata->>'representative_reward_claim_id'))
+  WHERE type = 'representative_reward_reversal';
+ALTER TABLE public.organizer_transactions ADD CONSTRAINT organizer_transactions_rep_reward_has_claim
+  CHECK (type NOT IN ('representative_reward', 'representative_reward_reversal')
+         OR (metadata->>'representative_reward_claim_id') IS NOT NULL);
 
 -- A refund on an event whose profit was already recognized takes the
 -- ticket's nominal fee back out of the pool, once per ticket.
@@ -893,16 +912,24 @@ BEGIN
     IF c.status = 'funded' THEN
       PERFORM public.earn_pool_move('release', c.amount_kobo, NULL, c.id, NULL);
     ELSIF c.status = 'credited' THEN
-      SELECT balance_kobo INTO v_wallet FROM public.user_wallets WHERE user_id = c.representative_id FOR UPDATE;
+      -- Take the reward back out of the AVAILABLE earnings balance only.
+      -- Money already requested for withdrawal (pending) or paid out
+      -- (withdrawn) is never clawed back silently: the reversal is refused
+      -- and has to be recovered manually first.
+      SELECT balance_kobo INTO v_wallet FROM public.organizer_wallets WHERE organizer_id = c.representative_id FOR UPDATE;
       IF COALESCE(v_wallet, 0) < c.amount_kobo THEN
-        RAISE EXCEPTION 'VENTS Wallet balance (% kobo) does not cover the reversal; recover it manually first', COALESCE(v_wallet, 0);
+        RAISE EXCEPTION 'Available earnings balance (% kobo) does not cover the reversal; part of the reward is pending withdrawal or already withdrawn -- recover it manually first', COALESCE(v_wallet, 0);
       END IF;
-      INSERT INTO public.user_wallet_transactions (user_id, type, amount_kobo, description, reference_id, metadata)
-      VALUES (c.representative_id, 'earn_reversal', c.amount_kobo, 'VENTS representative reward reversed',
-              'rep_reward:' || c.id::text, jsonb_build_object('claim_id', c.id, 'reason', r.payload->>'reason'))
+      INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, metadata)
+      VALUES (c.representative_id, 'representative_reward_reversal', c.amount_kobo, 'VENTS representative reward reversed',
+              jsonb_build_object('representative_reward_claim_id', c.id, 'reason', r.payload->>'reason',
+                                 'admin_request_id', r.id))
       RETURNING id INTO v_tx;
-      UPDATE public.user_wallets SET balance_kobo = balance_kobo - c.amount_kobo, updated_at = now()
-       WHERE user_id = c.representative_id;
+      UPDATE public.organizer_wallets
+         SET balance_kobo = balance_kobo - c.amount_kobo,
+             total_earned_kobo = GREATEST(0, total_earned_kobo - c.amount_kobo),
+             updated_at = now()
+       WHERE organizer_id = c.representative_id;
       PERFORM public.earn_pool_move('reversal_return', c.amount_kobo, NULL, c.id, NULL);
     ELSIF c.status <> 'approved' THEN
       RAISE EXCEPTION 'This claim cannot be reversed (status: %)', c.status;
@@ -912,7 +939,7 @@ BEGIN
      WHERE id = c.id;
     PERFORM public.earn_audit('reward_claim', c.id, 'admin_reversed', c.representative_id,
       jsonb_build_object('admin_request_id', r.id, 'requested_by', r.requested_by, 'previous_status', c.status,
-                         'reason', r.payload->>'reason', 'wallet_transaction_id', v_tx));
+                         'reason', r.payload->>'reason', 'earnings_transaction_id', v_tx));
 
   WHEN 'earn_recognize_event_profit' THEN
     v_elig := public.earn_event_eligibility((r.payload->>'event_id')::uuid);

@@ -86,7 +86,7 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
         {error && <ErrorNote>{error}</ErrorNote>}
         <Tiles>
           <Tile wide testId="earn-tile-withdrawable" k="Withdrawable · Earnings wallet"
-            v={data ? formatNaira(data.withdrawableKobo) : dash} s="From ticket sales and service bookings" />
+            v={data ? formatNaira(data.withdrawableKobo) : dash} s="From ticket sales, bookings and rewards" />
           <Tile testId="earn-tile-pending" k="Pending payout"
             v={data ? formatNaira(data.pendingPayoutKobo) : dash}
             s={data?.pendingPayoutSince ? `Requested ${shortDate(data.pendingPayoutSince)}` : 'None requested'} />
@@ -100,7 +100,7 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
           {rep ? (
             rep.creditedKobo > 0 ? (
               <Tile testId="earn-tile-rep" k="Representative" v={formatNaira(rep.creditedKobo)}
-                s="Rewards added to VENTS Wallet" onClick={() => onNavigate('representative-rewards')} />
+                s="In your earnings wallet" onClick={() => onNavigate('representative-rewards')} />
             ) : (
               <Tile testId="earn-tile-rep" k="Representative" small v="Not paid yet"
                 s={rep.payoutsEnabled ? `${rep.open} reward${rep.open === 1 ? '' : 's'} in progress` : 'Payouts not open yet'}

@@ -64,7 +64,8 @@ describe('reward claim states', () => {
     expect(v('approved').detail).toMatch(/Waiting for VENTS profit/);
     expect(v('approved', false, true).detail).toBe('Ready to claim');
     expect(v('funded').detail).toMatch(/payouts start/);
-    expect(v('credited').label).toBe('In VENTS Wallet');
+    expect(v('credited').label).toBe('Withdrawable');
+    expect(v('credited').detail).toBe('In your earnings wallet');
     expect(v('rejected').label).toBe('Rejected');
     expect(v('reversed').label).toBe('Reversed');
   });

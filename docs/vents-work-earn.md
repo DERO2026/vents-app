@@ -69,7 +69,7 @@ not in the UI.
    - The single pool row is locked, so concurrent claims can never spend the same profit.
    - A per-claim idempotency key stops retries from double-reserving.
    - If the pool is short, the claim stays Approved ("waiting for VENTS profit").
-6. **Credit.** A funded reward is credited once (unique reference `rep_reward:<claim>`) to the **VENTS Wallet**, and only while `earn_settings.payouts_enabled` is true. It ships **false**.
+6. **Credit (confirmed decision, 2026-10-30): the withdrawable earnings wallet.** A funded reward is credited once to the representative's `organizer_wallets` row, the same wallet organizers and service providers withdraw from. It only happens while `earn_settings.payouts_enabled` is true, which ships **false**. See "Earnings wallet integration" below.
 7. **Monthly count** is by calendar month (Africa/Lagos) of the qualifying event's end. At 9 or more, a dual-control request may set a higher rate (above ₦50,000) for the following month only. Nothing rises automatically.
 8. **Expenses** (transport/support) are submitted by the representative and approved or rejected through dual control. They are tracked separately and never touch rewards, the pool or a wallet.
 9. **Audit trail.** `earn_audit_log` and `earn_profit_ledger` are append-only. They record attribution, duplicate/self-referral blocks, eligibility snapshots, reviews, recognitions, reservations, credits, reversals, expenses, rate changes and settings changes.
@@ -80,7 +80,29 @@ not in the UI.
 
     The 10% copy is removed from the UI. Approvals and claims stay **blocked** until management records the reconciliation (`earn_update_settings: legacy_commission_reconciled`) through dual control.
 
-Earning states shown to people: Pending (organizer / review) → Approved → Funded → In VENTS Wallet; Rejected; Reversed.
+Earning states shown to people: Pending (organizer / review) → Approved → Funded → Withdrawable (in the earnings wallet); Rejected; Reversed. Once credited, the money is part of the earnings wallet's available balance. Pending and withdrawn amounts are shown by the existing wallet, because a withdrawal draws on the whole balance, not on one reward.
+
+### Earnings wallet integration
+
+Rewards reuse the existing earnings system. There is no new wallet or balance.
+
+| Existing piece | Role for rewards |
+|---|---|
+| `organizer_wallets` (one row per user) | `balance_kobo` = available/withdrawable, `pending_kobo` = requested and not yet paid, `total_withdrawn_kobo` = paid out, `total_earned_kobo` = lifetime earned. The reward credit adds to `balance_kobo` and `total_earned_kobo`. |
+| `organizer_transactions` (ledger) | One `representative_reward` row per claim on credit, and one `representative_reward_reversal` row on reversal. Both carry `metadata.representative_reward_claim_id`. |
+| `request_organizer_payout` → `admin_claim_payout_for_processing` → `admin_mark_payout_processing` → `complete_organizer_payout` / `fail_organizer_payout` / `admin_reject_organizer_payout` / `admin_cancel_processing_payout` | Unchanged. Representatives withdraw rewards exactly as organizers withdraw ticket revenue: available → pending → withdrawn, or back to available on failure, rejection or cancellation. |
+| `payouts_disabled()` (`app_config.disable_payouts`) | Unchanged global switch for withdrawals. It is currently **off** (withdrawals are live), so `earn_settings.payouts_enabled` (dual control, ships false) is what keeps rewards from reaching the withdrawable balance until approved. |
+
+Schema changes, all in 0201:
+- `organizer_transactions_type_check` gains `representative_reward` and `representative_reward_reversal`. Rewards are deliberately **not** typed `credit`, which the wallet screen, analytics and the fee candidate read as ticket or booking revenue.
+- Unique indexes `organizer_transactions_rep_reward_once` and `organizer_transactions_rep_reward_reversal_once` on `metadata->>'representative_reward_claim_id'`, plus a check that every reward row names its claim. A retry can never credit or reverse twice; the ledger row is written first and the balance moves only if it was inserted.
+- `representative_reward_claims.earnings_transaction_id` links the claim to its ledger row.
+
+**Reversal.** This takes the reward back out of the **available** balance only. If part of it is pending withdrawal or already withdrawn, the reversal is refused and must be recovered manually. Money in flight or already paid is never silently clawed back. A successful reversal also lowers `total_earned_kobo` and returns the amount to the profit pool.
+
+**Kept separate.** 0201 does not write to the VENTS Wallet (`user_wallets`, `user_wallet_transactions`) or VENTS Cents. The local test checks the VENTS Wallet balance is unchanged.
+
+**App.** The earnings wallet screen labels the new rows ("Representative Reward" and "Representative Reward Reversed"). It also shows its withdrawal and bank-account sections to anyone with an earnings balance or history, not only organizers and providers. `request_organizer_payout` has no capability gate.
 
 ### Realized profit: why it is admin-recognized, not computed
 
@@ -103,11 +125,7 @@ recognized event later takes that ticket's fee back out of the pool.
 
 ## Blocked or needing a decision
 
-1. **VENTS Wallet vs. "withdrawable/paid".** The brief says to credit the reward "through the VENTS Wallet", and also lists withdrawable and paid as states. The VENTS Wallet is spendable and **not withdrawable**, so a credited reward cannot be withdrawn or "paid" today. Two ways to resolve it:
-   - (a) add a withdrawal path for reward credits, or
-   - (b) credit the earnings wallet instead.
-
-   Until then the last reachable state is "In VENTS Wallet", and payouts stay off.
+1. ~~VENTS Wallet vs. withdrawable.~~ **Resolved 2026-10-30:** rewards go to the withdrawable earnings wallet (see "Earnings wallet integration"). Reward credit stays off until it is enabled through dual control.
 2. **Settlement hold** defaults to 7 days. Refunds can still be issued after an event, and no hold period was specified. The hold can be changed through dual control (0–120 days).
 3. **Processor fees and VC reward costs** must be entered by admins at recognition. Applying 0192 and recording Paystack fees would let this be computed.
 4. **Policy choices made conservatively. Please confirm:**

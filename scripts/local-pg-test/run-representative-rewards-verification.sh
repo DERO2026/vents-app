@@ -259,8 +259,8 @@ expect_value "pool: 50,000 kobo left available, ₦50,000 reserved" "$(pool)" "5
 "${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.claim_representative_reward('$C1', '22222222-2222-2222-2222-222222222222');")" >/dev/null
 expect_value "retrying the claim does not reserve twice" \
   "$(val "SELECT count(*) FROM public.earn_profit_ledger WHERE claim_id = '$C1' AND entry_type = 'reservation';")/$(pool)" "1/50000/5000000/0"
-expect_value "nothing reached the VENTS Wallet while payouts are disabled" \
-  "$(val "SELECT count(*) FROM public.user_wallet_transactions;")" "0"
+expect_value "nothing reached the earnings wallet while payouts are disabled" \
+  "$(val "SELECT count(*) FROM public.organizer_transactions WHERE type = 'representative_reward';")/$(val "SELECT count(*) FROM public.organizer_wallets WHERE organizer_id = '$REP';")" "0/0"
 
 echo "== Concurrency: two claims, profit for one =="
 # ORG2 (REP2) and ORG3 (approved by two uninvolved admins) both approved;
@@ -280,16 +280,42 @@ expect_value "exactly one concurrent claim was funded, the other waits for profi
 expect_value "pool never overspent" "$(pool)" "0/10000000/0"
 rm -f "$OUT.a" "$OUT.b"
 
-echo "== Credit to the VENTS Wallet =="
+echo "== Credit to the withdrawable earnings wallet =="
+# The representative already holds VENTS Wallet money; it must never move.
+"${PSQL[@]}" -q -c "INSERT INTO public.user_wallets (user_id, balance_kobo) VALUES ('$REP', 10000);"
+earn() { val "SELECT balance_kobo || '/' || pending_kobo || '/' || total_withdrawn_kobo || '/' || total_earned_kobo FROM public.organizer_wallets WHERE organizer_id = '$1';"; }
 RE=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": true, "note": "Go-live approved by management"}')
-expect_ok "payouts enabled through dual control" "$(approve "$ADMIN_B" "$RE")"
+expect_ok "reward credit enabled through dual control" "$(approve "$ADMIN_B" "$RE")"
 expect_value "funded reward is credited" \
   "$(val "$(as "$REP" "SELECT public.claim_representative_reward('$C1', '22222222-2222-2222-2222-222222222222')->>'status';")")" "credited"
-expect_value "VENTS Wallet credited ₦50,000 once" \
-  "$(val "SELECT balance_kobo || '/' || (SELECT count(*) FROM public.user_wallet_transactions WHERE user_id = '$REP' AND type = 'earn_reward') FROM public.user_wallets WHERE user_id = '$REP';")" "5000000/1"
+expect_value "earnings wallet: ₦50,000 available, nothing pending or withdrawn, ₦50,000 earned" "$(earn "$REP")" "5000000/0/0/5000000"
+expect_value "exactly one representative_reward ledger row, linked from the claim" \
+  "$(val "SELECT count(*) || '/' || bool_and(ot.id = c.earnings_transaction_id)::text FROM public.organizer_transactions ot JOIN public.representative_reward_claims c ON c.id = '$C1' WHERE ot.type = 'representative_reward' AND ot.organizer_id = '$REP';")" "1/true"
+expect_value "the reward is not booked as ticket revenue ('credit')" \
+  "$(val "SELECT count(*) FROM public.organizer_transactions WHERE organizer_id = '$REP' AND type = 'credit';")" "0"
 expect_value "retrying after credit changes nothing" \
-  "$(val "$(as "$REP" "SELECT public.claim_representative_reward('$C1', gen_random_uuid())->>'duplicate';")")/$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP';")" "true/5000000"
+  "$(val "$(as "$REP" "SELECT public.claim_representative_reward('$C1', gen_random_uuid())->>'duplicate';")")/$(earn "$REP")" "true/5000000/0/0/5000000"
+expect_error "the ledger itself refuses a second credit for the same claim" "organizer_transactions_rep_reward_once" \
+  "INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, metadata) VALUES ('$REP', 'representative_reward', 5000000, jsonb_build_object('representative_reward_claim_id', '$C1'));"
+expect_error "a reward ledger row must name its claim" "organizer_transactions_rep_reward_has_claim" \
+  "INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, metadata) VALUES ('$REP', 'representative_reward', 100, '{}'::jsonb);"
+expect_value "VENTS Wallet untouched (balance and transactions)" \
+  "$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP';")/$(val "SELECT count(*) FROM public.user_wallet_transactions;")" "10000/0"
 expect_value "pool: reservation moved to credited" "$(pool)" "0/5000000/5000000"
+
+echo "== Withdrawal through the existing payout flow =="
+"${PSQL[@]}" -q -c "INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, account_number, account_name, recipient_code, is_default) VALUES ('00000000-0000-0000-0000-0000000ba001', '$REP', 'Test Bank', '0123456789', 'Rep One', 'RCP_test', true);"
+BANK=00000000-0000-0000-0000-0000000ba001
+WD=$(val "$(as "$REP" "SELECT public.request_organizer_payout(2000000, '$BANK', 'wd-key-1');")")
+expect_value "withdrawal request moves ₦20,000 from available to pending" "$(earn "$REP")" "3000000/2000000/0/5000000"
+expect_value "retrying the withdrawal with the same key returns the same request, no double hold" \
+  "$(val "$(as "$REP" "SELECT (public.request_organizer_payout(2000000, '$BANK', 'wd-key-1') = '$WD')::text;")")/$(earn "$REP")" "true/3000000/2000000/0/5000000"
+RV=$(request "$ADMIN_A" earn_reverse_reward NULL "{\"claim_id\":\"$C1\",\"reason\":\"Organizer was a duplicate account\"}")
+expect_error "a reversal is refused when part of the reward is pending withdrawal" "does not cover the reversal" "$(approve "$ADMIN_B" "$RV")"
+expect_value "the refused reversal changed nothing" \
+  "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$C1';")/$(earn "$REP")/$(pool)" "credited/3000000/2000000/0/5000000/0/5000000/5000000"
+expect_value "completing the payout marks it withdrawn" \
+  "$(val "SELECT status FROM public.complete_organizer_payout('$WD');")/$(earn "$REP")" "completed/3000000/0/2000000/5000000"
 
 echo "== Refund after recognition =="
 "${PSQL[@]}" -q -c "UPDATE public.tickets SET payment_status = 'refunded' WHERE id = '00000000-0000-0000-0000-0000000f0002';"
@@ -298,15 +324,22 @@ echo "== Refund after recognition =="
 expect_value "a later refund takes its fee back out of the pool, once per ticket" \
   "$(pool)/$(val "SELECT count(*) FROM public.earn_profit_ledger WHERE entry_type = 'refund_adjustment';")" "-50000/5000000/5000000/1"
 
-echo "== Reversal =="
-RV=$(request "$ADMIN_A" earn_reverse_reward NULL "{\"claim_id\":\"$C1\",\"reason\":\"Organizer was a duplicate account\"}")
+echo "== Reversal of an available reward =="
+# Whichever claim won the concurrency race is funded; credit and reverse it.
+W=$(val "SELECT id FROM public.representative_reward_claims WHERE id IN ('$C2', '$C3') AND status = 'funded';")
+WR=$(val "SELECT representative_id FROM public.representative_reward_claims WHERE id = '$W';")
+WO=$(val "SELECT organizer_id || '|' || event_id FROM public.representative_reward_claims WHERE id = '$W';")
+expect_value "the race winner is credited to its own earnings wallet" \
+  "$(val "$(as "$WR" "SELECT public.claim_representative_reward('$W', gen_random_uuid())->>'status';")")/$(earn "$WR")" "credited/5000000/0/0/5000000"
+RV=$(request "$ADMIN_A" earn_reverse_reward NULL "{\"claim_id\":\"$W\",\"reason\":\"Referral was not genuine\"}")
 expect_ok "credited reward reversed through dual control" "$(approve "$ADMIN_B" "$RV")"
-expect_value "wallet debited, claim reversed, money back in the pool" \
-  "$(val "SELECT (SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP') || '/' || status FROM public.representative_reward_claims WHERE id = '$C1';")/$(pool)" "0/reversed/4950000/5000000/0"
-RV=$(request "$ADMIN_A" earn_reverse_reward NULL "{\"claim_id\":\"$C1\",\"reason\":\"again\"}")
+expect_value "available balance and lifetime earned debited, one reversal row, money back in the pool" \
+  "$(earn "$WR")/$(val "SELECT count(*) FROM public.organizer_transactions WHERE type = 'representative_reward_reversal' AND organizer_id = '$WR';")/$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$W';")/$(pool)" \
+  "0/0/0/0/1/reversed/4950000/0/5000000"
+RV=$(request "$ADMIN_A" earn_reverse_reward NULL "{\"claim_id\":\"$W\",\"reason\":\"again\"}")
 expect_error "a reversed reward cannot be reversed again" "cannot be reversed" "$(approve "$ADMIN_B" "$RV")"
 expect_value "a reversed organizer cannot be claimed again (same claim comes back, no new one)" \
-  "$(val "$(as "$REP" "SELECT public.submit_representative_reward_claim('$ORG', '00000000-0000-0000-0000-0000000e0001')->>'status';")")/$(val "SELECT count(*) FROM public.representative_reward_claims WHERE organizer_id = '$ORG';")" "reversed/1"
+  "$(val "$(as "$WR" "SELECT public.submit_representative_reward_claim('${WO%%|*}', '${WO##*|}')->>'status';")")/$(val "SELECT count(*) FROM public.representative_reward_claims WHERE organizer_id = '${WO%%|*}';")" "reversed/1"
 
 echo "== Free events =="
 "${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.submit_representative_reward_claim('$ORG_FREE', '00000000-0000-0000-0000-0000000e0009');")" >/dev/null
@@ -367,7 +400,7 @@ X1=$(val "SELECT id FROM public.representative_expenses WHERE representative_id 
 RX=$(request "$ADMIN_A" earn_decide_expense NULL "{\"expense_id\":\"$X1\",\"approve\":true,\"reason\":\"receipt checked\"}")
 expect_ok "expense approved through dual control" "$(approve "$ADMIN_B" "$RX")"
 expect_value "expenses never touch the wallet or the pool" \
-  "$(val "SELECT status FROM public.representative_expenses WHERE id = '$X1';")/$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP';")" "approved/0"
+  "$(val "SELECT status FROM public.representative_expenses WHERE id = '$X1';")/$(earn "$REP")/$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP';")" "approved/3000000/0/2000000/5000000/10000"
 
 echo "== Read APIs and audit trail =="
 REPJSON=$(val "$(as "$REP" "SELECT public.get_my_representative_rewards()::text;")")
@@ -388,7 +421,7 @@ expect_error "audit log is append-only (UPDATE)" "append-only" "UPDATE public.ea
 expect_error "audit log is append-only (DELETE)" "append-only" "DELETE FROM public.earn_audit_log;"
 expect_error "profit ledger is append-only" "append-only" "DELETE FROM public.earn_profit_ledger;"
 for a in attributed duplicate_attribution_blocked submitted organizer_confirmed admin_approved funding_blocked_insufficient_profit \
-         recognized funded_profit_reserved wallet_credited post_recognition_refund admin_reversed rate_approved expense_approved settings_updated; do
+         recognized funded_profit_reserved earnings_wallet_credited post_recognition_refund admin_reversed rate_approved expense_approved settings_updated; do
   n=$(val "SELECT count(*) FROM public.earn_audit_log WHERE action = '$a';")
   if [ "${n:-0}" -ge 1 ]; then pass "audit trail records '$a'"; else fail "audit trail missing '$a'"; fi
 done

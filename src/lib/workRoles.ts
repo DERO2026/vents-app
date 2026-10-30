@@ -124,10 +124,10 @@ export function claimStateView(status: ClaimStatus, opts: { payoutsEnabled: bool
         : { label: 'Approved', tone: 'on', detail: 'Waiting for VENTS profit to fund it' };
     case 'funded':
       return opts.payoutsEnabled
-        ? { label: 'Funded', tone: 'on', detail: 'Funded · claim to add it to your VENTS Wallet' }
-        : { label: 'Funded', tone: 'on', detail: 'Funded · wallet credit opens when payouts start' };
+        ? { label: 'Funded', tone: 'on', detail: 'Funded · claim to add it to your earnings wallet' }
+        : { label: 'Funded', tone: 'on', detail: 'Funded · paid into your earnings wallet when payouts start' };
     case 'credited':
-      return { label: 'In VENTS Wallet', tone: 'on', detail: 'Added to your VENTS Wallet' };
+      return { label: 'Withdrawable', tone: 'on', detail: 'In your earnings wallet' };
     case 'rejected':
       return { label: 'Rejected', tone: 'off', detail: 'Not approved' };
     case 'reversed':

@@ -81,8 +81,8 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
   const claim = (c: Claim) => {
     claimKeys.current[c.id] ??= newKey();
     return run(`claim-${c.id}`, () => supabase.rpc('claim_representative_reward' as any, { p_claim_id: c.id, p_idempotency_key: claimKeys.current[c.id] }),
-      (d) => d?.status === 'credited' ? 'Added to your VENTS Wallet.'
-        : d?.status === 'funded' ? 'Funded. It reaches your VENTS Wallet when payouts open.'
+      (d) => d?.status === 'credited' ? 'Added to your earnings wallet. You can withdraw it from Earnings.'
+        : d?.status === 'funded' ? 'Funded. It reaches your earnings wallet when payouts open.'
         : 'VENTS profit does not cover this reward yet. Try again later.');
   };
 
@@ -123,7 +123,7 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
             <NoteBand>
               An organizer you referred qualifies after hosting an event that has ended, isn&apos;t cancelled and has
               finished settling. They confirm you referred them, then VENTS reviews it. Approved rewards are paid into your
-              VENTS Wallet once VENTS ticket profit covers them.
+              earnings wallet, which you can withdraw, once VENTS ticket profit covers them.
               {!data.programme_open && ' Rewards open once VENTS finishes moving representatives off the old commission plan.'}
               {data.programme_open && !data.payouts_enabled && ' Wallet payouts have not started yet.'}
             </NoteBand>
@@ -144,7 +144,7 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
                       right={<Pill tone={v.tone}>{v.label}</Pill>} />
                     {canClaim && (
                       <WorkButton testId={`claim-button-${c.id}`} disabled={busy === `claim-${c.id}`} onClick={() => claim(c)}>
-                        {c.status === 'funded' ? 'Add to VENTS Wallet' : 'Claim reward'}
+                        {c.status === 'funded' ? 'Add to earnings wallet' : 'Claim reward'}
                       </WorkButton>
                     )}
                   </div>

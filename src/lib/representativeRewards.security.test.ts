@@ -45,9 +45,23 @@ describe('0201: realized profit, reservations and idempotency', () => {
     expect(f).toMatch(/SELECT \* INTO c FROM public\.representative_reward_claims WHERE id = p_claim_id FOR UPDATE/);
   });
 
-  it('credits the VENTS Wallet at most once per claim', () => {
-    expect(sql).toMatch(/CREATE UNIQUE INDEX user_wallet_transactions_earn_reward_ref_idx/);
-    expect(fn('claim_representative_reward')).toMatch(/ON CONFLICT \(reference_id\) WHERE \(type = 'earn_reward' AND reference_id IS NOT NULL\) DO NOTHING/);
+  it('credits the withdrawable earnings wallet at most once per claim, through the existing ledger', () => {
+    expect(sql).toMatch(/CREATE UNIQUE INDEX organizer_transactions_rep_reward_once\s+ON public\.organizer_transactions \(\(metadata->>'representative_reward_claim_id'\)\)\s+WHERE type = 'representative_reward';/);
+    const f = fn('claim_representative_reward');
+    expect(f).toMatch(/INSERT INTO public\.organizer_transactions[\s\S]*?'representative_reward'[\s\S]*?ON CONFLICT \(\(metadata->>'representative_reward_claim_id'\)\) WHERE type = 'representative_reward' DO NOTHING/);
+    // The balance only moves when the ledger row was actually inserted.
+    expect(f).toMatch(/IF v_tx IS NOT NULL THEN\s+INSERT INTO public\.organizer_wallets/);
+  });
+
+  it('never touches the VENTS Wallet or VENTS Cents', () => {
+    expect(sql).not.toMatch(/(INSERT INTO|UPDATE|ALTER TABLE) public\.(user_wallets|user_wallet_transactions|vc_transactions)/);
+  });
+
+  it('reverses only from the available earnings balance, never pending or withdrawn money', () => {
+    const f = fn('earn_execute_admin_action');
+    expect(f).toMatch(/SELECT balance_kobo INTO v_wallet FROM public\.organizer_wallets WHERE organizer_id = c\.representative_id FOR UPDATE;\s+IF COALESCE\(v_wallet, 0\) < c\.amount_kobo THEN/);
+    expect(f).toMatch(/'representative_reward_reversal'/);
+    expect(f).not.toMatch(/pending_kobo|total_withdrawn_kobo/);
     expect(sql).toMatch(/CREATE UNIQUE INDEX earn_profit_ledger_one_entry_per_claim_step/);
   });
 
@@ -107,5 +121,20 @@ describe('0201: no role approves or pays itself', () => {
 
   it('the maker-checker patch refuses to run unless its anchor matches exactly once', () => {
     expect(sql.match(/IF v_count <> 1 THEN/g)).toHaveLength(2);
+  });
+});
+
+describe('earnings wallet screen shows representative rewards', () => {
+  const wallet = readFileSync(join(__dirname, '..', 'app', 'components', 'WalletScreen.tsx'), 'utf8');
+
+  it('labels reward credits and reversals, counting the credit as money in', () => {
+    expect(wallet).toMatch(/representative_reward: 'Representative Reward',/);
+    expect(wallet).toMatch(/representative_reward_reversal: 'Representative Reward Reversed',/);
+    expect(wallet).toMatch(/const CREDIT_TYPES = new Set\(\['credit', 'cancelled_payout_refund', 'representative_reward'\]\);/);
+  });
+
+  it('offers withdrawal to anyone with earnings, not only organizers and providers', () => {
+    expect(wallet).toMatch(/const hasEarnings = !!wallet && \(wallet\.total_earned_kobo > 0 \|\| wallet\.balance_kobo > 0 \|\| wallet\.pending_kobo > 0\);/);
+    expect(wallet).toMatch(/const isEarner = [^\n]*\|\| hasEarnings;/);
   });
 });

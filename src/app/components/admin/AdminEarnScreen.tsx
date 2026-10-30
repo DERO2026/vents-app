@@ -31,7 +31,7 @@ const btn = (ghost?: boolean): React.CSSProperties => ({
 
 const STATUS_LABEL: Record<string, string> = {
   pending_organizer: 'Waiting for organizer', pending_review: 'Needs review', approved: 'Approved',
-  funded: 'Funded', credited: 'In VENTS Wallet', rejected: 'Rejected', reversed: 'Reversed',
+  funded: 'Funded', credited: 'In earnings wallet', rejected: 'Rejected', reversed: 'Reversed',
 };
 
 export function AdminEarnScreen() {

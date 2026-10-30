@@ -55,7 +55,9 @@ describe('Service-provider and organizer payouts share one system, not two', () 
   });
 
   it('WalletScreen treats is_service_provider as an earner alongside isOrganizer/admin, using the same wallet query and the same withdrawal RPC', () => {
-    expect(walletScreenSrc).toMatch(/isEarner = !!currentUser\?\.isOrganizer \|\| currentUser\?\.role === 'admin' \|\| currentUser\?\.role === 'sub-admin' \|\| currentUser\?\.is_service_provider === true;/);
+    // `|| hasEarnings` (VENTS Earn, 0201) extends the same gate to anyone with
+    // an earnings balance or history, e.g. a representative with rewards.
+    expect(walletScreenSrc).toMatch(/isEarner = !!currentUser\?\.isOrganizer \|\| currentUser\?\.role === 'admin' \|\| currentUser\?\.role === 'sub-admin' \|\| currentUser\?\.is_service_provider === true \|\| hasEarnings;/);
     expect(walletScreenSrc).toMatch(/supabase\.from\('organizer_wallets'\)\.select\('balance_kobo, total_earned_kobo, pending_kobo'\)\.eq\('organizer_id', currentUser\.id\)/);
     expect(walletScreenSrc).toMatch(/supabase\.rpc\('request_organizer_payout', \{/);
   });
