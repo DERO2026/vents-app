@@ -5,7 +5,7 @@ This is the canonical implementation tracker for the original 12-part VENTS mone
 ## Confirmed product directions
 
 - Revenue streams: ticketing fees; event promotions and advertising; service marketplace fees; organizer subscriptions; service-provider subscriptions; vendor marketplace; VENTS Wallet and payouts; additional paid event services; future marketplace expansion; VENTS Work representative compensation; admin and financial controls; testing, release and deployment.
-- Representative compensation was changed from a percentage commission to **₦50,000 per qualifying organizer onboarded**. The organizer must host an event that is not cancelled, and both organizer and event admin approval are required. Withdrawal is only after the event is over, ticket sales/proceeds are finalized, and VENTS has sufficient ticket profit to fund the reward. Whether that profit gate is per-event or pooled, and how a free event can qualify without ticket proceeds, still needs confirmation.
+- Representative compensation was changed from a percentage commission to **₦50,000 per qualifying organizer onboarded**. The organizer must host an event that is not cancelled, and both organizer and event admin approval are required. Withdrawal is only after the event is over and ticket sales/proceeds are finalized, and VENTS must have at least **₦50,000 in pooled ticket profit** before representatives can claim rewards. A genuine free event may qualify after verification and can be funded from the pooled profits.
 - Cross-cutting requirement: make the revenue streams valuable to users and close obvious fraud, self-referral, collusion, retry, and reversal paths with server-side controls.
 
 ## Original checklist: all revenue streams
@@ -91,9 +91,9 @@ This is the canonical implementation tracker for the original 12-part VENTS mone
 - [ ] Representative referral attribution: record recruiter against each organizer.
 - [ ] Qualifying event verification: event must be hosted and not cancelled; validate event has ended.
 - [ ] Organizer and event admin approval required before payment.
-- [ ] Genuine free events may qualify; reconcile with the ticket-profit source-of-funds gate before implementation.
+- [ ] Genuine free events may qualify after verification; rewards are funded from the pooled ticket-profit balance.
 - [ ] Fraud and duplicate prevention: no duplicate or fraudulent payouts.
-- [ ] Approved rewards become withdrawable through VENTS Wallet only after event completion, finalized ticket sales/proceeds, and sufficient VENTS ticket profit; define whether profits are event-attributed or pooled.
+- [ ] Approved rewards become claimable/withdrawable through VENTS Wallet only after event completion, finalized ticket sales/proceeds, and at least ₦50,000 in pooled VENTS ticket profit; reserve funds so concurrent claims cannot overspend the available profit.
 - [ ] Monthly performance tracking by qualifying organizers per calendar month.
 - [ ] At 9+ qualifying organizers in a month, management may approve a higher rate for the following month; define the approval workflow and effective rate before enabling.
 - [ ] Approved transport/support expenses tracked separately and require approval.
