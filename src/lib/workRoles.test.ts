@@ -63,9 +63,11 @@ describe('reward claim states', () => {
     expect(v('pending_review').label).toBe('Pending');
     expect(v('approved').detail).toMatch(/Waiting for VENTS profit/);
     expect(v('approved', false, true).detail).toBe('Ready to claim');
-    expect(v('funded').detail).toMatch(/payouts start/);
-    expect(v('credited').label).toBe('Withdrawable');
-    expect(v('credited').detail).toBe('In your earnings wallet');
+    expect(v('funded').detail).toMatch(/once payouts start, come back and tap Add to earnings wallet/);
+    expect(v('funded', true).detail).toMatch(/claim to add it/);
+    // Historical: the reward may since have been withdrawn.
+    expect(v('credited').label).toBe('Credited');
+    expect(v('credited').detail).toBe('Added to your earnings wallet');
     expect(v('rejected').label).toBe('Rejected');
     expect(v('reversed').label).toBe('Reversed');
   });

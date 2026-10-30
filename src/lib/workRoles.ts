@@ -125,9 +125,11 @@ export function claimStateView(status: ClaimStatus, opts: { payoutsEnabled: bool
     case 'funded':
       return opts.payoutsEnabled
         ? { label: 'Funded', tone: 'on', detail: 'Funded · claim to add it to your earnings wallet' }
-        : { label: 'Funded', tone: 'on', detail: 'Funded · paid into your earnings wallet when payouts start' };
+        : { label: 'Funded', tone: 'on', detail: 'Funded · once payouts start, come back and tap Add to earnings wallet' };
     case 'credited':
-      return { label: 'Withdrawable', tone: 'on', detail: 'In your earnings wallet' };
+      // A credit is a past event: the money may since have been withdrawn,
+      // so the earnings wallet, not this row, shows what is available now.
+      return { label: 'Credited', tone: 'on', detail: 'Added to your earnings wallet' };
     case 'rejected':
       return { label: 'Rejected', tone: 'off', detail: 'Not approved' };
     case 'reversed':

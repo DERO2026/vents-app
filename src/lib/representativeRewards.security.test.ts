@@ -138,3 +138,23 @@ describe('earnings wallet screen shows representative rewards', () => {
     expect(wallet).toMatch(/const isEarner = [^\n]*\|\| hasEarnings;/);
   });
 });
+
+describe('CodeRabbit review of f860f5d/51d5b55', () => {
+  const components = join(__dirname, '..', 'app', 'components');
+  const wallet = readFileSync(join(components, 'WalletScreen.tsx'), 'utf8');
+  const actions = readFileSync(join(components, 'AdminActionsTab.tsx'), 'utf8');
+
+  it('a failed wallet read is reported, never replaced with a zero balance', () => {
+    expect(wallet).toMatch(/if \(wRes\.error\) \{\s*setTxnsError\([^)]*\);\s*\} else \{\s*setWallet\(wRes\.data \|\| \{ balance_kobo: 0/);
+  });
+
+  it('linked payout accounts stay visible without an earner role', () => {
+    expect(wallet).toMatch(/\{bankAccounts\.length > 0 && \(\s*<div style=\{\{ marginBottom: '24px' \}\}>\s*<p[^>]*>Payout Accounts/);
+  });
+
+  it('the approver sees non-boolean flags as INVALID and the earn payload that will execute', () => {
+    expect(actions).toMatch(/v === true \? yes : v === false \? no : `INVALID/);
+    expect(actions).toMatch(/earn_decide_expense: `\$\{who\} requested to \$\{earnFlag\(r\.payload\?\.approve, 'APPROVE', 'REJECT'\)\}/);
+    expect(actions).toMatch(/data-testid="earn-request-payload"/);
+  });
+});

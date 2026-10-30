@@ -35,6 +35,14 @@ interface ActionRequest {
   device?: string | null;
 }
 
+// For VENTS Earn requests the approver must see what will actually
+// execute, which is the payload -- target_label is free text written by
+// the requester. A flag that is not a real JSON boolean is shown as
+// INVALID instead of being read as approve/reject.
+function earnFlag(v: unknown, yes: string, no: string): string {
+  return v === true ? yes : v === false ? no : `INVALID (${JSON.stringify(v ?? null)})`;
+}
+
 // Human-readable label for an action type + its target.
 function describe(r: ActionRequest): string {
   const who = r.requested_by_name || 'A Sub-Admin';
@@ -55,8 +63,12 @@ function describe(r: ActionRequest): string {
     earn_reverse_reward: `${who} requested to REVERSE a representative reward (${label})`,
     earn_recognize_event_profit: `${who} requested to recognize realized profit (${label})`,
     earn_set_monthly_rate: `${who} requested a higher representative rate (${label})`,
-    earn_decide_expense: `${who} requested to ${r.payload?.approve === true ? 'APPROVE' : 'REJECT'} an expense (${label})`,
-    earn_update_settings: `${who} requested a VENTS Earn settings change (${label})`,
+    earn_decide_expense: `${who} requested to ${earnFlag(r.payload?.approve, 'APPROVE', 'REJECT')} an expense (${label})`,
+    earn_update_settings: `${who} requested a VENTS Earn settings change: ${[
+      r.payload?.payouts_enabled !== undefined ? `reward credit ${earnFlag(r.payload.payouts_enabled, 'ON', 'OFF')}` : null,
+      r.payload?.legacy_commission_reconciled !== undefined ? `legacy 10% plan ${earnFlag(r.payload.legacy_commission_reconciled, 'RECONCILED', 'NOT reconciled')}` : null,
+      r.payload?.settlement_hold_days !== undefined ? `settlement hold ${r.payload.settlement_hold_days} days` : null,
+    ].filter(Boolean).join(', ') || 'no recognised change'} (${label})`,
   };
   return map[r.action_type] || `${who} requested: ${r.action_type} ${label}`;
 }
@@ -249,6 +261,12 @@ export function AdminActionsTab({
                 <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span>
               </div>
             ))}
+            {selected.action_type.startsWith('earn_') && !selected.previous_values && !selected.requested_changes && (
+              <div style={{ marginTop: '12px' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px', fontWeight: 700 }}>Will execute with (payload)</p>
+                <pre data-testid="earn-request-payload" style={{ color: '#C4C9E0', fontSize: '10.5px', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '8px' }}>{JSON.stringify({ target_id: selected.target_id ?? null, ...(selected.payload ?? {}) }, null, 1)}</pre>
+              </div>
+            )}
             {(selected.previous_values || selected.requested_changes) && (
               <div style={{ marginTop: '12px', display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1 }}>

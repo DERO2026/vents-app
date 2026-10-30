@@ -258,7 +258,14 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         supabase.rpc('is_email_verified'),
       ]);
-      setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
+      // A failed wallet read must not look like an empty wallet: that would
+      // hide the withdrawal and bank sections from anyone whose access
+      // depends on hasEarnings. Keep the last known value and say so.
+      if (wRes.error) {
+        setTxnsError('Could not load your earnings balance. Pull to retry.');
+      } else {
+        setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
+      }
       if (tRes.error) { setTxnsError(tRes.error.message); setTxns([]); } else {
         setTxns(tRes.data || []);
         setTxnsHasMore((tRes.data || []).length === PAGE_SIZE);
@@ -677,7 +684,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           )}
 
           {/* Payout bank accounts (multiple; one Default) */}
-          {isEarner && bankAccounts.length > 0 && (
+          {/* Linked accounts stay visible (and removable) even if the
+              earnings that made this an earner were later reversed. */}
+          {bankAccounts.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
               <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

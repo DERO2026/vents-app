@@ -82,7 +82,7 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
     claimKeys.current[c.id] ??= newKey();
     return run(`claim-${c.id}`, () => supabase.rpc('claim_representative_reward' as any, { p_claim_id: c.id, p_idempotency_key: claimKeys.current[c.id] }),
       (d) => d?.status === 'credited' ? 'Added to your earnings wallet. You can withdraw it from Earnings.'
-        : d?.status === 'funded' ? 'Funded. It reaches your earnings wallet when payouts open.'
+        : d?.status === 'funded' ? 'Funded. Once payouts open, come back and tap Add to earnings wallet.'
         : 'VENTS profit does not cover this reward yet. Try again later.');
   };
 
