@@ -66,9 +66,9 @@ where they exist.
 
 | ID | Item | Status | Code / Prod | Evidence | Acceptance criteria | Tests | Depends on |
 |---|---|---|---|---|---|---|---|
-| PAY-1 | Withdrawals cannot pay twice or lose a reversal | PARTIAL | Fixed in code (0202 + API, PR #82); **production still has the bugs** | `docs/money-flow-audit.md` P0-1..3 | 0202 applied; a cancel with a transfer refused; a reversal re-credits once; one fixed reference per request | `run-payout-engine-verification.sh` (49), `payoutEngine.security.test.ts` (15) | Review PR #82; apply 0202 |
+| PAY-1 | Withdrawals cannot pay twice or lose a reversal | PARTIAL | Fixed in code (0202 + API, PR #82); **production still has the bugs** | `docs/money-flow-audit.md` P0-1..3 | 0202 applied; a cancel with a transfer refused; a reversal re-credits once; one fixed reference per request | `run-payout-engine-verification.sh` (50, on 0203), `payoutEngine.security.test.ts` | Review PR #82; apply 0202 |
 | PAY-2 | Stuck withdrawals: 5 requests pending since Sept (₦49,100), incl. two identical ₦20,000 requests 10 s apart | BROKEN (operations) | Prod | Read-only query on `organizer_withdrawal_requests` | Each request approved, rejected or confirmed with the organizer; the duplicate ₦20,000 pair explained | Manual review in Admin → Payouts | Business owner |
-| PAY-3 | Ticket fee model matches the agreed 4% attendee + 5% organizer | BROKEN vs agreement | Code and prod charge a 5% buyer fee and credit the organizer the full face amount | PR #81 audit; `confirm_ticket_payment` credits `floor(total*100)` | Decide the model; then the fee is charged and recorded per ticket (0192 or a successor) and the organizer credit is net | Price unit tests; local-PG credit test | **Decision**; 0192 |
+| PAY-3 | Ticket fee model matches the agreed 4% attendee + 5% organizer | DONE in code (0203, PR #82); not in prod | Prod still charges 5% buyer fee / full-face credit | `fee_model` per ticket; legacy rows keep 5% | Applied with the matching frontend; one live purchase shows face×1.04 charged and face−5% credited | `run-earnings-policy-verification.sh` (156), `ticketFees.test.ts`, `walletMath.test.ts` | Apply 0203; reconcile unapplied 0192 first |
 | PAY-4 | Paystack live/test key mode in Production | UNVERIFIED | Prod (Vercel, write-only secrets) | `LAUNCH_CHECKLIST.md` §9 | Owner confirms live keys in Production and test keys elsewhere; the Paystack dashboard live webhook URL is `getvents.com/api/webhook/paystack` | One real ₦100 live purchase + refund by the owner | Owner |
 | PAY-5 | Earnings ledger matches balances | BROKEN (historical) | Prod: 2 of 5 wallets off (₦32,150 and ₦1,000) | `admin_earnings_reconciliation()` (0202) / audit query | Every gap explained by a person, then corrected through an audited adjustment (not a silent update) | Reconciliation report shows no issues | PAY-1 |
 | PAY-6 | 4 cancelled ₦100 test payouts that had Paystack transfer codes | UNVERIFIED | Prod | `organizer_withdrawal_requests` (cancelled, transfer code set) | Paystack dashboard shows whether each was paid; ledger and balance corrected if so | — | Paystack dashboard access |
@@ -81,15 +81,15 @@ where they exist.
 
 | ID | Item | Status | Code / Prod | Evidence | Acceptance criteria | Tests | Depends on |
 |---|---|---|---|---|---|---|---|
-| PAY-7 | Refund after a withdrawal: who carries the shortfall | NOT STARTED (decision) | Prod: VENTS absorbs it (admin log only) | money-flow audit P1-4 | Policy chosen (negative balance / set-off / VENTS absorbs, recorded); implemented with a ledger entry | local-PG refund-after-withdrawal tests | **Decision** |
-| PAY-8 | Settlement hold for organizer / provider earnings | NOT STARTED (decision) | Prod: withdrawable immediately | money-flow audit P1-5 | Hold length decided; earnings show "pending" until the hold ends; refunds inside the hold never create a shortfall | local-PG hold tests | **Decision** |
-| PAY-9 | Second-admin approval of payouts | NOT STARTED (decision) | Prod: single admin | money-flow audit P1-7, `AGENTS.md` | Payouts go through `request_admin_action` → `approve_admin_action`; no self-approval; the organizer cannot approve their own | local-PG + API tests | **Decision**; PAY-1 |
+| PAY-7 | Refund after a withdrawal: who carries the shortfall | DONE in code (0203); not in prod | Prod: VENTS absorbs it | Approved: recover from future earnings | Shortfall → `earnings_recoveries` receivable → `recovery_deduction` from later earnings; never negative | `run-earnings-policy-verification.sh` | Apply 0203 |
+| PAY-8 | Settlement hold for organizer / provider earnings | DONE in code (0203); not in prod | Prod: withdrawable immediately | Approved: 48 h after event end / after booking completion (not before the scheduled time); representatives keep 7 days | Holds, blockers (refund per order, disputes, admin/report holds), cron + on-request release, audit basis | `run-earnings-policy-verification.sh` (156) | Apply 0203 |
+| PAY-9 | Second-admin approval of payouts | DONE in code (0203); not in prod | Prod: single admin | `authorize_withdrawal` maker-checker | No self-approval; organizer can be neither admin; amount and active bank recipient bound | local-PG (156) + `payoutEngine.security.test.ts` | Apply 0203 |
 | EARN-1 | VENTS Work / Earn and representative reward live | PARTIAL | Code (PR #82, 0201); not in prod | `docs/vents-work-earn.md` | 0201 + 0202 applied; legacy 10% reconciliation recorded (dual control); reward credit enabled (dual control); one reward end to end on production with real admins | `run-representative-rewards-verification.sh` (203), payout-gate audit (27) | PAY-1, decisions in PR #82 |
 | EARN-2 | VENTS Work screens complete (funnel, monthly performance, reward states, team, provider/organizer entry points) | PARTIAL | Code (PR #82) | Hub, Earnings, Rewards and Representatives screens exist; funnel/team/performance views not built | Each role's screen and button matches a real route, permission and RPC; loading, empty and error states; works at 360/390/430px | Render tests per screen; route/permission tests | EARN-1 for live data |
-| EARN-3 | Rule "verified / admin-approved event" | PARTIAL (decision) | Code | No event-level verification exists; 0201 relies on two-admin claim approval | Owner confirms two-admin claim approval satisfies it, or defines event verification | — | **Decision** |
+| EARN-3 | Rule "verified / admin-approved event" | DONE in code (0201) | Code | Approving admins confirm `event_verified`; organizer must hold an approved, unrevoked verification (re-checked at claim) | — | `run-representative-rewards-verification.sh` (214) | Apply 0201 |
 | PAY-10 | Bank-account setup verified on the Supabase backend | UNVERIFIED | Prod | `LAUNCH_CHECKLIST.md` §9 (not re-verified since migration); `MASTER_AUDIT.md` Part 4 #6 (recipient idempotency gap) | Add / remove / set-default works for a real account; a repeated save makes no duplicate recipient | API tests with mocked Paystack | — |
 | PROMO-1 | Paid promotions: billing, fulfilment, expiry | PARTIAL | Code + prod (prices match the source) | PR #81 §2 | Featured 14/30-day tiers reconciled with the price list; a promotion activates only after verified payment and expires on time | Existing `activate.pricing.security.test.ts` + expiry test | Price decision |
-| REF-1 | Refunds end to end (ticket, booking, transfer fee) | PARTIAL | Code + prod | Refund functions and webhook exist; shortfall see PAY-7 | Refund request → Paystack → webhook → ticket and wallet state correct; a failed refund recoverable | local-PG + mocked API | PAY-7 |
+| REF-1 | Refunds end to end (ticket, booking, transfer fee, upheld booking disputes) | PARTIAL | Code (PR #82) + prod | Refund functions, webhook; 0203 adds recovery and the upheld-dispute refund | Refund request → Paystack → webhook → ticket/booking, wallet and earnings correct; a failed refund recoverable | local-PG (156) + `disputeRefund.security.test.ts`; live ₦100 refund pending (PAY-4) | Apply 0203; PAY-4 |
 | SEC-2 | Deferred audit items (`MASTER_AUDIT.md` Part 4) | PARTIAL | Prod | Part 4 #1 Maps key restrictions, #2 185,090 VC reconciliation gap, #9 100,000 VC test credit, #3 push Mode 1 ownership, #5 PostHog masking | Each closed or explicitly accepted by the owner | Per item | Owner decisions |
 | OPS-1 | Monitoring and alerting | UNVERIFIED | Prod | Sentry integrated; alert rules unconfirmed (`LAUNCH_CHECKLIST.md` §9) | Alerts for webhook failures, payout errors and 5xx reach a person; a test alert received | — | Owner |
 | OPS-2 | Email deliverability (SPF, DMARC) | NOT STARTED (per last check) | DNS | `LAUNCH_CHECKLIST.md` §9 | SPF and DMARC records live; Resend mail passes in Gmail | DNS check | Owner DNS |
@@ -108,7 +108,7 @@ Areas not listed as blockers above. Each row is P2 unless marked otherwise.
 | TIX-1 | Ticket purchase | Paystack checkout, wallet and token purchase, pending-purchase recovery | PARTIAL | Prod (106 paid tickets) | `finalizePaystackPayment.ts`, webhook | Paid → exactly one ticket set; abandoned → no ticket; retry safe | Existing Paystack tests (fix QA-1) |
 | QR-1 | QR tickets and check-in | Token generation, scanner, door manager, double-scan | PARTIAL / UNVERIFIED on device | Prod | Design Batch 4; `LAUNCH_CHECKLIST.md` §10 camera | A ticket scans once; a second scan is refused; offline behaviour defined | Device test |
 | ORG-1 | Organizers | Request → CAC verification → Creator Studio, payout account | PARTIAL | Prod | `docs/vents-work-earn.md` table | Each state reachable from VENTS Work; staff never see the CTA | `workRoles.test.ts` |
-| SP-1 | Providers / vendors | Verification, services, bookings, completion, payout | PARTIAL | Prod (2 providers, 7 bookings) | Paid at payment time (PAY-8) | Booking → payment → completion → earnings; cancel/refund correct | local-PG booking money tests (missing) |
+| SP-1 | Providers / vendors | Verification, services, bookings, completion, payout | PARTIAL | Code (PR #82) + prod (2 providers, 7 bookings; 7 with no scheduled date) | 0203: completion not before the scheduled time; 48 h hold; customer dispute window; two-admin resolution; refund on upheld disputes | Booking → payment → completion → earnings; cancel/refund correct | `run-earnings-policy-verification.sh` booking sections |
 | WAL-1 | VENTS Wallet (spend-only) | Deposits, spend, VC conversion | PARTIAL | Prod | `get_my_wallet` creates a row on read (`previewReadOnly.ts`) | Deposit verified by Paystack once; never withdrawable | Existing deposit tests |
 | VC-1 | VENTS Cents | Earning, tiers, conversion, cash-out | PARTIAL | Prod | `MASTER_AUDIT.md` F2/F8; VC cash-out (`vc_withdrawal_requests`) not covered by the money-flow audit | Audit VC cash-out with the PAY-1 lens | local-PG VC payout tests |
 | XFER-1 | Ticket transfers | Initiate / accept / decline, 7.5% fee (₦500–₦5,000) | PARTIAL / UNVERIFIED | Prod | PR #81 §1 | Fee computed and charged per the model; transfer atomic | Unit + local-PG |
@@ -130,21 +130,22 @@ Areas not listed as blockers above. Each row is P2 unless marked otherwise.
 
 ## Execution plan (small batches)
 
-Each batch is one reviewable PR or commit with its own tests. Batches marked
-**decision** cannot start until the owner decides.
+Each batch is one reviewable PR or commit with its own tests. Status as of
+PR #82 head (2026-10-30): the money decisions of the first plan (fee model,
+refund shortfall, settlement, payout maker-checker, event verification) are
+**done in code** in 0201–0203; none is applied to production.
 
 | # | Batch | Items | Size | Gate |
 |---|---|---|---|---|
-| 1 | **Owner decisions, one sitting**:<ul><li>fee model;</li><li>refund-shortfall policy;</li><li>settlement hold;</li><li>payout maker-checker;</li><li>event-verification rule;</li><li>sign-up intent;</li><li>PR #81 vs #82 reward wording.</li></ul> | PAY-3, PAY-7, PAY-8, PAY-9, EARN-3, AUTH-1 | Meeting | None |
-| 2 | **Payout operations clean-up** (no code):<ul><li>review the 5 stale requests;</li><li>check the 4 test transfers in Paystack;</li><li>explain the 2 ledger gaps.</li></ul> | PAY-2, PAY-5, PAY-6 | Small | Paystack dashboard access |
-| 3 | **Review, then apply** 0202, then 0201, on production. Each needs its own approval, with read-only verification after. | PAY-1, EARN-1 | Small | Owner approval; PR #82 review |
-| 4 | **Fix or formally quarantine** the 8 failing tests and the tsc error; rewrite the stale §9 of `LAUNCH_CHECKLIST.md` | QA-1, INF-1, PAY-4 | Small | Owner Vercel/Paystack confirmation for §9 |
-| 5 | **Implement batch-1 money decisions**:<ul><li>refund shortfall;</li><li>settlement hold;</li><li>payout maker-checker.</li></ul>Each is a migration with local-PG tests. | PAY-7, PAY-8, PAY-9 | Medium | Batch 1 |
-| 6 | **VENTS Work screens**:<ul><li>representative funnel, monthly performance, reward states, team;</li><li>provider/organizer entry points;</li><li>states and tests.</li></ul> | EARN-2 | Medium | None (works read-only before 0201) |
-| 7 | **Fee model and per-ticket fee accounting** (0192 successor) | PAY-3 | Medium | Batch 1 |
-| 8 | **Store readiness**: Android §1–5, then iOS checklist | MOB-1, MOB-2 | Large | Accounts |
-| 9 | **Operations**: alerts, SPF/DMARC, runbooks | OPS-1..3 | Small | Owner DNS/Sentry |
-| 10 | **Accessibility and performance** audits on core flows | A11Y-1, PERF-1 | Medium | — |
+| A | **Fix or formally quarantine the baseline failures**: the 8 Paystack-verify / AI-subscription vitest failures and the tsc error. Then rewrite the stale §9 of `LAUNCH_CHECKLIST.md`. | QA-1, INF-1 | Small | Owner confirmation for §9 facts |
+| B | **Reconcile migration 0192 with 0203** (0192 redefines `confirm_ticket_payment` / `credit_organizer_wallet`, so 0203's drift guard refuses to run after it). Then prepare the production apply plan for 0202 → 0201 → 0203. It needs read-only pre-checks, a rollback note and the frontend shipped together. | PAY-1, PAY-3, EARN-1 | Small | PR #82 review |
+| C | **Payout operations clean-up** (no code): the 5 stale requests (₦49,100), the 4 test transfers, the 2 ledger gaps. Each gap is closed through an audited adjustment. | PAY-2, PAY-5, PAY-6 | Small | Paystack dashboard access |
+| D | **Paystack verification**: confirm the dispute webhook payload and the live/test key mode (PAY-4) from the dashboard. Then one live ₦100 purchase + refund by the owner after the migrations are applied. | PAY-4, REF-1 | Small | Owner; network access to paystack.com |
+| E | **VENTS Work screens**: representative funnel, monthly performance, reward states, team, provider/organizer entry points, with loading/empty/error states and tests at 360/390/430px. | EARN-2 | Medium | None |
+| F | **Bank-account setup and promotions**: recipient idempotency (PAY-10) and featured-tier reconciliation (PROMO-1). | PAY-10, PROMO-1 | Medium | Price decision |
+| G | **Store readiness**: Android §1–5, then iOS | MOB-1, MOB-2 | Large | Accounts |
+| H | **Operations**: alerts, SPF/DMARC, runbooks (payouts, refunds, disputes, Paystack outage) | OPS-1..3 | Small | Owner DNS/Sentry |
+| I | **Accessibility and performance** audits on core flows | A11Y-1, PERF-1 | Medium | — |
 
 **Keeping this current:** update the status and evidence of an item in the same
 commit that changes it. Never mark an item DONE without naming the test or
