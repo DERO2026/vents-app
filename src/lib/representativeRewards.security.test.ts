@@ -152,7 +152,7 @@ describe('earnings wallet screen shows representative rewards', () => {
   it('labels reward credits and reversals, counting the credit as money in', () => {
     expect(wallet).toMatch(/representative_reward: 'Representative Reward',/);
     expect(wallet).toMatch(/representative_reward_reversal: 'Representative Reward Reversed',/);
-    expect(wallet).toMatch(/const CREDIT_TYPES = new Set\(\['credit', 'cancelled_payout_refund', 'representative_reward'\]\);/);
+    expect(wallet).toMatch(/const CREDIT_TYPES = new Set\(\['credit', 'cancelled_payout_refund', 'representative_reward', 'payout_reversal'\]\);/);
   });
 
   it('offers withdrawal to anyone with earnings, not only organizers and providers', () => {

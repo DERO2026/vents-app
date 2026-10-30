@@ -173,9 +173,9 @@ describe('Scenario: admin permission boundaries on payout decisions', () => {
 });
 
 describe('Scenario: failed payout does not permanently consume funds; retry and reversal are handled', () => {
-  it('fail_organizer_payout (webhook-driven, covers transfer.failed AND transfer.reversed) restores balance_kobo and clears pending_kobo', () => {
+  it('transfer.failed restores the balance; transfer.reversed goes to reverse_organizer_payout (0202), which also restores it after a completed payout', () => {
     expect(webhookSrc).toMatch(/event\?\.event === 'transfer\.success' \|\| event\?\.event === 'transfer\.failed' \|\| event\?\.event === 'transfer\.reversed'/);
-    expect(webhookSrc).toMatch(/const rpcName = event\.event === 'transfer\.success' \? 'complete_organizer_payout' : 'fail_organizer_payout';/);
+    expect(webhookSrc).toMatch(/const rpcName = event\.event === 'transfer\.success' \? 'complete_organizer_payout'\s*: event\.event === 'transfer\.reversed' \? 'reverse_organizer_payout' : 'fail_organizer_payout';/);
   });
 
   it('a released/failed request returns to \'pending\' or has its funds restored, so the same withdrawal can be retried without re-debiting the wallet', () => {
@@ -208,7 +208,8 @@ describe('Scenario: duplicate Paystack webhook does not double-process', () => {
 
 describe('Emergency safety: reconciliation never guesses a payout outcome', () => {
   it('an unresolved/unrecognized Paystack transfer status is left untouched (still_pending / lookup_failed), never assumed successful or failed', () => {
-    expect(reconcilePayoutsSrc).toMatch(/if \(pstStatus !== 'success' && pstStatus !== 'failed' && pstStatus !== 'reversed'\) \{/);
+    // Only a final Paystack status (success / failed / reversed) changes anything.
+    expect(reconcilePayoutsSrc).toMatch(/const final = finalTransferStatus\(pstStatus \|\| ''\);\s*if \(!final\) \{/);
     expect(reconcilePayoutsSrc).toMatch(/outcome: 'still_pending_on_paystack'/);
     expect(reconcilePayoutsSrc).toMatch(/outcome: 'paystack_lookup_failed'/);
   });

@@ -760,23 +760,29 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       // service_role EXECUTE grant) -- called via the direct project_admin
       // Postgres connection, same as the ticket-confirmation block above
       // (see api/_lib/projectAdminDb.ts).
-      const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
+      // transfer.reversed can arrive after transfer.success: the money came
+      // back, so it returns to the available balance (0202). Before success
+      // it is handled like a failure.
+      const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout'
+        : event.event === 'transfer.reversed' ? 'reverse_organizer_payout' : 'fail_organizer_payout';
       const rows = event.event === 'transfer.success'
         ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [lookupKey])
-        : await callProjectAdminTableRpc<any>('fail_organizer_payout', [lookupKey, event.data?.reason || event.event]);
+        : await callProjectAdminTableRpc<any>(rpcName, [lookupKey, event.data?.reason || event.event]);
       const row = rows[0];
       console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
 
       // Fire the payout email only on a genuine, first-time state change --
       // never on 'not_found'/'already_completed'/'already_finalized', which
       // would otherwise re-send on Paystack's webhook retries.
-      if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed')) {
+      if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed' || row.status === 'reversed')) {
         sendPayoutDecisionEmail({
           to: row.organizer_email,
           name: row.organizer_name || 'there',
           amountNaira: fmtNaira(Number(row.amount_kobo) || 0),
-          decision: row.status,
-          reason: row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
+          decision: row.status === 'completed' ? 'completed' : 'failed',
+          reason: row.status === 'reversed'
+            ? 'Your bank reversed this transfer. The amount is back in your available balance.'
+            : row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
         }).catch((e) => console.error('[Paystack webhook] payout email failed:', e?.message || e));
       }
     } catch (err: any) {

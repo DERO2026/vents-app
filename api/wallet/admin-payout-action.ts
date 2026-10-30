@@ -4,6 +4,7 @@ import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 import { refuseInPreview } from '../_lib/previewGuard.js';
+import { payoutTransferReference, lookupTransferByReference } from '../_lib/paystackTransfers.js';
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -132,55 +133,76 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(422).json({ error: 'Organizer has no verified bank account on file' });
       }
 
-      const reference = `payout_${request_id}_${Date.now()}`;
+      // One fixed reference per request (set by the claim above, 0202), so a
+      // retry after a timeout reuses it and Paystack refuses a second transfer.
+      const reference = payoutTransferReference(request_id);
+      const release = (why: string) => fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
+        method: 'POST',
+        headers: supabaseHeaders,
+        body: JSON.stringify({ p_request_id: request_id, p_reason: why }),
+      }).catch(() => {});
+      const markSent = async (transferCode: string | null) => {
+        const r = await fetch(`${baseUrl}/rest/v1/rpc/admin_mark_payout_processing`, {
+          method: 'POST',
+          headers: supabaseHeaders,
+          body: JSON.stringify({ p_request_id: request_id, p_paystack_reference: reference, p_transfer_code: transferCode }),
+        });
+        return r.ok;
+      };
+      const unknownOutcome = (detail: string) => res.status(502).json({
+        status: 'processing',
+        reference,
+        error: `Paystack has not confirmed this transfer (${detail}). Nothing has been marked paid. Run Reconcile before doing anything else with this request.`,
+      });
 
       // amount_kobo is already in kobo — do NOT multiply by 100 again, that
       // would send 100x the intended amount.
-      const transferRes = await fetch('https://api.paystack.co/transfer', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          source: 'balance',
-          amount: claimRow.amount_kobo,
-          recipient: claimRow.recipient_code,
-          reason: 'Vents organizer payout',
-          reference,
-        }),
-      });
-      const transferJson = await transferRes.json();
-
-      if (!transferRes.ok || !transferJson.status) {
-        // Paystack rejected the transfer outright — release the claim back
-        // to 'pending' (guarded server-side to only work when no
-        // transfer_code was ever attached) so the admin can safely retry.
-        await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
+      let transferRes: Response | null = null;
+      let transferJson: any = null;
+      try {
+        transferRes = await fetch('https://api.paystack.co/transfer', {
           method: 'POST',
-          headers: supabaseHeaders,
-          body: JSON.stringify({ p_request_id: request_id, p_reason: 'Paystack transfer initiation failed: ' + (transferJson.message || `HTTP ${transferRes.status}`) }),
-        }).catch(() => {});
-        return res.status(502).json({ error: transferJson.message || 'Paystack transfer initiation failed' });
+          headers: {
+            Authorization: `Bearer ${secret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            source: 'balance',
+            amount: claimRow.amount_kobo,
+            recipient: claimRow.recipient_code,
+            reason: 'Vents organizer payout',
+            reference,
+          }),
+        });
+        transferJson = await transferRes.json().catch(() => null);
+      } catch {
+        transferRes = null;
       }
 
-      // Paystack accepted the transfer. The request is already 'processing'
-      // (claimed atomically above) — this just attaches the reference.
-      // Depending on the account's OTP settings this may still require
-      // finalization on Paystack's side — transfer.success / transfer.failed
-      // webhooks are the authoritative completion signal (see
-      // api/webhook/paystack.ts), not this response.
-      await fetch(`${baseUrl}/rest/v1/rpc/admin_mark_payout_processing`, {
-        method: 'POST',
-        headers: supabaseHeaders,
-        body: JSON.stringify({
-          p_request_id: request_id,
-          p_paystack_reference: reference,
-          p_transfer_code: transferJson.data?.transfer_code || null,
-        }),
-      });
+      if (transferRes?.ok && transferJson?.status) {
+        // Accepted, not paid: transfer.success / transfer.failed / transfer.reversed
+        // webhooks (or Reconcile) decide the outcome.
+        if (!(await markSent(transferJson.data?.transfer_code || null))) {
+          return unknownOutcome('the transfer was accepted but could not be recorded');
+        }
+        return res.status(200).json({ status: 'processing', reference, transfer_code: transferJson.data?.transfer_code });
+      }
 
-      return res.status(200).json({ status: 'processing', reference, transfer_code: transferJson.data?.transfer_code });
+      // Rejected, timed out or unreadable: ask Paystack whether this
+      // reference exists before touching the request.
+      const lookup = await lookupTransferByReference(secret, reference);
+      if (lookup.state === 'found') {
+        if (!(await markSent(lookup.transferCode))) {
+          return unknownOutcome('a transfer exists but could not be recorded');
+        }
+        return res.status(200).json({ status: 'processing', reference, transfer_code: lookup.transferCode });
+      }
+      if (lookup.state === 'not_found') {
+        // Paystack confirms nothing was sent: safe to put the request back.
+        await release('Paystack transfer initiation failed: ' + (transferJson?.message || (transferRes ? `HTTP ${transferRes.status}` : 'no response')));
+        return res.status(502).json({ error: transferJson?.message || 'Paystack transfer initiation failed' });
+      }
+      return unknownOutcome(lookup.detail);
     }
 
     if (action === 'reject') {

@@ -42,7 +42,7 @@ interface TxnMetadata {
 
 interface Transaction {
   id: string;
-  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund' | 'representative_reward' | 'representative_reward_reversal';
+  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund' | 'representative_reward' | 'representative_reward_reversal' | 'payout_reversal';
   amount_kobo: number;
   description: string | null;
   withdrawal_request_id: string | null;
@@ -60,7 +60,7 @@ interface Transaction {
 interface WithdrawalRequest {
   id: string;
   amount_kobo: number;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'rejected' | 'cancelled';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'rejected' | 'cancelled' | 'reversed';
   bank_name: string | null;
   bank_code: string | null;
   account_number: string | null;
@@ -84,7 +84,7 @@ type FeedItem =
 
 // Money actually leaving the wallet vs. coming into/back into it — used to
 // pick the icon, color, and +/- sign for each transaction row.
-const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund', 'representative_reward']);
+const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund', 'representative_reward', 'payout_reversal']);
 const TYPE_LABELS: Record<string, string> = {
   credit: 'Ticket Sale',
   debit: 'Withdrawal',
@@ -92,6 +92,8 @@ const TYPE_LABELS: Record<string, string> = {
   cancelled_payout_refund: 'Withdrawal Cancelled — Refunded',
   representative_reward: 'Representative Reward',
   representative_reward_reversal: 'Representative Reward Reversed',
+  // The bank sent a completed withdrawal back (0202): money returned to available.
+  payout_reversal: 'Withdrawal Reversed — Returned to Balance',
 };
 
 const WITHDRAWAL_REQUEST_LABELS: Record<WithdrawalRequest['status'], string> = {
@@ -101,6 +103,7 @@ const WITHDRAWAL_REQUEST_LABELS: Record<WithdrawalRequest['status'], string> = {
   rejected: 'Withdrawal Rejected — Refunded',
   completed: 'Withdrawal',
   cancelled: 'Withdrawal Cancelled — Refunded',
+  reversed: 'Withdrawal Reversed — Returned to Balance',
 };
 
 // Masks a bank account number down to its last 4 digits (e.g. "0123456789"
@@ -1120,6 +1123,10 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       { label: 'Account name', value: na(wr.account_name) },
       { label: 'Withdrawal reference', value: na(wr.paystack_reference || wr.transfer_code) },
       { label: 'Status', value: wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: STATUS_COLORS[wr.status] },
+      // Never imply the money has arrived before the bank confirms it.
+      ...(wr.status === 'pending' || wr.status === 'processing'
+        ? [{ label: 'Paid?', value: wr.status === 'pending' ? 'Not yet — waiting for VENTS to approve' : 'Not yet — sent to the bank, waiting for confirmation', muted: true }]
+        : []),
       { label: 'Requested', value: fmtDateTime(wr.created_at) },
       ...(wr.updated_at && wr.updated_at !== wr.created_at ? [{ label: isReversed ? 'Resolved' : 'Last updated', value: fmtDateTime(wr.updated_at) }] : []),
       ...(isReversed ? [{ label: 'Failure / rejection reason', value: na(wr.admin_note), valueColor: ventsColors.error }] : []),

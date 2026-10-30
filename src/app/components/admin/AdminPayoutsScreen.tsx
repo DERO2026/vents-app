@@ -292,9 +292,15 @@ export function AdminPayoutsScreen() {
             </div>
           )}
           {r.status === 'processing' && (
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <button onClick={() => setCancelConfirmId(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} title="Use this if this request is stuck in Processing and doesn't actually exist on Paystack" style={{ flex: 1, background: adminTheme.red, border: '1px solid #F87171', borderRadius: 10, padding: 10, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
-                {actionLoading === r.request_id ? 'Refunding…' : '⚠ Refund Funds'}
+            // 0202: a claimed request has a transfer reference, so only Paystack
+            // settles it (webhook or Reconcile). The server refuses a refund
+            // unless the request never reached Paystack (older requests only).
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+            <p data-testid="payout-awaiting-paystack" style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted }}>
+              Sent to Paystack — not paid until Paystack confirms. Use Reconcile to settle it.
+            </p>
+              <button onClick={() => setCancelConfirmId(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} title="Only for an older request that never reached Paystack; the server refuses it otherwise" style={{ flex: 1, background: adminTheme.red, border: '1px solid #F87171', borderRadius: 10, padding: 10, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+                {actionLoading === r.request_id ? 'Refunding…' : '⚠ Refund (never sent to Paystack)'}
               </button>
             </div>
           )}
