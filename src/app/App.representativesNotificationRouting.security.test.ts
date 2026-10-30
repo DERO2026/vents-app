@@ -4,7 +4,8 @@ import { join } from 'node:path';
 
 // Bug: VENTS Earn notifications (invite_recruiter_partnership's invitation
 // and respond_to_recruiter_invitation's reply, 0197) carry push_data
-// { partnershipId, recruiterId?, commissionSplitBps? } -- no eventId,
+// { partnershipId, recruiterId? } (0197 also sent commissionSplitBps; 0201
+// drops it) -- no eventId,
 // userId, screen or any other key the shared notification router handled,
 // so tapping one (in-app or as a native push) did nothing.
 //

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Static guard for migration 0201 (VENTS Earn representative rewards).
@@ -184,5 +184,49 @@ describe('CodeRabbit review of f860f5d/51d5b55', () => {
     expect(actions).toMatch(/typeof v === 'number' && Number\.isInteger\(v\) && v >= 0 && v <= 120\s*\? `\$\{v\} days`\s*: `INVALID/);
     expect(actions).toContain('`settlement hold ${earnHoldDays(r.payload.settlement_hold_days)}`');
     expect(actions).not.toMatch(/settlement hold \$\{r\.payload\.settlement_hold_days\}/);
+  });
+});
+
+describe('retired 10% commission model: only the fixed reward is active', () => {
+  const root = join(__dirname, '..', '..');
+
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) return sourceFiles(p);
+      return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [p] : [];
+    });
+  }
+
+  it('invitations no longer promise commission sharing or carry a commission split', () => {
+    const f = fn('invite_recruiter_partnership');
+    expect(f).not.toContain('share part of their commission');
+    expect(f).toContain("'A VENTS representative wants to partner with you. VENTS rewards representatives directly; nothing is shared from or deducted from your earnings.'");
+    expect(f).toContain("jsonb_build_object('partnershipId', v_row.id, 'recruiterId', v_uid)");
+    // The body between AS $function$ and $function$ never mentions commission:
+    // the old parameter is accepted (installed apps) but never stored or used.
+    const body = f.slice(f.indexOf('AS $function$'));
+    expect(body).not.toMatch(/commission/i);
+    expect(f).toMatch(/p_commission_split_bps integer DEFAULT NULL/);
+  });
+
+  it('keeps the legacy column, its historical values and the reconciliation evidence', () => {
+    expect(sql).toMatch(/ALTER TABLE public\.recruiter_partnerships ALTER COLUMN commission_split_bps DROP NOT NULL;/);
+    expect(sql).not.toMatch(/DROP COLUMN|UPDATE public\.recruiter_partnerships SET commission_split_bps/);
+    expect(sql).toMatch(/'partnerships_by_commission_split_bps'/);
+    expect(sql).toMatch(/'commission_accrued_kobo',\s+0,\s+'commission_paid_kobo',\s+0/);
+    expect(sql).toMatch(/legacy_commission_reconciled\s+boolean NOT NULL DEFAULT false/);
+  });
+
+  it('no app or API code sends, reads or computes a commission split', () => {
+    const files = [...sourceFiles(join(root, 'src')), ...sourceFiles(join(root, 'api'))];
+    const offenders = files.filter((p) =>
+      /commission_split_bps|commissionSplitBps|COMMISSION_BPS|commission_rate|commission_kobo/i.test(readFileSync(p, 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
+  it('the representative invite sends only who is invited', () => {
+    const screen = readFileSync(join(root, 'src', 'app', 'components', 'RepresentativesScreen.tsx'), 'utf8');
+    expect(screen).toMatch(/rpc\('invite_recruiter_partnership', \{\s*p_organizer_id: [^,]+,\s*p_provider_id: [^,]+,\s*\}\)/);
   });
 });

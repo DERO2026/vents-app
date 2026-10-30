@@ -107,14 +107,41 @@ expect_error "request_admin_action still rejects unknown action types" "Unknown 
 expect_value "payouts ship disabled and the programme ships closed" \
   "$(val "SELECT payouts_enabled::text || '/' || legacy_commission_reconciled::text FROM public.earn_settings;")" "false/false"
 
+echo "== Retired 10% commission: history kept, nothing active =="
+expect_value "a pre-0201 partnership keeps its legacy commission_split_bps (reconciliation evidence)" \
+  "$(val "SELECT commission_split_bps FROM public.recruiter_partnerships WHERE organizer_id = '$ORG_PRE';")" "10000"
+expect_value "the legacy snapshot records the split values that existed before 0201" \
+  "$(val "SELECT details->'partnerships_by_commission_split_bps'->>'10000' FROM public.earn_audit_log WHERE action = 'legacy_commission_snapshot';")" "1"
+expect_value "a notification sent before 0201 is left exactly as written (history)" \
+  "$(val "SELECT count(*) FROM public.notifications WHERE user_id = '$ORG_PRE' AND body LIKE '%share part of their commission%';")" "1"
+expect_value "the dual-admin legacy reconciliation gate is still closed" \
+  "$(val "SELECT legacy_commission_reconciled::text FROM public.earn_settings;")" "false"
+expect_value "no database function except the reconciliation gate and snapshot references commission" \
+  "$(val "SELECT string_agg(p.proname, ',' ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosrc ILIKE '%commission%';")" \
+  "claim_representative_reward,earn_execute_admin_action,get_my_representative_rewards"
+
 echo "== Attribution =="
-"${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.invite_recruiter_partnership('$ORG', NULL, 10000);")" >/dev/null
+# An installed app that still sends the old 10000 split value.
+expect_ok "an invitation that still sends the old split value is accepted" \
+  "$(as "$REP" "SELECT public.invite_recruiter_partnership('$ORG', NULL, 10000);")"
 P=$(val "SELECT id FROM public.recruiter_partnerships WHERE organizer_id = '$ORG' AND recruiter_id = '$REP';")
+expect_value "the old split value is ignored: nothing commission-related is stored" \
+  "$(val "SELECT COALESCE(commission_split_bps::text, 'null') FROM public.recruiter_partnerships WHERE id = '$P';")" "null"
 expect_ok "organizer accepts the representative" "$(as "$ORG" "SELECT public.respond_to_recruiter_invitation('$P', true);")"
 expect_value "acceptance attributes the organizer to the representative" \
   "$(val "SELECT representative_id FROM public.representative_attributions WHERE organizer_id = '$ORG';")" "$REP"
-"${PSQL[@]}" -q -c "$(as "$REP2" "SELECT public.invite_recruiter_partnership('$ORG', NULL, 10000);")" >/dev/null
+# The current app sends no split value at all.
+expect_ok "an invitation with no split value is accepted" \
+  "$(as "$REP2" "SELECT public.invite_recruiter_partnership('$ORG', NULL);")"
 P2=$(val "SELECT id FROM public.recruiter_partnerships WHERE organizer_id = '$ORG' AND recruiter_id = '$REP2';")
+expect_value "a new invitation stores no commission split" \
+  "$(val "SELECT COALESCE(commission_split_bps::text, 'null') FROM public.recruiter_partnerships WHERE id = '$P2';")" "null"
+expect_value "invitations no longer promise commission sharing (body and push data)" \
+  "$(val "SELECT count(*) FROM public.notifications WHERE push_data->>'partnershipId' IN ('$P', '$P2') AND (body ILIKE '%commission%' OR push_data ? 'commissionSplitBps');")" "0"
+expect_value "invitations use the fixed-reward wording" \
+  "$(val "SELECT count(*) FROM public.notifications WHERE push_data->>'partnershipId' IN ('$P', '$P2') AND body = 'A VENTS representative wants to partner with you. VENTS rewards representatives directly; nothing is shared from or deducted from your earnings.';")" "2"
+expect_value "invitation push data carries only the partnership and the representative" \
+  "$(val "SELECT string_agg(DISTINCT k, ',' ORDER BY k) FROM public.notifications, jsonb_object_keys(push_data) k WHERE push_data->>'partnershipId' IN ('$P', '$P2');")" "partnershipId,recruiterId"
 expect_ok "organizer also accepts a second representative" "$(as "$ORG" "SELECT public.respond_to_recruiter_invitation('$P2', true);")"
 expect_value "duplicate attribution blocked: still the first representative, one row" \
   "$(val "SELECT count(*) || '/' || max(representative_id::text) FROM public.representative_attributions WHERE organizer_id = '$ORG';")" "1/$REP"

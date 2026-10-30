@@ -80,6 +80,13 @@ not in the UI.
 
     The 10% copy is removed from the UI. Approvals and claims stay **blocked** until management records the reconciliation (`earn_update_settings: legacy_commission_reconciled`) through dual control.
 
+    **Retired wiring (0201).** Nothing can calculate, accrue or pay a 10% commission:
+    - `invite_recruiter_partnership` is redefined. The organizer's notification now reads "A VENTS representative wants to partner with you. VENTS rewards representatives directly; nothing is shared from or deducted from your earnings." The old "share part of their commission" text and the `commissionSplitBps` push field are gone.
+    - The function still accepts `p_commission_split_bps`, so installed apps that send it keep working, but ignores it. New invitations store `commission_split_bps` as NULL; the app no longer sends it.
+    - **Kept as evidence:** the `commission_split_bps` column (now nullable, with its historical values), notifications already sent, the reconciliation snapshot (which now also records the split values that existed before 0201), and the dual-admin reconciliation gate.
+    - **Needs a later migration, not done here:** dropping the column, or the ignored parameter. Dropping the parameter would break app versions still in use. Both wait until the reconciliation is formally settled.
+    - `tickets` / `service_bookings.qualifying_status` (0192, not applied) were planned for commission eligibility. Nothing writes or reads them for money.
+
 Earning states shown to people: Pending (organizer / review) → Approved → Funded → Withdrawable (in the earnings wallet); Rejected; Reversed. Once credited, the money is part of the earnings wallet's available balance. Pending and withdrawn amounts are shown by the existing wallet, because a withdrawal draws on the whole balance, not on one reward.
 
 ### Earnings wallet integration
@@ -147,7 +154,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 
 ## Tests
 
-- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 191 real-execution checks against local Postgres 16. They include rejection of malformed yes/no values (`"t"`, `"yes"`, `"true"`, numbers, null, arrays, or a missing expense decision) in all four dual-control settings, and of any `settlement_hold_days` that is not a JSON whole number from 0 to 120 (text such as `"7"`, decimals, booleans, null, out of range), with 0 and 120 accepted. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
+- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 203 real-execution checks against local Postgres 16. They include rejection of malformed yes/no values (`"t"`, `"yes"`, `"true"`, numbers, null, arrays, or a missing expense decision) in all four dual-control settings, and of any `settlement_hold_days` that is not a JSON whole number from 0 to 120 (text such as `"7"`, decimals, booleans, null, out of range), with 0 and 120 accepted. They also prove invitations no longer promise commission sharing, the old split value is ignored, and the legacy evidence is kept. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
 - **`scripts/local-pg-test/run-payout-gate-audit.sh`:** the 27-check security audit of the reward payout gate (2026-10-30). It covers:
   - `payouts_enabled` is enforced inside the credit function, with no bypass by direct table write, internal function or admin action;
   - two distinct admins, with the approver a super admin, and neither the representative nor the organizer able to request or approve their own reward;

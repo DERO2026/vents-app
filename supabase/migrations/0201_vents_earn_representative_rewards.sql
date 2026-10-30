@@ -214,6 +214,90 @@ END
 $backfill$;
 
 -- ---------------------------------------------------------------------------
+-- Invitations under the fixed reward model (retires the 10% commission wiring)
+-- ---------------------------------------------------------------------------
+-- commission_split_bps belonged to the retired 10% model and was never read
+-- for money. Existing rows keep the value they were created with (evidence
+-- for the legacy reconciliation); new invitations store NULL. The column is
+-- not dropped.
+ALTER TABLE public.recruiter_partnerships ALTER COLUMN commission_split_bps DROP NOT NULL;
+COMMENT ON COLUMN public.recruiter_partnerships.commission_split_bps IS
+  'Retired 10% commission model. Historical value only; NULL for invitations made under the fixed representative reward (0201). Never read for money.';
+
+-- Same as 0197 except: no commission promise in the notification, no
+-- commissionSplitBps in push_data, p_commission_split_bps is ignored, and
+-- commission_split_bps is left out of the INSERT (so it is NULL). The
+-- signature is kept so installed apps that still send it keep working.
+CREATE OR REPLACE FUNCTION public.invite_recruiter_partnership(
+  p_organizer_id uuid DEFAULT NULL,
+  p_provider_id  uuid DEFAULT NULL,
+  p_commission_split_bps integer DEFAULT NULL
+)
+ RETURNS public.recruiter_partnerships
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_row public.recruiter_partnerships;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.recruiters r WHERE r.id = v_uid AND r.status = 'active') THEN
+    RAISE EXCEPTION 'Caller is not a registered, active recruiter';
+  END IF;
+
+  IF (p_organizer_id IS NULL) = (p_provider_id IS NULL) THEN
+    RAISE EXCEPTION 'Exactly one of p_organizer_id or p_provider_id must be provided';
+  END IF;
+
+  -- A recruiter cannot invite themselves as the organizer/provider side.
+  IF p_organizer_id = v_uid THEN
+    RAISE EXCEPTION 'Cannot form a partnership with yourself';
+  END IF;
+  IF p_provider_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.service_providers sp WHERE sp.id = p_provider_id AND sp.user_id = v_uid
+  ) THEN
+    RAISE EXCEPTION 'Cannot form a partnership with yourself';
+  END IF;
+
+  IF p_organizer_id IS NOT NULL AND NOT public.recruiter_target_is_organizer(p_organizer_id) THEN
+    RAISE EXCEPTION 'Target organizer not found';
+  END IF;
+  IF p_provider_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.service_providers sp WHERE sp.id = p_provider_id
+  ) THEN
+    RAISE EXCEPTION 'Target provider not found';
+  END IF;
+
+  PERFORM public.check_rate_limit('invite_recruiter_partnership:' || v_uid::text, 20, 3600);
+
+  INSERT INTO public.recruiter_partnerships (recruiter_id, organizer_id, provider_id, status)
+  VALUES (v_uid, p_organizer_id, p_provider_id, 'pending')
+  RETURNING * INTO v_row;
+
+  INSERT INTO public.notifications (user_id, type, title, body, read, icon, push_data)
+  VALUES (
+    COALESCE(p_organizer_id, (SELECT sp.user_id FROM public.service_providers sp WHERE sp.id = p_provider_id)),
+    'social',
+    'New VENTS Earn partnership invitation',
+    'A VENTS representative wants to partner with you. VENTS rewards representatives directly; nothing is shared from or deducted from your earnings.',
+    false,
+    '🤝',
+    jsonb_build_object('partnershipId', v_row.id, 'recruiterId', v_uid)
+  );
+
+  RETURN v_row;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.invite_recruiter_partnership(uuid, uuid, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.invite_recruiter_partnership(uuid, uuid, integer) TO authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Realized-profit pool and ledger
 -- ---------------------------------------------------------------------------
 CREATE TABLE public.earn_profit_pool (
@@ -1334,6 +1418,9 @@ BEGIN
     'recruiters',                   (SELECT count(*) FROM public.recruiters),
     'accepted_partnerships',        (SELECT count(*) FROM public.recruiter_partnerships WHERE status = 'accepted'),
     'pending_partnerships',         (SELECT count(*) FROM public.recruiter_partnerships WHERE status = 'pending'),
+    'partnerships_by_commission_split_bps', (SELECT COALESCE(jsonb_object_agg(bps, n), '{}'::jsonb) FROM (
+        SELECT COALESCE(commission_split_bps::text, 'null') AS bps, count(*) AS n
+          FROM public.recruiter_partnerships GROUP BY 1) x),
     'attributions_backfilled',      (SELECT count(*) FROM public.representative_attributions),
     'commission_ledger_exists',     false,
     'commission_accrued_kobo',      0,

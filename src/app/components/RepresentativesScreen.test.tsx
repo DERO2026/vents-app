@@ -414,7 +414,7 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
+    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null });
   });
 
   it('describes the fixed ₦50,000 qualifying-organizer reward -- never the retired 10% commission, "5%" or a negotiable split', async () => {
@@ -486,7 +486,7 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 10000 });
+    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99' });
   });
 
   it('a search result that is neither an organizer nor a provider has no Send Invitation action, with a clear reason shown', async () => {
@@ -550,7 +550,7 @@ describe('RepresentativesScreen', () => {
       await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
       expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
-        p_organizer_id: 'dero-uid', p_provider_id: null, p_commission_split_bps: 10000,
+        p_organizer_id: 'dero-uid', p_provider_id: null,
       });
     });
 
@@ -565,7 +565,7 @@ describe('RepresentativesScreen', () => {
       await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
       expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
-        p_organizer_id: 'both-1', p_provider_id: null, p_commission_split_bps: 10000,
+        p_organizer_id: 'both-1', p_provider_id: null,
       });
     });
 

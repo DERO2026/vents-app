@@ -28,7 +28,6 @@ interface Partnership {
   organizer_id: string | null;
   provider_id: string | null;
   status: string;
-  commission_split_bps: number;
   invited_at: string;
   // select('*') already returns this column live; it just wasn't part of
   // this interface's declared shape before. Used only for an optional
@@ -338,13 +337,6 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
     }
   }
 
-  // invite_recruiter_partnership still requires commission_split_bps
-  // (0193). The old 10% commission model is retired: representatives earn
-  // the fixed ₦50,000 qualifying-organizer reward (0201), which never reads
-  // this column. FULL_COMMISSION_BPS stays the one constant value the UI has
-  // always sent, so existing and new rows stay uniform.
-  const FULL_COMMISSION_BPS = 10000;
-
   async function handleSendInvite() {
     if (!inviteTarget) return;
     if (targetRole === 'neither' || targetRole === null) {
@@ -361,7 +353,6 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
     const { error } = await supabase.rpc('invite_recruiter_partnership', {
       p_organizer_id: wantsProvider ? null : inviteTarget.id,
       p_provider_id: wantsProvider ? targetProviderId : null,
-      p_commission_split_bps: FULL_COMMISSION_BPS,
     });
     setInviteBusy(false);
     if (error) {

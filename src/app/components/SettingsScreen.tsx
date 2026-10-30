@@ -2003,8 +2003,8 @@ export function SettingsScreen({
           <Divider />
           {/* Moved out of PAYMENTS: Representatives is a role/identity
               a user takes on (recruiter), not a payment destination --
-              nothing here involves money yet (commission computation and
-              payout are intentionally unbuilt). Account-level placement
+              rewards are claimed and withdrawn from VENTS Work / the
+              earnings wallet, not from here. Account-level placement
               also makes it visible to someone who has never registered as
               a Representative before, same as every other row in this
               section. */}

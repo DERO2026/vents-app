@@ -263,9 +263,10 @@ still missing or genuinely unverified, stated explicitly either way.*
 - [x] VENTS Earn screen with separately labelled balances. Service providers now reach the earnings wallet.
 - [x] Retired 10% commission copy replaced with the ₦50,000 qualifying-organizer reward.
 - [x] Representative dashboard header (mockup D), Rewards screen (claims, eligible events, expenses), and Admin Console → VENTS Earn (all decisions dual-control).
-- [x] Migration 0201 (attribution, claims, realized-profit pool with locked reservations, idempotent credit to the withdrawable earnings wallet through the existing ledger and payout flow, expenses, monthly rate review, append-only audit), verified by 191 local checks.
+- [x] Migration 0201 (attribution, claims, realized-profit pool with locked reservations, idempotent credit to the withdrawable earnings wallet through the existing ledger and payout flow, expenses, monthly rate review, append-only audit), verified by 203 local checks.
 - [ ] **Apply 0201 to production** (needs approval).
 - [x] **Reward credits go to the withdrawable earnings wallet** (decided 2026-10-30, implemented in 0201).
+- [x] Retired 10% commission wiring removed (0201): invitations no longer promise commission sharing or store a split; legacy values, the snapshot and the reconciliation gate are kept.
 - [ ] Management records the legacy 10% reconciliation through dual control. Reward approvals stay blocked until then.
 - [x] **7-day settlement hold and the policy choices confirmed** (2026-10-30): first-accepted permanent attribution, event created after attribution, month counted by the event's end date, rate set per representative. Already how 0201 behaves; no code change.
 - [ ] Turn on reward credit to the earnings wallet (`earn_settings.payouts_enabled`) through dual control, only after the items above. Withdrawals themselves already run on the existing payout switch.
