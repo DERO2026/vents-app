@@ -650,14 +650,17 @@ describe('RepresentativesScreen', () => {
     expect((acceptBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('shows the informational fixed reward but no earnings total or payout control', async () => {
+  it('shows the fixed reward to an existing Representative without claiming the payout flow is live', async () => {
     recruiterRowExists = true;
     await mount();
     const text = container.textContent || '';
     expect(text).toMatch(/₦50,000/);
-    expect(text).toMatch(/does not create an earned balance/i);
-    expect(container.querySelectorAll('button').length).toBeGreaterThan(0);
-    expect(text).not.toMatch(/\d+ earned|earned total|withdraw.*reward/i);
+    expect(container.querySelector('[data-testid="vents-work-reward-terms"]')).toBeTruthy();
+    expect(text).toMatch(/non-cancelled event approved by both the organizer and a VENTS event admin/i);
+    expect(text).toMatch(/at least ₦50,000 in pooled ticket profit/i);
+    expect(text).toMatch(/reward tracking and payouts are still being implemented/i);
+    expect(text).not.toMatch(/\d+ earned|earned total/i);
+    expect(Array.from(container.querySelectorAll('button')).some((button) => /withdraw/i.test(button.textContent || ''))).toBe(false);
   });
 
   // Mobile UI fix: the root-container color override is necessary but not
@@ -688,7 +691,7 @@ describe('RepresentativesScreen', () => {
 
     it('registration (empty/prompt) state: the prompt paragraph and button text have explicit non-black colors', async () => {
       await mount();
-      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('Become a VENTS Representative'));
+      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('fixed reward is ₦50,000'));
       notBlack(prompt ?? null);
       const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Become a Representative');
       expect(btn).toBeTruthy();

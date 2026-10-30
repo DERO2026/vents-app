@@ -972,6 +972,26 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
           </div>
         )}
 
+        {isRecruiter === true && (
+          <section
+            data-testid="vents-work-reward-terms"
+            style={{
+              borderRadius: ventsRadii.md,
+              padding: `${ventsSpacing.unit[3]}px ${ventsSpacing.unit[3]}px`,
+              marginBottom: ventsSpacing.unit[3],
+              background: ventsColors.surface,
+              border: `1px solid ${ventsColors.border}`,
+            }}
+          >
+            <h2 style={{ ...ventsTypography.label, color: ventsColors.ink1, margin: `0 0 ${ventsSpacing.unit[1]}px` }}>
+              VENTS Work reward: ₦50,000 per eligible organizer
+            </h2>
+            <p style={{ ...ventsTypography.caption, color: ventsColors.ink2, margin: 0, lineHeight: 1.5 }}>
+              The organizer must host a non-cancelled event approved by both the organizer and a VENTS event admin. Withdrawal is after the event ends and ticket sales are finalized, when VENTS has at least ₦50,000 in pooled ticket profit. Genuine free events may qualify after review. Reward tracking and payouts are still being implemented.
+            </p>
+          </section>
+        )}
+
         <nav
           style={{
             display: 'flex',
