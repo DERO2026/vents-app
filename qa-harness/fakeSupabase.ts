@@ -463,7 +463,7 @@ const RPC_FIXTURES: Record<string, any> = {
   ],
   get_my_representative_rewards: {
     representative: { id: 'rep-1', status: 'active', created_at: '2026-10-03T09:00:00Z', display_name: 'Adaeze Okonkwo' },
-    payouts_enabled: false, programme_open: true, current_month: '2026-10-01', current_rate_kobo: 5000000,
+    payouts_enabled: false, programme_open: false, current_month: '2026-10-01', current_rate_kobo: 5000000,
     base_reward_kobo: 5000000, rate_review_threshold: 9, qualifying_this_month: 2, qualifying_last_month: 0,
     funding_available: false,
     attributions: [

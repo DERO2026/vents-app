@@ -69,6 +69,7 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
       case 'provider-setup': onNavigate('service-provider-setup'); break;
       case 'representative': onNavigate('representatives'); break;
       case 'support': onNavigate('help-support'); break;
+      case 'none': break;
     }
   };
 
@@ -133,7 +134,7 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
             <Row key={row.key} testId={`work-role-${row.key}`} icon={<Ico tone={icon.tone}>{icon.glyph}</Ico>}
               title={row.title} sub={status.loading ? 'Checking…' : row.subtitle}
               right={status.loading ? undefined : <Pill tone={row.pill.tone}>{row.pill.label}</Pill>}
-              onClick={status.loading ? undefined : () => open(row.action)} />
+              onClick={status.loading || row.action === 'none' ? undefined : () => open(row.action)} />
           ))}
         </MCard>
 

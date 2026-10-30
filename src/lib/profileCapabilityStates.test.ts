@@ -64,7 +64,10 @@ describe('Issues 4 & 5: Become an Organizer / Become a Service Provider capabili
   });
 
   it('admin and sub-admin are explicitly excluded from the Become-an-Organizer application CTA', () => {
-    expect(organizerRole({ isOrganizer: false, isStaff: true, isVerified: false, request: 'none' }).action).toBe('organizer-studio');
+    // Admins carry isOrganizer (App sets it for role 'admin') and open Creator Studio;
+    // a sub-admin without the capability gets an inert row, never the application.
+    expect(organizerRole({ isOrganizer: true, isStaff: true, isVerified: false, request: 'none' }).action).toBe('organizer-studio');
+    expect(organizerRole({ isOrganizer: false, isStaff: true, isVerified: false, request: 'none' }).action).toBe('none');
     expect(hubSrc).toMatch(/const isStaff = currentUser\.role === 'admin' \|\| currentUser\.role === 'sub-admin' \|\| currentUser\.id === ROOT_UID;/);
   });
 

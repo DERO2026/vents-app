@@ -19,6 +19,21 @@ describe('organizer role row', () => {
   });
 });
 
+describe('organizer role row for staff', () => {
+  const o = (x: Partial<Parameters<typeof organizerRole>[0]>) =>
+    organizerRole({ isOrganizer: false, isStaff: true, isVerified: false, request: 'none', ...x });
+  it('an admin (isOrganizer) opens Creator Studio', () => {
+    expect(o({ isOrganizer: true }).action).toBe('organizer-studio');
+  });
+  it('a sub-admin without the capability gets an inert row, not a dead "Active" one or the application', () => {
+    for (const request of ['none', 'pending', 'rejected', 'approved'] as const) {
+      const r = o({ request });
+      expect(r.action).toBe('none');
+      expect(r.pill).toEqual({ label: 'Staff', tone: 'off' });
+    }
+  });
+});
+
 describe('provider role row', () => {
   const p = (x: Partial<Parameters<typeof providerRole>[0]> = {}) =>
     providerRole({ isProvider: false, isStaff: false, request: 'none', profileStatus: null, ...x });

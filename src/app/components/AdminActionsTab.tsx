@@ -55,7 +55,7 @@ function describe(r: ActionRequest): string {
     earn_reverse_reward: `${who} requested to REVERSE a representative reward (${label})`,
     earn_recognize_event_profit: `${who} requested to recognize realized profit (${label})`,
     earn_set_monthly_rate: `${who} requested a higher representative rate (${label})`,
-    earn_decide_expense: `${who} requested an expense decision (${label})`,
+    earn_decide_expense: `${who} requested to ${r.payload?.approve === true ? 'APPROVE' : 'REJECT'} an expense (${label})`,
     earn_update_settings: `${who} requested a VENTS Earn settings change (${label})`,
   };
   return map[r.action_type] || `${who} requested: ${r.action_type} ${label}`;

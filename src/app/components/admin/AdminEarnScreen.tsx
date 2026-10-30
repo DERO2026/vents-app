@@ -70,10 +70,20 @@ export function AdminEarnScreen() {
   };
 
   const ask = (q: string) => (window.prompt(q) || '').trim();
+  // The approver sees target_label, not target_id, so name the representative.
+  const repLabel = (id: string) => {
+    const name = data?.claims.find((c) => c.representative_id === id)?.representative_name;
+    return name ? `${name} (${id})` : id;
+  };
 
+  // Only the latest check may set the candidate, so a slow response for an
+  // earlier Event ID can never become the one "Request: recognize" submits.
+  const checkSeq = useRef(0);
   const checkEvent = async () => {
+    const seq = ++checkSeq.current;
     setCandidate(null);
     const { data: d, error: e } = await supabase.rpc('admin_get_event_profit_candidate' as any, { p_event_id: eventId.trim() });
+    if (seq !== checkSeq.current) return;
     if (e) { setMsg(e.message); return; }
     setCandidate(d);
   };
@@ -117,7 +127,7 @@ export function AdminEarnScreen() {
         </div>
         <div style={muted}>Profit is added per finished, settled event: recorded buyer fees minus refunds, minus the costs you state. Gross sales and pending money never count.</div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input aria-label="Event ID" placeholder="Event ID" value={eventId} onChange={(e) => setEventId(e.target.value)} style={input} />
+          <input aria-label="Event ID" placeholder="Event ID" value={eventId} onChange={(e) => { checkSeq.current++; setCandidate(null); setEventId(e.target.value); }} style={input} />
           <button style={btn(true)} onClick={checkEvent} disabled={!eventId.trim()}>Check</button>
         </div>
         {candidate && (
@@ -204,7 +214,7 @@ export function AdminEarnScreen() {
           <input aria-label="Reason" placeholder="Reason" value={rate.reason} onChange={(e) => setRate({ ...rate, reason: e.target.value })} style={input} />
         </div>
         <button style={btn()} disabled={!rate.repId || !rate.month || !rate.amount || !rate.reason.trim()}
-          onClick={() => request('earn_set_monthly_rate', `Rate ${formatNaira(Math.round(Number(rate.amount) * 100))} for ${rate.month}`, { month: `${rate.month}-01`, reward_kobo: Math.round(Number(rate.amount) * 100), reason: rate.reason.trim() }, rate.repId.trim())}>
+          onClick={() => request('earn_set_monthly_rate', `Rate ${formatNaira(Math.round(Number(rate.amount) * 100))} for ${rate.month} · representative ${repLabel(rate.repId.trim())}`, { month: `${rate.month}-01`, reward_kobo: Math.round(Number(rate.amount) * 100), reason: rate.reason.trim() }, rate.repId.trim())}>
           Request higher rate
         </button>
       </div>

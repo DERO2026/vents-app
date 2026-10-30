@@ -13,7 +13,8 @@ export type RoleAction =
   | 'provider-verify'      // ServiceProviderVerificationScreen (apply / status)
   | 'provider-setup'       // ServiceProviderSetupScreen (create / edit listing)
   | 'representative'       // Representatives dashboard (join or manage)
-  | 'support';             // suspended: contact support
+  | 'support'              // suspended: contact support
+  | 'none';                // nothing to open (staff without organizer capability)
 
 export interface RoleRow {
   key: 'organizer' | 'provider' | 'representative';
@@ -38,7 +39,14 @@ export function organizerRole({ isOrganizer, isStaff, isVerified, request }: Org
   const base = { key: 'organizer' as const, title: 'Organizer' };
   // An 'approved' request is trusted immediately, without waiting for the
   // 15s role-sync poll to flip currentUser.isOrganizer.
-  const active = isOrganizer || isStaff || request === 'approved';
+  // Staff never get the application CTA. The organizer view itself opens
+  // only for an organizer or an admin (App.openCreatorStudio; isOrganizer
+  // is already true for admins), so a sub-admin without the capability
+  // gets an inert row rather than an "Active" one that does nothing.
+  if (isStaff && !isOrganizer) {
+    return { ...base, subtitle: 'Not needed for staff accounts', pill: { label: 'Staff', tone: 'off' }, chip: { label: 'Organizer', tone: 'off' }, action: 'none' };
+  }
+  const active = isOrganizer || request === 'approved';
   if (active) {
     if (isVerified || isStaff) {
       return { ...base, subtitle: isStaff ? 'Organizer tools' : 'Verified Organizer', pill: { label: isStaff ? 'Active' : 'Verified', tone: 'on' }, chip: { label: 'Organizer', tone: 'on' }, action: 'organizer-studio' };
