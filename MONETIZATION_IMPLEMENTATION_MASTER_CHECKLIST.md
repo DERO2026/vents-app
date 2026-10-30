@@ -154,7 +154,7 @@ This is the canonical implementation tracker for the original 12-part VENTS mone
 
 - Migration `0193_vents_earn_foundation.sql` explicitly scopes itself to partnerships and invitations; it does not calculate or pay commission.
 - Migration `0192_platform_fee_accounting_foundation.sql` adds accounting and qualification groundwork, not recruiter payout logic.
-- `RepresentativesScreen.tsx` still contains 10% commission copy and sends `10000` basis points. This conflicts with the later fixed ₦50,000 direction and must be reconciled before rollout.
+- `RepresentativesScreen.tsx` now shows the fixed ₦50,000 amount and current qualification/funding gates, with no percentage-commission promise. It still sends `10000` basis points because the legacy partnership RPC requires that argument; the RPC/schema and notification text must be replaced before rollout.
 - The repository also contains a VENTS Design Implementation checklist, which is separate from this monetization checklist.
 - Existing bank-account and withdrawal flows are scoped to organizer wallets; recruiter earnings need an explicit role and ledger design before using them.
 - Ticketing audit: `confirm_ticket_payment` in migration 0192 uses a `1.05` buyer multiplier and credits the organizer the ticket amount; the agreed 4% buyer fee + 5% organizer commission is not represented by this path.
