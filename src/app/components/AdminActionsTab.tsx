@@ -43,6 +43,14 @@ function earnFlag(v: unknown, yes: string, no: string): string {
   return v === true ? yes : v === false ? no : `INVALID (${JSON.stringify(v ?? null)})`;
 }
 
+// Same rule the executor enforces: a whole number of days from 0 to 120.
+// Text such as "7", decimals, booleans and null are shown as INVALID.
+function earnHoldDays(v: unknown): string {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 120
+    ? `${v} days`
+    : `INVALID (${JSON.stringify(v ?? null)})`;
+}
+
 // Human-readable label for an action type + its target.
 function describe(r: ActionRequest): string {
   const who = r.requested_by_name || 'A Sub-Admin';
@@ -67,7 +75,7 @@ function describe(r: ActionRequest): string {
     earn_update_settings: `${who} requested a VENTS Earn settings change: ${[
       r.payload?.payouts_enabled !== undefined ? `reward credit ${earnFlag(r.payload.payouts_enabled, 'ON', 'OFF')}` : null,
       r.payload?.legacy_commission_reconciled !== undefined ? `legacy 10% plan ${earnFlag(r.payload.legacy_commission_reconciled, 'RECONCILED', 'NOT reconciled')}` : null,
-      r.payload?.settlement_hold_days !== undefined ? `settlement hold ${r.payload.settlement_hold_days} days` : null,
+      r.payload?.settlement_hold_days !== undefined ? `settlement hold ${earnHoldDays(r.payload.settlement_hold_days)}` : null,
     ].filter(Boolean).join(', ') || 'no recognised change'} (${label})`,
   };
   return map[r.action_type] || `${who} requested: ${r.action_type} ${label}`;

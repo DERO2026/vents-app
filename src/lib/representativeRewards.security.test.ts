@@ -179,4 +179,10 @@ describe('CodeRabbit review of f860f5d/51d5b55', () => {
     expect(actions).toMatch(/earn_decide_expense: `\$\{who\} requested to \$\{earnFlag\(r\.payload\?\.approve, 'APPROVE', 'REJECT'\)\}/);
     expect(actions).toMatch(/data-testid="earn-request-payload"/);
   });
+
+  it('the approver sees a settlement hold outside the executor rule as INVALID', () => {
+    expect(actions).toMatch(/typeof v === 'number' && Number\.isInteger\(v\) && v >= 0 && v <= 120\s*\? `\$\{v\} days`\s*: `INVALID/);
+    expect(actions).toContain('`settlement hold ${earnHoldDays(r.payload.settlement_hold_days)}`');
+    expect(actions).not.toMatch(/settlement hold \$\{r\.payload\.settlement_hold_days\}/);
+  });
 });
