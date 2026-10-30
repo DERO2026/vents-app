@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, getAuthToken } from '../../lib/supabase';
+import { PREVIEW_READ_ONLY_MESSAGE } from '../../lib/previewReadOnly';
 import { pickImage } from '../../lib/pickImage';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
@@ -236,6 +237,8 @@ function validateCacFile(file: File): string | null {
 // (see the Admin Console's Verification screen), not a
 // directly-fetchable public URL.
 function uploadVerificationCertificate(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
+  // Direct upload, outside the Supabase client: refuse it on a read-only Preview.
+  if (__VENTS_PREVIEW_READ_ONLY__) return Promise.reject(new Error(PREVIEW_READ_ONLY_MESSAGE));
   return new Promise((resolve, reject) => {
     const key = `${crypto.randomUUID()}-${file.name}`;
     const xhr = new XMLHttpRequest();

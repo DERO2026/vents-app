@@ -42,6 +42,7 @@ import { verifyInsforgeSession, enforceRateLimit } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 import crypto from 'crypto';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // After confirm_transfer_fee_payment confirms/no-ops a transfer-fee payment,
 // trigger immediate push delivery for the notification it just inserted
@@ -170,6 +171,7 @@ async function handleClientVerifyDeposit(req, res, rawBody: Buffer) {
   applyCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'payment verification')) return;
 
   try {
     req.body = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
@@ -253,6 +255,7 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'payment verification')) return;
 
   try {
     req.body = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
@@ -523,6 +526,7 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
 // ── Paystack's own signed webhook ─────────────────────────────────────────
 async function handleWebhook(req, res, rawBody: Buffer) {
   if (req.method !== 'POST') return res.status(405).end();
+  if (refuseInPreview(res, 'Paystack webhook')) return;
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {

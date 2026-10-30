@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // ─── Daily notification safety-net sweep (Vercel Cron) ────────────────────
 // PREVIOUS root cause of hours-late push delivery: this daily sweep used to
@@ -102,6 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  if (refuseInPreview(res, 'cron run')) return;
 
   // Vercel injects this header automatically for cron-triggered invocations
   // when CRON_SECRET is set — see https://vercel.com/docs/cron-jobs/manage-cron-jobs.

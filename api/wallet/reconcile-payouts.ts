@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
 import { callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -26,6 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'payout reconciliation')) return;
 
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
