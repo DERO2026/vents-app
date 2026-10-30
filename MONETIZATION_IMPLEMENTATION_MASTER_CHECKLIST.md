@@ -5,24 +5,24 @@ This is the canonical implementation tracker for the original 12-part VENTS mone
 ## Confirmed product directions
 
 - Revenue streams: ticketing fees; event promotions and advertising; service marketplace fees; organizer subscriptions; service-provider subscriptions; vendor marketplace; VENTS Wallet and payouts; additional paid event services; future marketplace expansion; VENTS Work representative compensation; admin and financial controls; testing, release and deployment.
-- Representative compensation was changed from a percentage commission to **₦50,000 per qualifying organizer onboarded**. The user has now specified that the organizer must host an event that is not cancelled, and both organizer and event admin approval are required before payment. Genuine free events may qualify after verification.
+- Representative compensation was changed from a percentage commission to **₦50,000 per qualifying organizer onboarded**. The organizer must host an event that is not cancelled, and both organizer and event admin approval are required. Withdrawal is only after the event is over, ticket sales/proceeds are finalized, and VENTS has sufficient ticket profit to fund the reward. Whether that profit gate is per-event or pooled, and how a free event can qualify without ticket proceeds, still needs confirmation.
 - Cross-cutting requirement: make the revenue streams valuable to users and close obvious fraud, self-referral, collusion, retry, and reversal paths with server-side controls.
 
 ## Original checklist: all revenue streams
 
 ### 1. Ticketing fees
 
-- [~] Attendee service fee — 4% per ticket — existing agreed model; audit current calculation, rounding, disclosure, and production behavior.
-- [~] Organizer commission — 5% per ticket — existing agreed model; audit calculation and net settlement.
-- [~] Combined gross ticket fee revenue — 9% (4% attendee + 5% organizer); verify both sides are represented correctly and are not double counted.
+- [ ] Attendee service fee — 4% per ticket — existing agreed model; current source computes a 5% buyer surcharge (`1.05` multiplier), so price logic does not match.
+- [ ] Organizer commission — 5% per ticket — existing agreed model; current ticket confirmation credits the organizer the full ticket face amount, so no 5% organizer deduction is evident in the audited payment path.
+- [ ] Combined gross ticket fee revenue — 9% (4% attendee + 5% organizer); current audited path computes 5% gross only and does not implement the agreed split.
 - [~] Ticket transfer fee — 7.5%, ₦500 minimum, ₦5,000 maximum; audit current transfer implementation and edge cases.
 - [ ] Refund administration fee — ₦500–₦1,000 proposed; settle policy and legal review before implementation.
 - [ ] Expedited organizer payout — ₦500–₦1,500 proposed optional service; verify cost and disclose before charging.
 
 ### 2. Event promotions and advertising
 
-- [~] Trending: 3 days ₦75,000; 7 days ₦150,000; 14 days ₦275,000; 30 days ₦500,000 — previously agreed; audit existing promotion activation, billing, duration, expiry, and rendering.
-- [~] Featured: 3 days ₦150,000; 7 days ₦250,000 — previously agreed; audit existing feature path and billing.
+- [~] Trending: 3 days ₦75,000; 7 days ₦150,000; 14 days ₦275,000; 30 days ₦500,000 — source price table matches; verify billing, fulfillment, expiry, and production.
+- [~] Featured: 3 days ₦150,000; 7 days ₦250,000 — source matches these prices but also offers 14/30-day tiers; reconcile those additional tiers with the master price list and verify billing/production.
 - [ ] Sponsored event campaigns — negotiated pricing, campaign workflow and fulfillment.
 - [ ] Sponsored discovery/category placements — ₦25,000–₦75,000 proposed; define inventory, measurement, and billing.
 - [ ] Brand sponsorships and advertising partnerships — negotiated contracts and operational tracking.
@@ -89,11 +89,11 @@ This is the canonical implementation tracker for the original 12-part VENTS mone
 
 - [ ] ₦50,000 per qualifying organizer onboarded; replaces old 10% commission model.
 - [ ] Representative referral attribution: record recruiter against each organizer.
-- [ ] Qualifying event verification: event must be hosted and not cancelled.
+- [ ] Qualifying event verification: event must be hosted and not cancelled; validate event has ended.
 - [ ] Organizer and event admin approval required before payment.
-- [ ] Genuine free events may qualify, subject to verification rules.
+- [ ] Genuine free events may qualify; reconcile with the ticket-profit source-of-funds gate before implementation.
 - [ ] Fraud and duplicate prevention: no duplicate or fraudulent payouts.
-- [ ] Approved rewards become withdrawable through VENTS Wallet after approval.
+- [ ] Approved rewards become withdrawable through VENTS Wallet only after event completion, finalized ticket sales/proceeds, and sufficient VENTS ticket profit; define whether profits are event-attributed or pooled.
 - [ ] Monthly performance tracking by qualifying organizers per calendar month.
 - [ ] At 9+ qualifying organizers in a month, management may approve a higher rate for the following month; define the approval workflow and effective rate before enabling.
 - [ ] Approved transport/support expenses tracked separately and require approval.
@@ -157,3 +157,8 @@ This is the canonical implementation tracker for the original 12-part VENTS mone
 - `RepresentativesScreen.tsx` still contains 10% commission copy and sends `10000` basis points. This conflicts with the later fixed ₦50,000 direction and must be reconciled before rollout.
 - The repository also contains a VENTS Design Implementation checklist, which is separate from this monetization checklist.
 - Existing bank-account and withdrawal flows are scoped to organizer wallets; recruiter earnings need an explicit role and ledger design before using them.
+- Ticketing audit: `confirm_ticket_payment` in migration 0192 uses a `1.05` buyer multiplier and credits the organizer the ticket amount; the agreed 4% buyer fee + 5% organizer commission is not represented by this path.
+- Event promotion audit: `src/lib/eventPromotionPricing.ts` has shared client/server Trending prices matching all four agreed tiers. Featured 3/7-day prices match; it also exposes 14/30-day prices not listed in the recovered master checklist. Promotion billing exists in the app/API and has prior bypass-hardening migrations, but production deployment still needs verification.
+- Subscription audit: the schema/source contains VENTS AI subscription infrastructure, but the requested organizer and service-provider subscription tiers are not found in the audited implementation inventory.
+- Wallet audit: `user_wallets` is a deposit/spend/refund cash wallet with no withdrawal path; organizer payout infrastructure is organizer-scoped. VENTS Work therefore needs an approved reward ledger plus a deliberate wallet/withdrawal integration.
+- Vendor/paid-service audit: the repository has service-booking and event-vendor planning foundations, but the specified vendor paid listings, commissions, subscription products, and design/consultation service checkout were not found in the current inventory.

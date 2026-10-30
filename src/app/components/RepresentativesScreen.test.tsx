@@ -422,7 +422,8 @@ describe('RepresentativesScreen', () => {
     await mount();
     expect(container.textContent).toMatch(/₦50,000/);
     expect(container.textContent).toMatch(/eligible organizer onboarded/i);
-    expect(container.textContent).toMatch(/payout timing.*finalized/i);
+    expect(container.textContent).toMatch(/event must be over and its ticket sales finalized/i);
+    expect(container.textContent).toMatch(/enough profit from ticket sales/i);
     expect(container.textContent).not.toMatch(/\b10%\b|\bcommission\b/i);
   });
 

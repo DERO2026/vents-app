@@ -932,7 +932,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
               Become a VENTS Representative
             </h2>
             <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink2, margin: `0 0 ${ventsSpacing.unit[4]}px`, lineHeight: 1.55 }}>
-              Invite organizers and service providers to partner with you. VENTS Earn is moving to a fixed ₦50,000 reward for each eligible organizer onboarded. Eligibility checks and payout timing are still being finalized; invitations do not create an earned balance.
+              Invite organizers and service providers to partner with you. The fixed reward is ₦50,000 per eligible organizer onboarded. The organizer must host an event that is not cancelled, and both the organizer and a VENTS event admin must approve it. The event must be over and its ticket sales finalized before withdrawal; VENTS must also have enough profit from ticket sales to fund the reward. An invitation does not create an earned balance; payout setup is still in progress.
             </p>
             <div
               style={{
@@ -957,7 +957,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                 ₦50,000
               </span>
               <span style={{ ...ventsTypography.caption, color: ventsColors.ink2, lineHeight: 1.4 }}>
-                Fixed reward per eligible organizer onboarded. Eligibility and payout timing are subject to verification.
+                Withdrawal is available only after an approved event ends, its ticket sales are finalized, and VENTS has enough ticket profit to fund the reward.
               </span>
             </div>
             <button
