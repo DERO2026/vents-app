@@ -534,8 +534,62 @@ echo "== Read APIs and audit trail =="
 REPJSON=$(val "$(as "$REP" "SELECT public.get_my_representative_rewards()::text;")")
 if echo "$REPJSON" | grep -q "fee_candidate_kobo\|fee_recorded_kobo\|available_kobo"; then
   fail "representative read API leaks VENTS profit figures"; else pass "representative read API exposes no VENTS profit figures"; fi
-expect_value "representative sees their claims and attributions" \
-  "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_rewards()->'claims') || '/' || jsonb_array_length(public.get_my_representative_rewards()->'attributions');")")" "11/12"
+# Paged history: walk every page and return "<items>/<distinct ids>/<pages>".
+HIST() { # uid kind status limit
+  local uid=$1 kind=$2 st=$3 lim=$4 at=NULL id=NULL n=0 pages=0 ids="" page
+  while :; do
+    page=$(val "$(as "$uid" "SELECT public.get_my_representative_history('$kind', $st, $at, $id, $lim)::text;")")
+    pages=$((pages + 1))
+    n=$((n + $(echo "$page" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["items"]))')))
+    ids="$ids $(echo "$page" | python3 -c 'import json,sys; print(" ".join(i["id"] for i in json.load(sys.stdin)["items"]))')"
+    nxt=$(echo "$page" | python3 -c 'import json,sys; x=json.load(sys.stdin)["next"]; print("" if x is None else x["at"]+"|"+x["id"])')
+    [ -z "$nxt" ] && break
+    at="'${nxt%%|*}'::timestamptz"; id="'${nxt##*|}'::uuid"
+    [ "$pages" -gt 50 ] && break
+  done
+  echo "$n/$(echo $ids | tr ' ' '\n' | sort -u | grep -c .)/$pages"
+}
+expect_value "the rewards summary no longer carries unbounded lists" \
+  "$(val "$(as "$REP" "SELECT (public.get_my_representative_rewards() ?| ARRAY['claims','expenses','attributions'])::text;")")" "false"
+expect_value "claims page 4 at a time: 11 claims over 3 pages, none repeated" "$(HIST "$REP" claims NULL 4)" "11/11/3"
+expect_value "referred organizers page the same way: 12 over 2 pages of 10" "$(HIST "$REP" attributions NULL 10)" "12/12/2"
+expect_value "one page that holds everything has no next page" "$(HIST "$REP" claims NULL 50)" "11/11/1"
+expect_value "a stage filter is applied on the server and matches the lifecycle count" \
+  "$(HIST "$REP" claims "'credited'" 2 | cut -d/ -f1)" "$(val "$(as "$REP" "SELECT public.get_my_representative_performance()->'lifecycle'->'credited'->>'count';")")"
+expect_value "the page size is clamped to 1..50 (0 reads one row)" \
+  "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_history('claims', NULL, NULL, NULL, 0)->'items');")")" "1"
+expect_value "a huge page size is capped, not an error (all 11 fit under the 50 cap)" \
+  "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_history('claims', NULL, NULL, NULL, 100000)->'items');")")" "11"
+"${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.submit_representative_expense('support', 8000, 'Second expense so there are two pages', current_date, NULL, gen_random_uuid());")" >/dev/null
+P1=$(val "$(as "$REP" "SELECT public.get_my_representative_history('expenses', NULL, NULL, NULL, 1)::text;")")
+P1_ID=$(echo "$P1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["items"][0]["id"])')
+P1_AT=$(echo "$P1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["next"]["at"])')
+"${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.submit_representative_expense('transport', 12000, 'Arrived between pages', current_date, NULL, gen_random_uuid());")" >/dev/null
+P2_IDS=$(val "$(as "$REP" "SELECT string_agg(i->>'id', ',') FROM jsonb_array_elements(public.get_my_representative_history('expenses', NULL, '$P1_AT'::timestamptz, '$P1_ID'::uuid, 50)->'items') i;")")
+if echo "$P2_IDS" | grep -q "$P1_ID"; then fail "an expense added between pages made page 2 repeat page 1"
+else pass "an expense added between pages neither repeats nor shifts the next page (keyset paging)"; fi
+expect_value "expense history covers every expense, including the new one" \
+  "$(HIST "$REP" expenses NULL 2 | cut -d/ -f1-2)" \
+  "$(val "SELECT count(*) || '/' || count(*) FROM public.representative_expenses WHERE representative_id = '$REP';")"
+expect_value "'claimed' on a referred organizer matches the claims table (one reward per organizer)" \
+  "$(val "$(as "$REP" "SELECT count(*) FROM jsonb_array_elements(public.get_my_representative_history('attributions', NULL, NULL, NULL, 50)->'items') i WHERE (i->>'claimed')::boolean;")")" \
+  "$(val "SELECT count(DISTINCT c.organizer_id) FROM public.representative_reward_claims c JOIN public.representative_attributions a ON a.organizer_id = c.organizer_id WHERE a.representative_id = '$REP' AND c.status <> 'rejected';")"
+HISTJSON=$(val "$(as "$REP" "SELECT public.get_my_representative_history('attributions', NULL, NULL, NULL, 50)::text;")")
+if echo "$HISTJSON" | grep -q "fee_candidate_kobo\|fee_recorded_kobo\|available_kobo"; then
+  fail "the referred-organizer history leaks VENTS profit figures"; else pass "the referred-organizer history exposes no VENTS profit figures"; fi
+expect_value "another representative's history never includes this representative's claims" \
+  "$(val "$(as "$REP2" "SELECT count(*) FROM jsonb_array_elements(public.get_my_representative_history('claims', NULL, NULL, NULL, 50)->'items') i JOIN public.representative_reward_claims c ON c.id = (i->>'id')::uuid WHERE c.representative_id = '$REP';")")" "0"
+expect_value "a non-representative gets an empty history" \
+  "$(val "$(as "$OTHER" "SELECT public.get_my_representative_history('claims')::text;")")" '{"next": null, "items": []}'
+expect_error "an unknown history kind is refused" "Unknown history kind" \
+  "$(as "$REP" "SELECT public.get_my_representative_history('wallet');")"
+expect_error "a status from another list is refused" "Unknown status" \
+  "$(as "$REP" "SELECT public.get_my_representative_history('expenses', 'credited');")"
+expect_error "half a cursor is refused" "both its time and its id" \
+  "$(as "$REP" "SELECT public.get_my_representative_history('claims', NULL, now(), NULL);")"
+expect_error "anonymous callers cannot read history" "permission denied" \
+  "SET ROLE anon; SELECT public.get_my_representative_history('claims');"
+expect_value "history is read-only (STABLE)" "$(val "SELECT provolatile FROM pg_proc WHERE proname = 'get_my_representative_history';")" "s"
 expect_value "a non-representative gets no representative profile" \
   "$(val "$(as "$OTHER" "SELECT (public.get_my_representative_rewards()->'representative')::text;")")" "null"
 expect_value "organizer sees confirmations addressed to them only" \
@@ -545,11 +599,17 @@ PERF() { val "$(as "$REP" "SELECT public.get_my_representative_performance()$1;"
 expect_value "the funnel counts invitations straight from recruiter_partnerships" \
   "$(PERF "->'funnel'->>'invitations_sent'")/$(PERF "->'funnel'->>'partnerships_active'")" \
   "$(val "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id = '$REP';")/$(val "SELECT count(*) FROM public.recruiter_partnerships WHERE recruiter_id = '$REP' AND status = 'accepted';")"
+expect_value "every invitation is in exactly one outcome (pending + active + ended + declined + withdrawn = sent)" \
+  "$(val "$(as "$REP" "SELECT (f->>'invitations_pending')::int + (f->>'partnerships_active')::int + (f->>'partnerships_ended')::int + (f->>'invitations_declined')::int + (f->>'invitations_withdrawn')::int FROM (SELECT public.get_my_representative_performance()->'funnel' AS f) x;")")" \
+  "$(PERF "->'funnel'->>'invitations_sent'")"
+expect_value "accepted-ever is active now plus ended (history, not the current team)" \
+  "$(PERF "->'funnel'->>'invitations_accepted'")" \
+  "$(val "$(as "$REP" "SELECT (f->>'partnerships_active')::int + (f->>'partnerships_ended')::int FROM (SELECT public.get_my_representative_performance()->'funnel' AS f) x;")")"
 expect_value "attributed organizers match the attribution table and the rewards API" \
-  "$(PERF "->'funnel'->>'organizers_attributed'")" "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_rewards()->'attributions');")")"
+  "$(PERF "->'funnel'->>'organizers_attributed'")" "$(HIST "$REP" attributions NULL 50 | cut -d/ -f1)"
 expect_value "the lifecycle covers every claim exactly once (counts add up to the claims list)" \
   "$(val "$(as "$REP" "SELECT sum((v->>'count')::int) FROM jsonb_each(public.get_my_representative_performance()->'lifecycle') AS e(k, v);")")" \
-  "$(val "$(as "$REP" "SELECT jsonb_array_length(public.get_my_representative_rewards()->'claims');")")"
+  "$(HIST "$REP" claims NULL 50 | cut -d/ -f1)"
 expect_value "paid rewards in the lifecycle equal the representative_reward credits in the earnings ledger" \
   "$(PERF "->'lifecycle'->'credited'->>'amount_kobo'")" \
   "$(val "SELECT COALESCE(sum(amount_kobo), 0) - COALESCE((SELECT sum(amount_kobo) FROM public.organizer_transactions WHERE organizer_id = '$REP' AND type = 'representative_reward_reversal'), 0) FROM public.organizer_transactions WHERE organizer_id = '$REP' AND type = 'representative_reward';")"

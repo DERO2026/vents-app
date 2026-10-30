@@ -75,7 +75,7 @@ where they exist.
 | AUTH-1 | Public sign-up | BROKEN for public launch (or deliberate) | Prod: `disable_signups = true` | `app_config` | Owner confirms intent; re-enable at launch; sign-up → email code → profile works on web, iOS and Android | E2E sign-up on each platform | Owner |
 | SEC-1 | Preview cannot touch production money or messaging | DONE (code) | PR #82 only; production unaffected (byte-identical build) | `docs/preview-read-only.md` | — (already met) | `previewGuard.test.ts`, `previewReadOnly*.test.ts` | Merge PR #82 |
 | INF-1 | `LAUNCH_CHECKLIST.md` §9 reflects the live backend | BROKEN (stale doc) | Doc | §9 says the Supabase variables are absent from Production and PR #3 is unmerged, but production serves the Supabase app with live data | §9 rewritten from current facts (variables present, `PROJECT_ADMIN_DATABASE_URL` set, cron, Sentry alerts) | — | Owner Vercel access |
-| QA-1 | Pre-existing failing tests | BROKEN | Code (`main` and PR #82) | 8 vitest failures, 1 tsc error | 0 failures; or each documented as a known false-positive and quarantined **with an owner decision** (never silently skipped) | `npm test`, `tsc --noEmit` | — |
+| QA-1 | Pre-existing failing tests | BROKEN (tests stale, see Batch A) | Code (`main` and PR #82) | 8 vitest failures, 1 tsc error. Diagnosed 2026-10-30: all 8 send `req.body` as a plain object, but since 72a9b81 (raw-body HMAC fix) the handler reads the raw request bytes, so the tests never reach the code they check | 0 failures; or each documented as a known false-positive and quarantined **with an owner decision** (never silently skipped) | `npm test`, `tsc --noEmit` | — |
 
 ## Must fix before public launch (P1)
 
@@ -84,9 +84,9 @@ where they exist.
 | PAY-7 | Refund after a withdrawal: who carries the shortfall | DONE in code (0203); not in prod | Prod: VENTS absorbs it | Approved: recover from future earnings | Shortfall → `earnings_recoveries` receivable → `recovery_deduction` from later earnings; never negative | `run-earnings-policy-verification.sh` | Apply 0203 |
 | PAY-8 | Settlement hold for organizer / provider earnings | DONE in code (0203); not in prod | Prod: withdrawable immediately | Approved: 48 h after event end / after booking completion (not before the scheduled time); representatives keep 7 days | Holds, blockers (refund per order, disputes, admin/report holds), cron + on-request release, audit basis | `run-earnings-policy-verification.sh` (156) | Apply 0203 |
 | PAY-9 | Second-admin approval of payouts | DONE in code (0203); not in prod | Prod: single admin | `authorize_withdrawal` maker-checker | No self-approval; organizer can be neither admin; amount and active bank recipient bound | local-PG (156) + `payoutEngine.security.test.ts` | Apply 0203 |
-| EARN-1 | VENTS Work / Earn and representative reward live | PARTIAL | Code (PR #82, 0201); not in prod | `docs/vents-work-earn.md` | 0201 + 0202 applied; legacy 10% reconciliation recorded (dual control); reward credit enabled (dual control); one reward end to end on production with real admins | `run-representative-rewards-verification.sh` (203), payout-gate audit (27) | PAY-1, decisions in PR #82 |
-| EARN-2 | VENTS Work screens complete (funnel, monthly performance, reward states, team, provider/organizer entry points) | DONE in code (PR #82, Batch E); reward figures need 0201 in prod | Code | Representative dashboard: Overview (wallet, this month, funnel, lifecycle), Monthly, Rewards (lifecycle filter), Team (partnerships, withdraw/end), Expenses (totals, filters, reasons); hub shortcuts for each active role; earnings screen shows held/owed earnings | Each figure from `get_my_representative_performance` / `get_my_representative_rewards` / live tables; no button without a real action; honest state before 0201; no overflow at 360/390/430px | `representativeDashboard.render.test.tsx` (14), `ventsWork.render.test.tsx` (8), rewards suite dashboard checks (11), harness screenshots | Apply 0201 for live reward data |
-| EARN-3 | Rule "verified / admin-approved event" | DONE in code (0201) | Code | Approving admins confirm `event_verified`; organizer must hold an approved, unrevoked verification (re-checked at claim) | — | `run-representative-rewards-verification.sh` (214) | Apply 0201 |
+| EARN-1 | VENTS Work / Earn and representative reward live | PARTIAL | Code (PR #82, 0201); not in prod | `docs/vents-work-earn.md` | 0201 + 0202 applied; legacy 10% reconciliation recorded (dual control); reward credit enabled (dual control); one reward end to end on production with real admins | `run-representative-rewards-verification.sh` (244), payout-gate audit (27) | PAY-1, decisions in PR #82 |
+| EARN-2 | VENTS Work screens complete (funnel, monthly performance, reward states, team, provider/organizer entry points) | DONE in code (PR #82, Batch E + fixes); reward figures need 0201 in prod | Code | Representative dashboard: Overview (wallet, this month, invitation counts with accepted-all-time vs active-now, referred-organizer counts, lifecycle; **no conversion percentages**), Monthly, Rewards (server-side stage filter, paged), Team, Expenses (server totals, paged); hub shortcuts per role; earnings screen shows held/owed earnings | Each figure from `get_my_representative_performance` / `get_my_representative_history` / `get_my_representative_rewards` / live tables; lists paged 20 at a time with a keyset cursor; no button without a real action; honest state before 0201, when only the dashboard function is missing, and on read failures (never ₦0 or an empty list for a failed read); every tab, shortcut and action exercised in a browser at 360/390/430px for organizer, provider and representative | `representativeDashboard.render.test.tsx` (32), `ventsWork.render.test.tsx` (9), `fonts.test.ts` (3), rewards suite (244, incl. paging/funnel), harness viewport QA (all checks pass at 3 widths) | Apply 0201 for live reward data |
+| EARN-3 | Rule "verified / admin-approved event" | DONE in code (0201) | Code | Approving admins confirm `event_verified`; organizer must hold an approved, unrevoked verification (re-checked at claim) | — | `run-representative-rewards-verification.sh` (244) | Apply 0201 |
 | PAY-10 | Bank-account setup verified on the Supabase backend | UNVERIFIED | Prod | `LAUNCH_CHECKLIST.md` §9 (not re-verified since migration); `MASTER_AUDIT.md` Part 4 #6 (recipient idempotency gap) | Add / remove / set-default works for a real account; a repeated save makes no duplicate recipient | API tests with mocked Paystack | — |
 | PROMO-1 | Paid promotions: billing, fulfilment, expiry | PARTIAL | Code + prod (prices match the source) | PR #81 §2 | Featured 14/30-day tiers reconciled with the price list; a promotion activates only after verified payment and expires on time | Existing `activate.pricing.security.test.ts` + expiry test | Price decision |
 | REF-1 | Refunds end to end (ticket, booking, transfer fee, upheld booking disputes) | PARTIAL | Code (PR #82) + prod | Refund functions, webhook; 0203 adds recovery and the upheld-dispute refund | Refund request → Paystack → webhook → ticket/booking, wallet and earnings correct; a failed refund recoverable | local-PG (156) + `disputeRefund.security.test.ts`; live ₦100 refund pending (PAY-4) | Apply 0203; PAY-4 |
@@ -146,6 +146,34 @@ refund shortfall, settlement, payout maker-checker, event verification) are
 | G | **Store readiness**: Android §1–5, then iOS | MOB-1, MOB-2 | Large | Accounts |
 | H | **Operations**: alerts, SPF/DMARC, runbooks (payouts, refunds, disputes, Paystack outage) | OPS-1..3 | Small | Owner DNS/Sentry |
 | I | **Accessibility and performance** audits on core flows | A11Y-1, PERF-1 | Medium | — |
+
+## Next batch: A, prepared (2026-10-30)
+
+**Why A, not B, first.** Both are P0. B (0192 reconciliation and the
+production apply plan) unblocks more, but its proof is the test suite, and
+today the suite is red in exactly the code B ships: the Paystack verify
+path. Eight failures that everyone has learned to ignore hide any new
+failure in that path. A is small and code-only; B follows straight after.
+The strongest case against this order: A changes no production behaviour,
+and every day 0202/0203 stay unapplied, production keeps the known payout
+bugs (PAY-1). That is a reason to start B the same day, not to skip A.
+
+**Diagnosis (done, read-only):**
+- All 8 failures (`aiSubscriptionPaystackVerify` ×6, `paystackVerifyAbuse` ×2) are **stale tests, not a production bug**. Since commit 72a9b81 the handler disables the body parser and reads the raw bytes (needed for a correct HMAC check). The tests still pass `body` as a parsed object, so the handler fails before reaching the code under test (`res.status` is never called).
+- Proof: the same "single rejection" test passes unchanged except for `body: Buffer.from(JSON.stringify(...))`, which `readRawBody` accepts.
+- The tsc error (`adminSendAnnouncement.security.test.ts:319`) compares the literal `'sub-admin'` with `'admin'`. It is a test-typing issue, not app code.
+
+**Scope:**
+1. Give the 8 tests a real body: a Buffer (or a Readable) of the JSON, and for the webhook cases the exact bytes that are signed. No assertion is weakened, removed or skipped.
+2. Add one regression test that a parsed-object body is refused cleanly (400), not thrown, so the handler never fails silently again. This is a small handler change only if the test shows it throws today.
+3. Fix the tsc error by typing the role variable as the union it is.
+4. Rewrite `LAUNCH_CHECKLIST.md` §9 from current, checkable facts (INF-1). Each fact is marked "owner to confirm" where only the Vercel or Paystack dashboard can show it. No secret values.
+
+**Acceptance:** `npm test` has 0 failures; `tsc --noEmit` has 0 errors; production build passes; §9 has no claim contradicted by the read-only production checks in this file.
+
+**Not in A:** applying any migration; any Paystack call; any production setting.
+
+**Then B:** reconcile 0192 with 0203's drift guard, and write the apply plan for 0202 → 0201 → 0203 (read-only pre-checks, rollback note, frontend shipped with it). This is for the owner to approve.
 
 **Keeping this current:** update the status and evidence of an item in the same
 commit that changes it. Never mark an item DONE without naming the test or

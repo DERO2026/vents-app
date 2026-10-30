@@ -154,7 +154,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 
 ## Tests
 
-- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 203 real-execution checks against local Postgres 16. They include rejection of malformed yes/no values (`"t"`, `"yes"`, `"true"`, numbers, null, arrays, or a missing expense decision) in all four dual-control settings, and of any `settlement_hold_days` that is not a JSON whole number from 0 to 120 (text such as `"7"`, decimals, booleans, null, out of range), with 0 and 120 accepted. They also prove invitations no longer promise commission sharing, the old split value is ignored, and the legacy evidence is kept. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
+- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 244 real-execution checks (including the paged-history and funnel checks) against local Postgres 16. They include rejection of malformed yes/no values (`"t"`, `"yes"`, `"true"`, numbers, null, arrays, or a missing expense decision) in all four dual-control settings, and of any `settlement_hold_days` that is not a JSON whole number from 0 to 120 (text such as `"7"`, decimals, booleans, null, out of range), with 0 and 120 accepted. They also prove invitations no longer promise commission sharing, the old split value is ignored, and the legacy evidence is kept. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
 - **`scripts/local-pg-test/run-payout-gate-audit.sh`:** the 27-check security audit of the reward payout gate (2026-10-30). It covers:
   - `payouts_enabled` is enforced inside the credit function, with no bypass by direct table write, internal function or admin action;
   - two distinct admins, with the approver a super admin, and neither the representative nor the organizer able to request or approve their own reward;
@@ -174,16 +174,23 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 
 | Tab | Shows | Source | Actions |
 |---|---|---|---|
-| Overview | earnings wallet (withdrawable, withdrawal pending, on hold), this month's qualifying organizers against the rate-review threshold, recruitment funnel (invited → accepted → attributed → hosted → qualified → paid), reward lifecycle with counts and amounts | `get_my_representative_performance()` (0201, read-only); before 0201, invitation counts from `recruiter_partnerships` | Withdraw (earnings wallet), Invite |
+| Overview | earnings wallet (withdrawable, withdrawal pending, on hold); this month's qualifying organizers against the rate-review threshold; partnership invitations as plain counts (sent, awaiting a reply, **accepted all time**, **active now**, ended, declined, withdrawn); referred organizers as plain counts (referred, created an event since, reward approved, reward paid); reward lifecycle with counts and amounts | `get_my_representative_performance()` (0201, read-only); before 0201, invitation counts from `recruiter_partnerships` | Withdraw (earnings wallet), Invite |
 | Monthly | last six months: qualifying count, rate, submitted, paid | same | — |
-| Rewards | every claim, filterable by stage: Pending → Awaiting approval → Approved → Available → Paid → Reversed (Rejected separately); referred organizers | `get_my_representative_rewards()` | Submit for review, Claim / Add to earnings wallet (one idempotency key per attempt), Open earnings wallet |
+| Rewards | claims a page at a time, filtered by stage **on the server**: Pending → Awaiting approval → Approved → Available → Paid → Reversed (Rejected separately); referred organizers, also paged. Stage counts are the server's totals | `get_my_representative_history('claims' / 'attributions')` + performance totals; summary from `get_my_representative_rewards()` | Submit for review, Claim / Add to earnings wallet (one idempotency key per attempt), Open earnings wallet, Show more |
 | Team | active partnerships, invitations awaiting a reply, history | `recruiter_partnerships` (RLS) | Find and invite, Withdraw invitation, End partnership (confirmed first) |
-| Expenses | totals by status, filter, decision reasons, submission | `get_my_representative_rewards()` + performance totals | Send for approval (two admins decide) |
+| Expenses | totals by status (server), filter (server), decision reasons, submission | `get_my_representative_history('expenses')` + performance totals | Send for approval (two admins decide), Show more |
 
-**Rules shown are the server's rules:**
-- the qualifying event ended and finished its 7-day settlement;
-- the organizer is verified and confirms the referral;
-- two admins review;
-- rewards are paid into the earnings wallet once VENTS profit covers them.
+**No conversion percentages.** The funnel steps are not strict subsets of each other: invitations include service providers, and "accepted" includes partnerships that later ended. A percentage between two rows would mislead, so each row is a plain count with a one-line definition.
 
-**When the 0201 functions are missing or refused:** a missing function, or the read-only Preview refusing one, shows "Representative rewards are not switched on yet". No reward figures are shown in that state, and invitation counts and the team still work. A real error (for example, not authenticated) is shown as an error.
+**Paging.** `get_my_representative_history(kind, status, before_at, before_id, limit)` returns `{items, next}`, newest first. It uses a keyset cursor on (time, id), so a row added between pages never repeats or shifts a page. The limit is clamped to 1–50 (the app reads 20). It is read-only (STABLE), returns only the caller's own rows, and refuses an unknown kind, a status from another list, or half a cursor. A referred organizer carries `claimed` (a reward that is not rejected exists) and its ten most recent events since attribution. `get_my_representative_rewards()` no longer returns unbounded lists.
+
+**Rules shown are the server's rules** (checked against "Representative reward (migration 0201)" above):
+- one reward per organizer, ever;
+- the event was created after the organizer accepted the partnership, has ended, and finished the settlement hold (the admin-set `settlement_hold_days`; the app never hardcodes it);
+- a free event counts only if the approving admin confirms it was genuine;
+- the organizer is verified and confirms the referral, then two admins review;
+- an approved reward waits to be funded from VENTS profit; once funded and payouts are on, the representative adds it to the earnings wallet;
+- a month's count is by the qualifying event's end month (Lagos), so it can still rise after the month ends; 9 or more lets two admins set a higher rate for the next month, and nothing rises automatically;
+- approving an expense records it; nothing in the app pays it out.
+
+**When the 0201 functions are missing or refused:** a missing function, or the read-only Preview refusing one, shows "Representative rewards are not switched on yet". No reward figures are shown in that state; the history function is not called; invitation counts and the team still work. If only the dashboard function is missing, the lists still work but show no totals (chips carry no number, expense totals show "—"). A real error (for example, a timeout or not authenticated) is shown as an error. A failed team read shows the error and a retry, never an empty team. A failed earnings read shows "—", never ₦0.

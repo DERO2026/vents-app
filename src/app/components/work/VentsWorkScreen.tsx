@@ -42,8 +42,9 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
       Promise.resolve(supabase.rpc('vc_tier_and_multiplier_for_user' as any, { p_user_id: currentUser.id })).catch(() => null),
       Promise.resolve(supabase.rpc('get_my_referral_confirmations' as any)).catch(() => null),
     ]);
-    // No earnings-wallet row means nothing earned yet: a real ₦0.
-    setWithdrawableKobo((wallet as any)?.error ? null : ((wallet as any)?.data?.balance_kobo ?? 0));
+    // No earnings-wallet row means nothing earned yet: a real ₦0. A failed
+    // read (an error, or a rejected request) is unknown: '—', never ₦0.
+    setWithdrawableKobo(!wallet || (wallet as any).error ? null : ((wallet as any).data?.balance_kobo ?? 0));
     const tierRow = Array.isArray((tier as any)?.data) ? (tier as any).data[0] : (tier as any)?.data;
     setVcTier(tierRow?.tier ?? null);
     const rows = (conf as any)?.data;

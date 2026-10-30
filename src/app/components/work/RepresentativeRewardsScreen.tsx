@@ -36,8 +36,8 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
             </Tiles>
             <RewardRulesNote programmeOpen={data.programme_open} payoutsEnabled={data.payouts_enabled}
               holdDays={rep.performance?.settlement_hold_days} />
-            <RewardsPanel rewards={data} reload={rep.reload} onNavigate={onNavigate} />
-            <ExpensesPanel rewards={data} reload={rep.reload} totals={rep.performance?.expenses} />
+            <RewardsPanel rewards={data} totals={rep.performance?.lifecycle} reload={rep.reload} onNavigate={onNavigate} />
+            <ExpensesPanel reload={rep.reload} totals={rep.performance?.expenses} />
           </>
         )}
       </div>
@@ -51,9 +51,11 @@ export function RewardRulesNote({ programmeOpen, payoutsEnabled, holdDays }: { p
   const hold = typeof holdDays === 'number' ? `${holdDays}-day settlement` : 'settlement hold';
   return (
     <NoteBand>
-      An organizer you referred qualifies after hosting an event that has ended, isn&apos;t cancelled and has finished its
-      {' '}{hold}. The organizer must be verified; they confirm you referred them, then two VENTS admins review it.
-      Approved rewards are paid into your earnings wallet, which you can withdraw, once VENTS ticket profit covers them.
+      You can earn one reward per organizer you referred, ever. They qualify after hosting an event created after they
+      accepted your partnership. The event must have ended, not be cancelled and have finished its{' '}{hold}; a free event counts
+      only if VENTS confirms it was genuine. The organizer must be verified and confirm you referred them, then two
+      VENTS admins review it. Approved rewards are funded from VENTS ticket profit; once funded and payouts are on,
+      you add them to your earnings wallet and can withdraw them.
       {!programmeOpen && ' Rewards open once VENTS finishes moving representatives off the old commission plan.'}
       {programmeOpen && !payoutsEnabled && ' Wallet payouts have not started yet.'}
     </NoteBand>

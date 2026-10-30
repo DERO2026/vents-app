@@ -18,7 +18,6 @@ const TABS: { id: RepTab; label: string }[] = [
 ];
 
 const monthLabel = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—');
 
 // Representative dashboard: recruitment funnel, monthly performance, the
 // reward lifecycle, the team and expenses -- all from the representative's
@@ -67,16 +66,19 @@ export function RepresentativeDashboardScreen({ currentUser, onBack, onNavigate,
 
         {tab === 'overview' && !rep.loading && <Overview rep={rep} perf={perf} onNavigate={onNavigate} goTab={setTab} />}
         {tab === 'monthly' && perf?.representative && <Monthly perf={perf} />}
+        {tab === 'monthly' && !rep.loading && !perf && rep.rewards?.representative && (
+          <div data-testid="monthly-unavailable"><NoteBand>Monthly figures are not available yet.</NoteBand></div>
+        )}
         {tab === 'rewards' && rep.rewards?.representative && (
           <>
             <RewardRulesNote programmeOpen={rep.rewards.programme_open} payoutsEnabled={rep.rewards.payouts_enabled}
               holdDays={rep.performance?.settlement_hold_days} />
-            <RewardsPanel rewards={rep.rewards} reload={rep.reload} onNavigate={onNavigate} />
+            <RewardsPanel rewards={rep.rewards} totals={perf?.lifecycle} reload={rep.reload} onNavigate={onNavigate} />
           </>
         )}
         {tab === 'team' && <Team userId={currentUser?.id ?? null} onNavigate={onNavigate} onChanged={rep.reload} />}
         {tab === 'expenses' && rep.rewards?.representative && (
-          <ExpensesPanel rewards={rep.rewards} reload={rep.reload} totals={perf?.expenses} />
+          <ExpensesPanel reload={rep.reload} totals={perf?.expenses} />
         )}
       </div>
     </div>
@@ -88,17 +90,31 @@ function Overview({ rep, perf, onNavigate, goTab }: {
 }) {
   const f = perf?.funnel;
   const p = rep.partnerships;
-  // Invitation steps are live in every environment; reward steps need 0201.
-  const sent = f?.invitations_sent ?? p?.sent;
-  const accepted = f?.invitations_accepted ?? p?.accepted;
-  const steps: { k: string; label: string; v: number | undefined; base?: number }[] = [
-    { k: 'sent', label: 'Invitations sent', v: sent },
-    { k: 'accepted', label: 'Accepted', v: accepted, base: sent },
-    { k: 'attributed', label: 'Organizers attributed to you', v: f?.organizers_attributed, base: accepted },
-    { k: 'hosting', label: 'Hosted an event since', v: f?.organizers_hosting, base: f?.organizers_attributed },
-    { k: 'qualified', label: 'Qualified (reward approved)', v: f?.organizers_qualified, base: f?.organizers_hosting },
-    { k: 'paid', label: 'Paid', v: f?.organizers_paid, base: f?.organizers_qualified },
-  ];
+  // Plain counts, no conversion rates: the steps are not strict subsets of
+  // each other (an organizer can be attributed without a partnership in this
+  // list, and invitations include service providers), so a percentage
+  // between rows would mislead. Invitation counts are live in every
+  // environment; the referred-organizer counts need 0201.
+  const inv = f ? {
+    sent: f.invitations_sent, pending: f.invitations_pending, accepted: f.invitations_accepted,
+    active: f.partnerships_active, ended: f.partnerships_ended, declined: f.invitations_declined, withdrawn: f.invitations_withdrawn,
+  } : p ? { ...p } : null;
+  const invitationRows: { k: string; label: string; sub?: string; v: number | undefined }[] = inv ? [
+    { k: 'sent', label: 'Invitations sent', sub: 'All time, organizers and service providers', v: inv.sent },
+    { k: 'pending', label: 'Awaiting a reply', v: inv.pending },
+    { k: 'accepted', label: 'Accepted (all time)', sub: 'Includes partnerships that have since ended', v: inv.accepted },
+    { k: 'active', label: 'Active partnerships now', sub: 'Your current team', v: inv.active },
+    { k: 'ended', label: 'Ended after accepting', v: inv.ended },
+    { k: 'declined', label: 'Declined', v: inv.declined },
+    { k: 'withdrawn', label: 'Withdrawn by you', v: inv.withdrawn },
+  ] : [];
+  const organizerRows: { k: string; label: string; sub?: string; v: number }[] = f ? [
+    { k: 'attributed', label: 'Organizers referred by you', sub: 'Stays yours even if the partnership ends', v: f.organizers_attributed },
+    { k: 'hosting', label: 'Created an event since', sub: 'An event created after they accepted', v: f.organizers_hosting },
+    { k: 'qualified', label: 'Reward approved', sub: 'Approved, available or paid; not reversed', v: f.organizers_qualified },
+    { k: 'paid', label: 'Reward paid', sub: 'Added to your earnings wallet', v: f.organizers_paid },
+  ] : [];
+  const big = { fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums' as const };
   const thisMonth = perf?.months?.[0];
   const threshold = perf?.rate_review_threshold ?? 0;
   const progress = thisMonth && threshold > 0 ? Math.min(1, thisMonth.qualifying / threshold) : 0;
@@ -109,7 +125,7 @@ function Overview({ rep, perf, onNavigate, goTab }: {
         <>
           <MLabel>Earnings wallet</MLabel>
           <Tiles>
-            <Tile testId="rep-wallet-available" k="Withdrawable" v={formatNaira(perf.wallet.balance_kobo)} s="Earnings wallet ›" onClick={() => onNavigate('wallet')} />
+            <Tile testId="rep-wallet-available" k="Withdrawable" v={formatNaira(perf.wallet.balance_kobo)} s="All your VENTS earnings ›" onClick={() => onNavigate('wallet')} />
             <Tile testId="rep-wallet-pending" k="Withdrawal pending" v={formatNaira(perf.wallet.pending_kobo)}
               s={perf.wallet.on_hold_kobo > 0 ? `${formatNaira(perf.wallet.on_hold_kobo)} on hold` : 'Two-admin approval'} />
           </Tiles>
@@ -127,19 +143,31 @@ function Overview({ rep, perf, onNavigate, goTab }: {
         </>
       )}
 
-      {(sent !== undefined || f) && (
+      {inv && (
         <>
-          <MLabel>Recruitment funnel</MLabel>
+          <MLabel>Partnership invitations</MLabel>
           <MCard testId="rep-funnel">
-            {steps.filter((s) => s.v !== undefined).map((s) => (
-              <Row key={s.k} testId={`funnel-${s.k}`} title={s.label}
-                sub={s.base !== undefined ? `${pct(s.v ?? 0, s.base)} of the step before` : undefined}
-                right={<span style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{s.v}</span>} />
+            {invitationRows.filter((r) => r.v !== undefined).map((r) => (
+              <Row key={r.k} testId={`funnel-${r.k}`} title={r.label} sub={r.sub} right={<span style={big}>{r.v}</span>} />
             ))}
-            {!f && <div style={{ fontSize: 10.5, color: ventsColors.ink3 }}>Attribution and reward steps appear once representative rewards are switched on.</div>}
             <WorkButton ghost testId="rep-invite" onClick={() => onNavigate('representatives')}>Invite an organizer</WorkButton>
           </MCard>
         </>
+      )}
+
+      {f ? (
+        <>
+          <MLabel>Referred organizers</MLabel>
+          <MCard testId="rep-referred">
+            {organizerRows.map((r) => (
+              <Row key={r.k} testId={`funnel-${r.k}`} title={r.label} sub={r.sub} right={<span style={big}>{r.v}</span>} />
+            ))}
+          </MCard>
+        </>
+      ) : inv && (
+        <div data-testid="rep-referred-unavailable" style={{ fontSize: 10.5, color: ventsColors.ink3, padding: '0 4px' }}>
+          Referred-organizer and reward counts are not available yet.
+        </div>
       )}
 
       {perf?.representative && (
@@ -184,8 +212,10 @@ function Monthly({ perf }: { perf: Performance }) {
         ))}
       </MCard>
       <NoteBand>
-        A month counts the rewards approved for organizers whose qualifying event ended that month (Lagos time).
+        A month counts the rewards approved for organizers whose qualifying event ended that month (Lagos time), so a
+        month&apos;s count can still rise after it ends while reviews finish.
         {` ${perf.rate_review_threshold}`} or more in a month can earn a higher rate the next month, after two VENTS admins review it.
+        Nothing rises automatically.
       </NoteBand>
     </>
   );
@@ -202,13 +232,16 @@ function Team({ userId, onNavigate, onChanged }: { userId: string | null; onNavi
   const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
     const { data, error: e } = await supabase.from('recruiter_partnerships')
       .select('id, status, organizer_id, provider_id, invited_at, responded_at')
       .eq('recruiter_id', userId).order('invited_at', { ascending: false });
-    if (e) { setError(e.message || 'Could not load your team.'); setRows([]); return; }
+    // A failed read shows the error only, never an empty team.
+    if (e) { setError(e.message || 'Could not load your team.'); setRows(null); setFailed(true); return; }
+    setFailed(false);
     const list = (data as PartnershipRow[]) || [];
     setRows(list);
     const orgIds = Array.from(new Set(list.map((r) => r.organizer_id).filter(Boolean))) as string[];
@@ -247,7 +280,9 @@ function Team({ userId, onNavigate, onChanged }: { userId: string | null; onNavi
     <>
       {error && <ErrorNote>{error}</ErrorNote>}
       <WorkButton testId="team-invite" onClick={() => onNavigate('representatives')}>Find and invite organizers</WorkButton>
-      {rows === null && <Loading />}
+      {rows === null && !failed && <Loading />}
+      {failed && <WorkButton ghost testId="team-retry" onClick={() => load()}>Try again</WorkButton>}
+      {rows && (<>
       <MLabel>Active partnerships ({active.length})</MLabel>
       <MCard testId="team-active">
         {rows && active.length === 0 && <Row title="No active partnerships yet" sub="Invite an organizer or provider to partner with you" />}
@@ -278,6 +313,7 @@ function Team({ userId, onNavigate, onChanged }: { userId: string | null; onNavi
           </MCard>
         </>
       )}
+      </>)}
     </>
   );
 }

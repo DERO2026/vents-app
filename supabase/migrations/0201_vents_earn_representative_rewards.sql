@@ -132,7 +132,7 @@ CREATE TABLE public.representative_attributions (
   organizer_had_events_before      boolean NOT NULL DEFAULT false,
   CONSTRAINT representative_attributions_no_self CHECK (representative_id <> organizer_id)
 );
-CREATE INDEX representative_attributions_rep_idx ON public.representative_attributions (representative_id);
+CREATE INDEX representative_attributions_rep_idx ON public.representative_attributions (representative_id, attributed_at DESC, id DESC);
 
 -- Shared by the trigger and the one-off backfill below.
 CREATE OR REPLACE FUNCTION public.earn_attribute_partnership(p_partnership_id uuid)
@@ -552,6 +552,8 @@ CREATE UNIQUE INDEX representative_reward_claims_one_per_event
 CREATE UNIQUE INDEX representative_reward_claims_funding_key
   ON public.representative_reward_claims (funding_idempotency_key) WHERE funding_idempotency_key IS NOT NULL;
 CREATE INDEX representative_reward_claims_rep_idx ON public.representative_reward_claims (representative_id, reward_month);
+-- Paged history (get_my_representative_history): newest first per representative.
+CREATE INDEX representative_reward_claims_rep_created_idx ON public.representative_reward_claims (representative_id, created_at DESC, id DESC);
 
 CREATE OR REPLACE FUNCTION public.representative_qualifying_count(p_representative_id uuid, p_month date)
  RETURNS integer
@@ -865,7 +867,7 @@ CREATE TABLE public.representative_expenses (
     (decided_by IS NULL OR decided_by <> representative_id) AND
     (decision_requested_by IS NULL OR decision_requested_by <> representative_id))
 );
-CREATE INDEX representative_expenses_rep_idx ON public.representative_expenses (representative_id, created_at DESC);
+CREATE INDEX representative_expenses_rep_idx ON public.representative_expenses (representative_id, created_at DESC, id DESC);
 
 CREATE OR REPLACE FUNCTION public.submit_representative_expense(
   p_category text, p_amount_kobo bigint, p_description text, p_incurred_on date,
@@ -1252,41 +1254,119 @@ BEGIN
     'qualifying_last_month', public.representative_qualifying_count(v_uid, (v_month - interval '1 month')::date),
     -- Only whether funding is available for this representative's own
     -- approved rewards -- never VENTS' profit figures.
-    'funding_available', (SELECT p.available_kobo >= v_rate FROM public.earn_profit_pool p),
-    'attributions', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
+    'funding_available', (SELECT p.available_kobo >= v_rate FROM public.earn_profit_pool p)
+    -- Claims, expenses and referred organizers are read a page at a time
+    -- through get_my_representative_history(); totals come from
+    -- get_my_representative_performance().
+  );
+END;
+$function$;
+
+-- Representative history, one page at a time, newest first, for the caller
+-- only. Keyset paging on (time, id) so a page never repeats or skips a row
+-- when new ones arrive. p_kind: 'claims' | 'expenses' | 'attributions';
+-- p_status filters claims/expenses by one exact status. Returns
+-- {items, next}; pass next.at / next.id back to read the following page.
+CREATE OR REPLACE FUNCTION public.get_my_representative_history(
+  p_kind text,
+  p_status text DEFAULT NULL,
+  p_before_at timestamptz DEFAULT NULL,
+  p_before_id uuid DEFAULT NULL,
+  p_limit integer DEFAULT 20)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_limit integer := LEAST(GREATEST(COALESCE(p_limit, 20), 1), 50);
+  v_rows jsonb;
+  v_n integer;
+  v_last jsonb;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF p_kind IS NULL OR p_kind NOT IN ('claims', 'expenses', 'attributions') THEN
+    RAISE EXCEPTION 'Unknown history kind';
+  END IF;
+  IF (p_before_at IS NULL) <> (p_before_id IS NULL) THEN
+    RAISE EXCEPTION 'A page cursor needs both its time and its id';
+  END IF;
+  IF p_status IS NOT NULL AND NOT (
+       (p_kind = 'claims' AND p_status IN ('pending_organizer', 'pending_review', 'approved', 'funded', 'credited', 'rejected', 'reversed'))
+    OR (p_kind = 'expenses' AND p_status IN ('submitted', 'approved', 'rejected'))) THEN
+    RAISE EXCEPTION 'Unknown status for %', p_kind;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.recruiters WHERE id = v_uid) THEN
+    RETURN jsonb_build_object('items', '[]'::jsonb, 'next', NULL);
+  END IF;
+
+  -- One row more than the page, to know whether another page exists.
+  IF p_kind = 'claims' THEN
+    SELECT COALESCE(jsonb_agg(r ORDER BY (r->>'at')::timestamptz DESC, (r->>'id')::uuid DESC), '[]'::jsonb) INTO v_rows FROM (
+      SELECT jsonb_build_object(
+        'id', c.id, 'at', c.created_at, 'organizer_id', c.organizer_id, 'organizer_name', COALESCE(u.full_name, u.username),
+        'event_id', c.event_id, 'event_title', ev.title, 'status', c.status, 'amount_kobo', c.amount_kobo,
+        'reward_month', c.reward_month, 'created_at', c.created_at, 'decision_reason', c.decision_reason,
+        'credited_at', c.credited_at) AS r
+        FROM public.representative_reward_claims c
+        JOIN public.users u ON u.id = c.organizer_id
+        JOIN public.events ev ON ev.id = c.event_id
+       WHERE c.representative_id = v_uid
+         AND (p_status IS NULL OR c.status = p_status)
+         AND (p_before_at IS NULL OR (c.created_at, c.id) < (p_before_at, p_before_id))
+       ORDER BY c.created_at DESC, c.id DESC
+       LIMIT v_limit + 1) q;
+  ELSIF p_kind = 'expenses' THEN
+    SELECT COALESCE(jsonb_agg(r ORDER BY (r->>'at')::timestamptz DESC, (r->>'id')::uuid DESC), '[]'::jsonb) INTO v_rows FROM (
+      SELECT jsonb_build_object(
+        'id', x.id, 'at', x.created_at, 'category', x.category, 'amount_kobo', x.amount_kobo, 'description', x.description,
+        'incurred_on', x.incurred_on, 'status', x.status, 'decision_reason', x.decision_reason,
+        'created_at', x.created_at) AS r
+        FROM public.representative_expenses x
+       WHERE x.representative_id = v_uid
+         AND (p_status IS NULL OR x.status = p_status)
+         AND (p_before_at IS NULL OR (x.created_at, x.id) < (p_before_at, p_before_id))
+       ORDER BY x.created_at DESC, x.id DESC
+       LIMIT v_limit + 1) q;
+  ELSE
+    SELECT COALESCE(jsonb_agg(r ORDER BY (r->>'at')::timestamptz DESC, (r->>'id')::uuid DESC), '[]'::jsonb) INTO v_rows FROM (
+      SELECT jsonb_build_object(
+        'id', a.id, 'at', a.attributed_at,
         'organizer_id', a.organizer_id,
         'organizer_name', COALESCE(u.full_name, u.username),
         'organizer_username', u.username,
         'attributed_at', a.attributed_at,
+        -- One reward per organizer, ever: any claim that is not rejected
+        -- (by this or any representative) blocks another.
+        'claimed', EXISTS (SELECT 1 FROM public.representative_reward_claims c
+                            WHERE c.organizer_id = a.organizer_id AND c.status <> 'rejected'),
+        -- The ten most recent events since attribution, enough to find the
+        -- next qualifying one without evaluating an organizer's whole history.
         'events', COALESCE((
-          SELECT jsonb_agg(jsonb_build_object('event_id', ev.id, 'title', ev.title,
-                                              'eligibility', public.earn_event_eligibility(ev.id) - 'fee_recorded_kobo' - 'fee_refunded_kobo' - 'refund_shortfall_kobo' - 'fee_candidate_kobo' - 'paid_tickets')
-                           ORDER BY ev.event_date DESC)
-            FROM public.events ev
-           WHERE ev.organizer_id = a.organizer_id AND ev.created_at >= a.attributed_at
-             AND ev.deleted_at IS NULL), '[]'::jsonb)
-      ) ORDER BY a.attributed_at DESC)
-      FROM public.representative_attributions a
-      JOIN public.users u ON u.id = a.organizer_id
-     WHERE a.representative_id = v_uid), '[]'::jsonb),
-    'claims', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
-        'id', c.id, 'organizer_id', c.organizer_id, 'organizer_name', COALESCE(u.full_name, u.username),
-        'event_id', c.event_id, 'event_title', ev.title, 'status', c.status, 'amount_kobo', c.amount_kobo,
-        'reward_month', c.reward_month, 'created_at', c.created_at, 'decision_reason', c.decision_reason,
-        'credited_at', c.credited_at) ORDER BY c.created_at DESC)
-      FROM public.representative_reward_claims c
-      JOIN public.users u ON u.id = c.organizer_id
-      JOIN public.events ev ON ev.id = c.event_id
-     WHERE c.representative_id = v_uid), '[]'::jsonb),
-    'expenses', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
-        'id', x.id, 'category', x.category, 'amount_kobo', x.amount_kobo, 'description', x.description,
-        'incurred_on', x.incurred_on, 'status', x.status, 'decision_reason', x.decision_reason,
-        'created_at', x.created_at) ORDER BY x.created_at DESC)
-      FROM public.representative_expenses x WHERE x.representative_id = v_uid), '[]'::jsonb)
-  );
+          SELECT jsonb_agg(jsonb_build_object('event_id', e.id, 'title', e.title,
+                                              'eligibility', public.earn_event_eligibility(e.id) - 'fee_recorded_kobo' - 'fee_refunded_kobo' - 'refund_shortfall_kobo' - 'fee_candidate_kobo' - 'paid_tickets')
+                           ORDER BY e.event_date DESC)
+            FROM (SELECT ev.id, ev.title, ev.event_date FROM public.events ev
+                   WHERE ev.organizer_id = a.organizer_id AND ev.created_at >= a.attributed_at
+                     AND ev.deleted_at IS NULL
+                   ORDER BY ev.event_date DESC LIMIT 10) e), '[]'::jsonb)) AS r
+        FROM public.representative_attributions a
+        JOIN public.users u ON u.id = a.organizer_id
+       WHERE a.representative_id = v_uid
+         AND (p_before_at IS NULL OR (a.attributed_at, a.id) < (p_before_at, p_before_id))
+       ORDER BY a.attributed_at DESC, a.id DESC
+       LIMIT v_limit + 1) q;
+  END IF;
+
+  v_n := jsonb_array_length(v_rows);
+  IF v_n > v_limit THEN
+    v_rows := v_rows - v_limit;              -- drop the look-ahead row
+    v_last := v_rows -> (v_limit - 1);
+    RETURN jsonb_build_object('items', v_rows, 'next', jsonb_build_object('at', v_last->'at', 'id', v_last->'id'));
+  END IF;
+  RETURN jsonb_build_object('items', v_rows, 'next', NULL);
 END;
 $function$;
 
@@ -1331,6 +1411,8 @@ BEGIN
       'invitations_pending', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'pending'),
       'invitations_accepted', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status IN ('accepted', 'revoked')),
       'invitations_declined', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'declined'),
+      'invitations_withdrawn', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'withdrawn'),
+      'partnerships_ended', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'revoked'),
       'partnerships_active', (SELECT count(*) FROM public.recruiter_partnerships p WHERE p.recruiter_id = v_uid AND p.status = 'accepted'),
       'organizers_attributed', (SELECT count(*) FROM public.representative_attributions a WHERE a.representative_id = v_uid),
       'organizers_hosting', (SELECT count(DISTINCT a.organizer_id) FROM public.representative_attributions a
@@ -1521,6 +1603,7 @@ BEGIN
     'public.submit_representative_expense(text,bigint,text,date,uuid,uuid)',
     'public.get_my_representative_rewards()',
     'public.get_my_representative_performance()',
+    'public.get_my_representative_history(text,text,timestamptz,uuid,integer)',
     'public.get_my_referral_confirmations()',
     'public.admin_get_vents_earn_overview()',
     'public.admin_get_event_profit_candidate(uuid)'

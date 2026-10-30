@@ -4,7 +4,7 @@ import { ventsColors } from '../../../lib/ventsDesignTokens';
 import {
   claimStateView, eligibilityReasonText, formatNaira, isBackendUnavailable, REWARD_STAGES, type ClaimStatus,
 } from '../../../lib/workRoles';
-import { MLabel, MCard, Row, Ico, Pill, NoteBand, WorkButton, ErrorNote, Chips } from './workUi';
+import { MLabel, MCard, Row, Ico, Pill, NoteBand, WorkButton, ErrorNote, Chips, Loading } from './workUi';
 
 // Representative data and panels (migration 0201). Every figure comes from
 // the representative's own RPCs; every rule is enforced server-side. Shared
@@ -12,7 +12,9 @@ import { MLabel, MCard, Row, Ico, Pill, NoteBand, WorkButton, ErrorNote, Chips }
 
 export interface Eligibility { eligible: boolean; reasons: string[]; is_free_event?: boolean; ended_at?: string }
 export interface Attribution {
-  organizer_id: string; organizer_name: string | null; attributed_at: string;
+  id: string; organizer_id: string; organizer_name: string | null; attributed_at: string;
+  // A reward that is not rejected already exists for this organizer.
+  claimed: boolean;
   events: { event_id: string; title: string; eligibility: Eligibility }[];
 }
 export interface Claim {
@@ -28,7 +30,6 @@ export interface Rewards {
   payouts_enabled: boolean; programme_open: boolean; funding_available: boolean;
   current_rate_kobo: number; rate_review_threshold: number;
   qualifying_this_month: number; qualifying_last_month: number;
-  attributions: Attribution[]; claims: Claim[]; expenses: Expense[];
 }
 type Tally = Record<string, { count: number; amount_kobo: number }>;
 export interface Performance {
@@ -37,6 +38,7 @@ export interface Performance {
   rate_review_threshold: number; base_reward_kobo: number; settlement_hold_days: number;
   funnel: {
     invitations_sent: number; invitations_pending: number; invitations_accepted: number; invitations_declined: number;
+    invitations_withdrawn?: number; partnerships_ended?: number;
     partnerships_active: number; organizers_attributed: number; organizers_hosting: number;
     organizers_qualified: number; organizers_paid: number;
   };
@@ -46,7 +48,9 @@ export interface Performance {
   wallet: { balance_kobo: number; pending_kobo: number; on_hold_kobo: number };
 }
 // Live-table fallback (before 0201 is deployed): invitation counts only.
-export interface PartnershipCounts { sent: number; pending: number; accepted: number; declined: number; active: number }
+export interface PartnershipCounts {
+  sent: number; pending: number; accepted: number; declined: number; withdrawn: number; active: number; ended: number;
+}
 
 export interface RepresentativeData {
   loading: boolean;
@@ -61,7 +65,10 @@ export interface RepresentativeData {
 
 export function countPartnerships(rows: { status: string }[]): PartnershipCounts {
   const n = (s: string[]) => rows.filter((r) => s.includes(r.status)).length;
-  return { sent: rows.length, pending: n(['pending']), accepted: n(['accepted', 'revoked']), declined: n(['declined']), active: n(['accepted']) };
+  return {
+    sent: rows.length, pending: n(['pending']), accepted: n(['accepted', 'revoked']), declined: n(['declined']),
+    withdrawn: n(['withdrawn']), active: n(['accepted']), ended: n(['revoked']),
+  };
 }
 
 export function useRepresentativeData(userId: string | null | undefined): RepresentativeData {
@@ -91,6 +98,89 @@ export function useRepresentativeData(userId: string | null | undefined): Repres
   }, [userId]);
   useEffect(() => { load(); }, [load]);
   return { ...state, reload: load };
+}
+
+export const HISTORY_PAGE_SIZE = 20;
+type HistoryKind = 'claims' | 'expenses' | 'attributions';
+interface Cursor { at: string; id: string }
+export interface History<T> {
+  items: T[]; loading: boolean; loadingMore: boolean; hasMore: boolean; error: string | null;
+  loadMore: () => Promise<void>; reset: () => Promise<void>;
+}
+
+// One list of the representative's own history, read a page at a time from
+// get_my_representative_history (newest first, keyset cursor). Changing the
+// status filter starts again from the first page; a response that arrives
+// after the filter changed is dropped, and rows are never shown twice.
+export function useRepHistory<T extends { id: string }>(kind: HistoryKind, status: string | null, enabled = true): History<T> {
+  const [items, setItems] = useState<T[]>([]);
+  const [next, setNext] = useState<Cursor | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const fetchPage = useCallback(async (cursor: Cursor | null) => {
+    const { data, error: e } = await Promise.resolve(supabase.rpc('get_my_representative_history' as any, {
+      p_kind: kind, p_status: status, p_before_at: cursor?.at ?? null, p_before_id: cursor?.id ?? null, p_limit: HISTORY_PAGE_SIZE,
+    })).then((v: any) => v, (err) => ({ data: null, error: err }));
+    if (e) throw e;
+    return { rows: ((data as any)?.items ?? []) as T[], next: ((data as any)?.next ?? null) as Cursor | null };
+  }, [kind, status]);
+
+  const reset = useCallback(async () => {
+    if (!enabled) return;
+    const my = ++seq.current;
+    setLoading(true); setError(null);
+    try {
+      const page = await fetchPage(null);
+      if (my !== seq.current) return;
+      setItems(page.rows); setNext(page.next);
+    } catch (e: any) {
+      if (my !== seq.current) return;
+      setItems([]); setNext(null);
+      setError(isBackendUnavailable(e) ? 'This list is not available yet.' : (e?.message || 'Could not load this list.'));
+    } finally { if (my === seq.current) setLoading(false); }
+  }, [enabled, fetchPage]);
+
+  const loadMore = useCallback(async () => {
+    if (!next || loadingMore) return;
+    const my = seq.current;
+    setLoadingMore(true); setError(null);
+    try {
+      const page = await fetchPage(next);
+      if (my !== seq.current) return;
+      setItems((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        return [...prev, ...page.rows.filter((r) => !seen.has(r.id))];
+      });
+      setNext(page.next);
+    } catch (e: any) {
+      if (my === seq.current) setError(e?.message || 'Could not load more.');
+    } finally { setLoadingMore(false); }
+  }, [next, loadingMore, fetchPage]);
+
+  useEffect(() => { reset(); }, [reset]);
+  return { items, loading, loadingMore, hasMore: !!next, error, loadMore, reset };
+}
+
+function MoreButton({ h, testId, label }: { h: History<any>; testId: string; label: string }) {
+  if (!h.hasMore) return null;
+  return (
+    <WorkButton ghost testId={testId} disabled={h.loadingMore} onClick={() => h.loadMore()}>
+      {h.loadingMore ? 'Loading…' : label}
+    </WorkButton>
+  );
+}
+
+function ListError({ h, testId }: { h: History<any>; testId: string }) {
+  if (!h.error) return null;
+  return (
+    <div data-testid={testId} style={{ display: 'grid', gap: 6 }}>
+      <ErrorNote>{h.error}</ErrorNote>
+      <WorkButton ghost onClick={() => (h.items.length ? h.loadMore() : h.reset())}>Try again</WorkButton>
+    </div>
+  );
 }
 
 export const newKey = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
@@ -133,14 +223,18 @@ export function ChipButton({ active, onClick, children, testId }: { active: bool
   );
 }
 
-// Rewards: the lifecycle (filterable by stage), then the organizers the
-// representative referred, with the one action each state allows.
-export function RewardsPanel({ rewards, reload, onNavigate }: {
-  rewards: Rewards; reload: () => Promise<void>; onNavigate: (screen: string) => void;
+// Rewards: the lifecycle (filterable by stage, on the server), then the
+// organizers the representative referred, with the one action each state
+// allows. Lists are paged; stage counts are the server's totals.
+export function RewardsPanel({ rewards, totals, reload, onNavigate }: {
+  rewards: Rewards; totals?: Tally | null; reload: () => Promise<void>; onNavigate: (screen: string) => void;
 }) {
-  const { busy, error, notice, run } = useAction(reload);
-  const claimKeys = useRef<Record<string, string>>({});
   const [stage, setStage] = useState<ClaimStatus | 'all'>('all');
+  const claims = useRepHistory<Claim>('claims', stage === 'all' ? null : stage);
+  const referred = useRepHistory<Attribution>('attributions', null);
+  const refresh = async () => { await Promise.all([reload(), claims.reset(), referred.reset()]); };
+  const { busy, error, notice, run } = useAction(refresh);
+  const claimKeys = useRef<Record<string, string>>({});
 
   const submitClaim = (organizerId: string, eventId: string) =>
     run(`submit-${eventId}`, () => supabase.rpc('submit_representative_reward_claim' as any, { p_organizer_id: organizerId, p_event_id: eventId }),
@@ -154,9 +248,12 @@ export function RewardsPanel({ rewards, reload, onNavigate }: {
         : 'VENTS profit does not cover this reward yet. Try again later.');
   };
 
-  const claimedOrganizers = new Set(rewards.claims.filter((c) => c.status !== 'rejected').map((c) => c.organizer_id));
-  const count = (s: ClaimStatus) => rewards.claims.filter((c) => c.status === s).length;
-  const shown = stage === 'all' ? rewards.claims : rewards.claims.filter((c) => c.status === stage);
+  // Totals are the server's counts (get_my_representative_performance);
+  // without them the chips carry no number rather than a partial one.
+  const count = (s: ClaimStatus) => totals?.[s]?.count;
+  const all = totals ? Object.values(totals).reduce((t, x) => t + (x?.count ?? 0), 0) : undefined;
+  const n = (v: number | undefined) => (v === undefined ? '' : ` ${v}`);
+  const filtered = stage !== 'all';
 
   return (
     <>
@@ -165,20 +262,24 @@ export function RewardsPanel({ rewards, reload, onNavigate }: {
 
       <MLabel>Rewards</MLabel>
       <Chips>
-        <ChipButton testId="stage-all" active={stage === 'all'} onClick={() => setStage('all')}>All {rewards.claims.length}</ChipButton>
+        <ChipButton testId="stage-all" active={stage === 'all'} onClick={() => setStage('all')}>All{n(all)}</ChipButton>
         {REWARD_STAGES.map((st) => (
           <ChipButton key={st.status} testId={`stage-${st.status}`} active={stage === st.status} onClick={() => setStage(st.status)}>
-            {st.label} {count(st.status)}
+            {st.label}{n(count(st.status))}
           </ChipButton>
         ))}
-        {count('rejected') > 0 && (
-          <ChipButton testId="stage-rejected" active={stage === 'rejected'} onClick={() => setStage('rejected')}>Rejected {count('rejected')}</ChipButton>
+        {(count('rejected') ?? 0) > 0 && (
+          <ChipButton testId="stage-rejected" active={stage === 'rejected'} onClick={() => setStage('rejected')}>Rejected{n(count('rejected'))}</ChipButton>
         )}
       </Chips>
       <MCard testId="rewards-claims">
-        {rewards.claims.length === 0 && <Row title="No rewards yet" sub="Submit an organizer's event below once it qualifies" />}
-        {rewards.claims.length > 0 && shown.length === 0 && <Row title="Nothing at this stage" />}
-        {shown.map((c) => {
+        {claims.loading && <Loading />}
+        <ListError h={claims} testId="claims-error" />
+        {!claims.loading && !claims.error && claims.items.length === 0 && (
+          filtered ? <Row testId="claims-empty" title="Nothing at this stage" />
+            : <Row testId="claims-empty" title="No rewards yet" sub="Submit an organizer's event below once it qualifies" />
+        )}
+        {!claims.loading && claims.items.map((c) => {
           const v = claimStateView(c.status, { payoutsEnabled: rewards.payouts_enabled, fundingAvailable: rewards.funding_available });
           const canClaim = rewards.programme_open && ((c.status === 'approved' && rewards.funding_available) || (c.status === 'funded' && rewards.payouts_enabled));
           return (
@@ -198,28 +299,30 @@ export function RewardsPanel({ rewards, reload, onNavigate }: {
             </div>
           );
         })}
+        {!claims.loading && <MoreButton h={claims} testId="claims-more" label="Show more rewards" />}
       </MCard>
 
       <MLabel>Organizers you referred</MLabel>
       <MCard testId="rewards-attributions">
-        {rewards.attributions.length === 0 && (
-          <Row title="No organizers yet" sub="Invite organizers from your team page" right={<Pill tone="off">Invite</Pill>}
+        {referred.loading && <Loading />}
+        <ListError h={referred} testId="attributions-error" />
+        {!referred.loading && !referred.error && referred.items.length === 0 && (
+          <Row testId="attributions-empty" title="No organizers yet" sub="Invite organizers from your team page" right={<Pill tone="off">Invite</Pill>}
             onClick={() => onNavigate('representatives')} />
         )}
-        {rewards.attributions.map((a) => {
-          const claimed = claimedOrganizers.has(a.organizer_id);
+        {!referred.loading && referred.items.map((a) => {
           const eligible = a.events.find((e) => e.eligibility.eligible);
           const next = a.events[0];
           return (
-            <div key={a.organizer_id} style={{ display: 'grid', gap: 8 }}>
-              <Row icon={<Ico tone="p" round>{(a.organizer_name || '?').slice(0, 2).toUpperCase()}</Ico>}
+            <div key={a.id} style={{ display: 'grid', gap: 8 }}>
+              <Row testId={`attribution-${a.organizer_id}`} icon={<Ico tone="p" round>{(a.organizer_name || '?').slice(0, 2).toUpperCase()}</Ico>}
                 title={a.organizer_name || 'Organizer'}
-                sub={claimed ? 'Reward submitted'
+                sub={a.claimed ? 'Reward submitted'
                   : eligible ? `${eligible.title} qualifies`
                   : next ? `${next.title} · ${next.eligibility.reasons.map(eligibilityReasonText).join(', ')}`
-                  : 'No event hosted since you referred them'}
-                right={<Pill tone={claimed ? 'on' : eligible ? 'on' : 'wait'}>{claimed ? 'Submitted' : eligible ? 'Ready' : 'Waiting'}</Pill>} />
-              {!claimed && eligible && (
+                  : 'No event created since you referred them'}
+                right={<Pill tone={a.claimed || eligible ? 'on' : 'wait'}>{a.claimed ? 'Submitted' : eligible ? 'Ready' : 'Waiting'}</Pill>} />
+              {!a.claimed && eligible && (
                 <WorkButton testId={`submit-${eligible.event_id}`} disabled={busy === `submit-${eligible.event_id}`}
                   onClick={() => submitClaim(a.organizer_id, eligible.event_id)}>
                   Submit for review
@@ -228,6 +331,7 @@ export function RewardsPanel({ rewards, reload, onNavigate }: {
             </div>
           );
         })}
+        {!referred.loading && <MoreButton h={referred} testId="attributions-more" label="Show more organizers" />}
       </MCard>
     </>
   );
@@ -235,13 +339,15 @@ export function RewardsPanel({ rewards, reload, onNavigate }: {
 
 const EXPENSE_LABEL = { submitted: 'Pending', approved: 'Approved', rejected: 'Rejected' } as const;
 
-// Transport / support expenses: submit, then the full history with the
-// decision VENTS recorded. Two admins decide each one (0201).
-export function ExpensesPanel({ rewards, reload, totals }: { rewards: Rewards; reload: () => Promise<void>; totals?: Tally | null }) {
-  const { busy, error, notice, run } = useAction(reload);
+// Transport / support expenses: submit, then the paged history with the
+// decision VENTS recorded. Two admins decide each one (0201). Approval
+// records the expense; nothing in the app pays it out.
+export function ExpensesPanel({ reload, totals }: { reload: () => Promise<void>; totals?: Tally | null }) {
+  const [filter, setFilter] = useState<'all' | Expense['status']>('all');
+  const list = useRepHistory<Expense>('expenses', filter === 'all' ? null : filter);
+  const { busy, error, notice, run } = useAction(async () => { await Promise.all([reload(), list.reset()]); });
   const expenseKey = useRef<string>(newKey());
   const [exp, setExp] = useState({ category: 'transport', amount: '', description: '', date: '' });
-  const [filter, setFilter] = useState<'all' | Expense['status']>('all');
 
   const submitExpense = async () => {
     const amountKobo = Math.round(Number(exp.amount) * 100);
@@ -255,9 +361,9 @@ export function ExpensesPanel({ rewards, reload, totals }: { rewards: Rewards; r
     if (ok) { expenseKey.current = newKey(); setExp({ category: 'transport', amount: '', description: '', date: '' }); }
   };
 
-  const shown = filter === 'all' ? rewards.expenses : rewards.expenses.filter((x) => x.status === filter);
-  const sum = (s: Expense['status']) => totals?.[s]?.amount_kobo
-    ?? rewards.expenses.filter((x) => x.status === s).reduce((t, x) => t + x.amount_kobo, 0);
+  // Server totals only: a sum over the loaded page would undercount.
+  const tally = (s: Expense['status']) => totals?.[s];
+  const all = totals ? (['submitted', 'approved', 'rejected'] as const).reduce((t, s) => t + (totals[s]?.count ?? 0), 0) : undefined;
 
   return (
     <>
@@ -269,23 +375,34 @@ export function ExpensesPanel({ rewards, reload, totals }: { rewards: Rewards; r
           {(['submitted', 'approved', 'rejected'] as const).map((s) => (
             <div key={s} style={{ background: ventsColors.elevated, borderRadius: 10, padding: '6px 8px', minWidth: 0 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: ventsColors.ink3 }}>{EXPENSE_LABEL[s]}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>{formatNaira(sum(s))}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+                {tally(s) ? formatNaira(tally(s)!.amount_kobo) : '—'}
+              </div>
             </div>
           ))}
         </div>
         <Chips>
-          {(['all', 'submitted', 'approved', 'rejected'] as const).map((f) => (
-            <ChipButton key={f} testId={`expense-filter-${f}`} active={filter === f} onClick={() => setFilter(f)}>
-              {f === 'all' ? `All ${rewards.expenses.length}` : `${EXPENSE_LABEL[f]} ${rewards.expenses.filter((x) => x.status === f).length}`}
-            </ChipButton>
-          ))}
+          {(['all', 'submitted', 'approved', 'rejected'] as const).map((f) => {
+            const c = f === 'all' ? all : tally(f)?.count;
+            return (
+              <ChipButton key={f} testId={`expense-filter-${f}`} active={filter === f} onClick={() => setFilter(f)}>
+                {f === 'all' ? 'All' : EXPENSE_LABEL[f]}{c === undefined ? '' : ` ${c}`}
+              </ChipButton>
+            );
+          })}
         </Chips>
-        {rewards.expenses.length === 0 && <Row title="No expenses yet" sub="Claim transport or support costs below" />}
-        {shown.map((x) => (
+        {list.loading && <Loading />}
+        <ListError h={list} testId="expenses-error" />
+        {!list.loading && !list.error && list.items.length === 0 && (
+          <Row testId="expenses-empty" title={filter === 'all' ? 'No expenses yet' : 'Nothing here'}
+            sub={filter === 'all' ? 'Claim transport or support costs below' : undefined} />
+        )}
+        {!list.loading && list.items.map((x) => (
           <Row key={x.id} testId={`expense-${x.id}`} icon={<Ico tone="y">⇢</Ico>} title={`${formatNaira(x.amount_kobo)} · ${x.category === 'transport' ? 'Transport' : 'Support'}`}
             sub={`${x.description} · ${x.incurred_on}${x.decision_reason ? ` · ${x.decision_reason}` : ''}`}
             right={<Pill tone={x.status === 'approved' ? 'on' : x.status === 'rejected' ? 'off' : 'wait'}>{EXPENSE_LABEL[x.status] ?? x.status}</Pill>} />
         ))}
+        {!list.loading && <MoreButton h={list} testId="expenses-more" label="Show more expenses" />}
         <div style={{ display: 'grid', gap: 8, borderTop: `1px solid ${ventsColors.border}`, paddingTop: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
             <div role="radiogroup" aria-label="Expense type" style={{ display: 'flex', gap: 4, background: ventsColors.elevated, borderRadius: 10, padding: 4 }}>
@@ -304,7 +421,10 @@ export function ExpensesPanel({ rewards, reload, totals }: { rewards: Rewards; r
             onChange={(e) => setExp({ ...exp, description: e.target.value })} style={inputStyle} />
           <input aria-label="Date" type="date" value={exp.date} onChange={(e) => setExp({ ...exp, date: e.target.value })} style={inputStyle} />
           <WorkButton ghost testId="expense-submit" disabled={busy === 'expense'} onClick={submitExpense}>Send for approval</WorkButton>
-          <div style={{ fontSize: 10, color: ventsColors.ink3 }}>Two VENTS admins review each expense. Expenses are tracked separately from rewards.</div>
+          <div data-testid="expense-note" style={{ fontSize: 10, color: ventsColors.ink3 }}>
+            Two VENTS admins review each expense. Approval records the expense; it is not added to your earnings wallet
+            and is separate from rewards.
+          </div>
         </div>
       </MCard>
     </>

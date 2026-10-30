@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { getVcBalance } from '../../../lib/vcBalanceCache';
-import { formatNaira } from '../../../lib/workRoles';
+import { formatNaira, isBackendUnavailable } from '../../../lib/workRoles';
 import { workPage, workScroll, WorkBar, Tiles, Tile, WorkButton, ErrorNote } from './workUi';
 
 interface Earnings {
@@ -16,7 +16,10 @@ interface Earnings {
   ventsWalletKobo: number | null;
   vcSpendable: number | null;
   vcLifetime: number | null;
-  rep: null | { creditedKobo: number; payoutsEnabled: boolean; open: number };
+  // 'not_live': the rewards functions are missing (0201 not applied) or the
+  // read-only Preview refuses them; 'error': a real read failure. Neither
+  // shows a reward figure.
+  rep: null | { state: 'live' | 'not_live' | 'error'; creditedKobo: number; payoutsEnabled: boolean; open: number };
 }
 
 function shortDate(iso: string): string {
@@ -39,7 +42,7 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
     let cancelled = false;
     (async () => {
       try {
-        const settle = <T,>(p: PromiseLike<T>) => Promise.resolve(p).then((v) => v, () => null);
+        const settle = <T,>(p: PromiseLike<T>) => Promise.resolve(p).then((v) => v, (e) => ({ data: null, error: e }));
         const [wallet, payouts, vw, vc, tier, rep, recruiter, holds, owed] = await Promise.all([
           // '*' so on_hold_kobo (0203) is read when the column exists.
           settle(supabase.from('organizer_wallets').select('*').eq('organizer_id', currentUser.id).maybeSingle()),
@@ -48,7 +51,8 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
           settle(supabase.rpc('get_my_wallet')),
           settle(getVcBalance(currentUser.id)),
           settle(supabase.rpc('vc_tier_and_multiplier_for_user' as any, { p_user_id: currentUser.id })),
-          settle(supabase.rpc('get_my_representative_rewards' as any)),
+          // Server totals (0201), not a client sum over a paged list.
+          settle(supabase.rpc('get_my_representative_performance' as any)),
           settle(supabase.from('recruiters').select('id').eq('id', currentUser.id).maybeSingle()),
           settle(supabase.rpc('get_earnings_holds' as any)),
           settle(supabase.from('earnings_recoveries' as any).select('amount_kobo, recovered_kobo').eq('owner_id', currentUser.id).is('settled_at', null)),
@@ -59,7 +63,7 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
         const vwRow = Array.isArray((vw as any)?.data) ? (vw as any).data[0] : (vw as any)?.data;
         const tierRow = Array.isArray((tier as any)?.data) ? (tier as any).data[0] : (tier as any)?.data;
         const repData = (rep as any)?.data;
-        const claims: { status: string; amount_kobo: number }[] = repData?.claims ?? [];
+        const life: Record<string, { count: number; amount_kobo: number }> = repData?.lifecycle ?? {};
         const holdRows: { amount_kobo: number; release_at: string | null; blockers: string[] }[] = (holds as any)?.error ? [] : ((holds as any)?.data ?? []);
         const nextHold = holdRows
           .filter((h) => h.release_at && Array.isArray(h.blockers) && h.blockers.every((b) => b === 'not_yet'))
@@ -77,12 +81,13 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
           vcSpendable: (vc as any)?.spendable ?? null,
           vcLifetime: tierRow?.lifetime_earned ?? null,
           // Before the rewards backend is deployed the RPC is missing:
-          // a representative still shows as one, with nothing paid.
+          // a representative still shows as one, with no reward figure.
           rep: repData?.representative || ((rep as any)?.error && (recruiter as any)?.data)
             ? {
-                creditedKobo: claims.filter((c) => c.status === 'credited').reduce((s, c) => s + c.amount_kobo, 0),
+                state: !(rep as any)?.error ? 'live' : isBackendUnavailable((rep as any).error) ? 'not_live' : 'error',
+                creditedKobo: Number(life.credited?.amount_kobo ?? 0),
                 payoutsEnabled: !!repData?.payouts_enabled,
-                open: claims.filter((c) => ['pending_organizer', 'pending_review', 'approved', 'funded'].includes(c.status)).length,
+                open: ['pending_organizer', 'pending_review', 'approved', 'funded'].reduce((t, st) => t + Number(life[st]?.count ?? 0), 0),
               }
             : null,
         });
@@ -124,7 +129,11 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
             s={data?.vcLifetime != null ? `Lifetime ${data.vcLifetime.toLocaleString()} VC` : undefined}
             onClick={() => onNavigate('referral')} />
           {rep ? (
-            rep.creditedKobo > 0 ? (
+            rep.state !== 'live' ? (
+              <Tile testId="earn-tile-rep" k="Representative" small v={rep.state === 'error' ? dash : 'Not live yet'}
+                s={rep.state === 'error' ? 'Could not load rewards' : 'Rewards are not switched on yet'}
+                onClick={() => onNavigate('representative-dashboard')} />
+            ) : rep.creditedKobo > 0 ? (
               <Tile testId="earn-tile-rep" k="Representative" v={formatNaira(rep.creditedKobo)}
                 s="Paid into your earnings wallet" onClick={() => onNavigate('representative-dashboard')} />
             ) : (

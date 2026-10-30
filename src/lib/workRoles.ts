@@ -143,9 +143,9 @@ export function claimStateView(status: ClaimStatus, opts: { payoutsEnabled: bool
 export const REWARD_STAGES: { status: ClaimStatus; label: string; hint: string }[] = [
   { status: 'pending_organizer', label: 'Pending', hint: 'Organizer to confirm' },
   { status: 'pending_review', label: 'Awaiting approval', hint: 'Two VENTS admins review' },
-  { status: 'approved', label: 'Approved', hint: 'Funded from VENTS profit' },
-  { status: 'funded', label: 'Available', hint: 'Add to your earnings wallet' },
-  { status: 'credited', label: 'Paid', hint: 'In your earnings wallet' },
+  { status: 'approved', label: 'Approved', hint: 'Waiting to be funded from VENTS profit' },
+  { status: 'funded', label: 'Available', hint: 'Funded · add it to your earnings wallet' },
+  { status: 'credited', label: 'Paid', hint: 'Added to your earnings wallet' },
   { status: 'reversed', label: 'Reversed', hint: 'Taken back by VENTS' },
 ];
 

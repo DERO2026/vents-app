@@ -64,7 +64,8 @@ beforeEach(() => {
   });
   rpcMock.mockImplementation((name: string, args: any) => {
     rpcCalls.push({ name, args });
-    return Promise.resolve(rpcs[name] ?? { data: null, error: { message: `missing ${name}` } });
+    const r = rpcs[name];
+    return Promise.resolve(typeof r === 'function' ? r(args) : r ?? { data: null, error: { message: `missing ${name}` } });
   });
 });
 
@@ -137,12 +138,21 @@ describe('VENTS Earn (earnings)', () => {
     expect(onNavigate).toHaveBeenCalledWith('wallet');
   });
 
-  it('a representative still shows as one (nothing paid) before the rewards backend is deployed', async () => {
-    rpcs.get_my_representative_rewards = { data: null, error: { message: 'function does not exist' } };
+  it('a representative still shows as one (no reward figure) before the rewards backend is deployed', async () => {
+    rpcs.get_my_representative_performance = { data: null, error: { message: 'function does not exist' } };
     tables.recruiters = { id: 'u1' };
     await render(<VentsEarningsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
+    expect(byTestId('earn-tile-rep')?.textContent).toContain('Not live yet');
+    expect(byTestId('earn-tile-rep')?.textContent).toContain('Rewards are not switched on yet');
+  });
+
+  it('a representative with nothing paid yet sees the open count from the server totals', async () => {
+    rpcs.get_my_representative_performance = { data: { representative: { status: 'active' }, payouts_enabled: true, lifecycle: {
+      pending_organizer: { count: 1, amount_kobo: 5000000 }, pending_review: { count: 2, amount_kobo: 10000000 }, credited: { count: 0, amount_kobo: 0 },
+    } }, error: null };
+    await render(<VentsEarningsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
     expect(byTestId('earn-tile-rep')?.textContent).toContain('Not paid yet');
-    expect(byTestId('earn-tile-rep')?.textContent).toContain('Payouts not open yet');
+    expect(byTestId('earn-tile-rep')?.textContent).toContain('3 rewards in progress');
   });
 });
 
@@ -150,14 +160,19 @@ describe('Representative rewards', () => {
   const rewards = (over: any = {}) => ({
     representative: { status: 'active' }, payouts_enabled: false, programme_open: true, funding_available: true,
     current_rate_kobo: 5000000, rate_review_threshold: 9, qualifying_this_month: 1, qualifying_last_month: 0,
-    attributions: [{ organizer_id: 'o1', organizer_name: 'Tobi', attributed_at: '2026-10-01', events: [
-      { event_id: 'e1', title: 'Afrobeats Night', eligibility: { eligible: true, reasons: [] } },
-    ] }],
-    claims: [], expenses: [], ...over,
+    ...over,
   });
+  // get_my_representative_history: one page per kind for these tests.
+  const lists = (l: { claims?: any[]; attributions?: any[]; expenses?: any[] }) => (args: any) => ({
+    data: { items: (l as any)[args.p_kind] ?? [], next: null }, error: null,
+  });
+  const attribution = { id: 'a1', at: '2026-10-01T00:00:00Z', organizer_id: 'o1', organizer_name: 'Tobi', attributed_at: '2026-10-01', claimed: false, events: [
+    { event_id: 'e1', title: 'Afrobeats Night', eligibility: { eligible: true, reasons: [] } },
+  ] };
 
   it('lets a representative submit an eligible organizer event for review', async () => {
     rpcs.get_my_representative_rewards = { data: rewards(), error: null };
+    rpcs.get_my_representative_history = lists({ attributions: [attribution] });
     rpcs.submit_representative_reward_claim = { data: { status: 'pending_organizer' }, error: null };
     await render(<RepresentativeRewardsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
     expect(byTestId('rewards-tile-rate')?.textContent).toContain('₦50,000');
@@ -167,7 +182,8 @@ describe('Representative rewards', () => {
 
   it('claiming retries with the SAME idempotency key until it succeeds', async () => {
     const claim = { id: 'c1', organizer_id: 'o1', organizer_name: 'Tobi', event_title: 'Afrobeats Night', status: 'approved', amount_kobo: 5000000, reward_month: '2026-10-01', decision_reason: null };
-    rpcs.get_my_representative_rewards = { data: rewards({ claims: [claim] }), error: null };
+    rpcs.get_my_representative_rewards = { data: rewards(), error: null };
+    rpcs.get_my_representative_history = lists({ claims: [claim] });
     rpcs.claim_representative_reward = { data: null, error: { message: 'network' } };
     await render(<RepresentativeRewardsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
     expect(byTestId('claim-c1')?.textContent).toContain('Ready to claim');
@@ -180,7 +196,8 @@ describe('Representative rewards', () => {
 
   it('shows the honest state when profit does not cover an approved reward yet', async () => {
     const claim = { id: 'c1', organizer_id: 'o1', organizer_name: 'Tobi', event_title: 'X', status: 'approved', amount_kobo: 5000000, reward_month: '2026-10-01', decision_reason: null };
-    rpcs.get_my_representative_rewards = { data: rewards({ claims: [claim], funding_available: false }), error: null };
+    rpcs.get_my_representative_rewards = { data: rewards({ funding_available: false }), error: null };
+    rpcs.get_my_representative_history = lists({ claims: [claim] });
     await render(<RepresentativeRewardsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
     expect(byTestId('claim-c1')?.textContent).toContain('Waiting for VENTS profit to fund it');
     expect(byTestId('claim-button-c1')).toBeNull();

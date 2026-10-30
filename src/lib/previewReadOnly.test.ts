@@ -98,8 +98,8 @@ describe('RPCs: only verified read-only functions are allowed', () => {
     expect(PREVIEW_ALLOWED_RPCS.has('get_earnings_holds')).toBe(true);
   });
 
-  it('the allowlist is exactly the 49 reviewed functions, each used by the app', () => {
-    expect(PREVIEW_ALLOWED_RPCS.size).toBe(49);
+  it('the allowlist is exactly the 50 reviewed functions, each used by the app', () => {
+    expect(PREVIEW_ALLOWED_RPCS.size).toBe(50);
     for (const name of PREVIEW_ALLOWED_RPCS) expect(APP_RPCS, name).toContain(name);
   });
 
