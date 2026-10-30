@@ -120,6 +120,16 @@ describe('0201: no role approves or pays itself', () => {
     expect(f.indexOf("must be true or false")).toBeLessThan(f.indexOf('CASE r.action_type'));
   });
 
+  it('settlement_hold_days must be a JSON whole number from 0 to 120, never coerced text', () => {
+    const f = fn('earn_execute_admin_action');
+    expect(f).toMatch(/IF r\.payload \? 'settlement_hold_days' THEN\s+IF jsonb_typeof\(r\.payload->'settlement_hold_days'\) IS DISTINCT FROM 'number' THEN/);
+    expect(f).toContain(`scale((r.payload->'settlement_hold_days')::numeric) <> 0`);
+    expect(f).toContain(`(r.payload->'settlement_hold_days')::numeric NOT BETWEEN 0 AND 120`);
+    // Checked before the CASE that writes earn_settings; the default stays 7.
+    expect(f.indexOf('settlement_hold_days must be a whole number')).toBeLessThan(f.indexOf('CASE r.action_type'));
+    expect(sql).toMatch(/settlement_hold_days\s+integer NOT NULL DEFAULT 7 CHECK \(settlement_hold_days BETWEEN 0 AND 120\)/);
+  });
+
   it('internal functions are not callable by any client role', () => {
     for (const f of ['earn_execute_admin_action(uuid)', 'earn_pool_move(text,bigint,uuid,uuid,uuid)', 'earn_event_eligibility(uuid)']) {
       expect(sql).toContain(`'public.${f}'`);

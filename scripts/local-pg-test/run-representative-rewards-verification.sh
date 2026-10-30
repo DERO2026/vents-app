@@ -305,6 +305,29 @@ RB=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": false, "n
 expect_ok "payouts_enabled = false (a real boolean) is accepted" "$(approve "$ADMIN_B" "$RB")"
 expect_value "payouts_enabled = false leaves reward credit off" \
   "$(val "SELECT payouts_enabled::text FROM public.earn_settings;")" "false"
+# settlement_hold_days: only a JSON whole number 0..120.
+hold() { val "SELECT settlement_hold_days FROM public.earn_settings;"; }
+expect_value "settlement hold ships at the 7-day default" "$(hold)" "7"
+BAD_HOLDS=('"7"' '"0"' '7.5' '7.0' '-1' '121' '1000000000000' 'true' 'null' '[7]' '{"days":7}')
+for b in "${BAD_HOLDS[@]}"; do
+  RB=$(request "$ADMIN_A" earn_update_settings NULL "{\"settlement_hold_days\": $b, \"note\": \"malformed\"}")
+  expect_error "settlement_hold_days = $b is refused" "settlement_hold_days must be a whole number of days from 0 to 120" "$(approve "$ADMIN_B" "$RB")"
+done
+RB=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": true, "settlement_hold_days": "14", "note": "valid flag, bad hold"}')
+expect_error "a bad hold refuses the whole request, valid flags included" "settlement_hold_days must be a whole number" "$(approve "$ADMIN_B" "$RB")"
+expect_value "refused hold requests changed nothing (hold/payouts) and stay pending" \
+  "$(hold)/$(val "SELECT payouts_enabled::text FROM public.earn_settings;")/$(val "SELECT status FROM public.admin_action_requests WHERE id = '$RB';")" "7/false/pending"
+for h in 0 120 14; do
+  RB=$(request "$ADMIN_A" earn_update_settings NULL "{\"settlement_hold_days\": $h, \"note\": \"hold $h\"}")
+  expect_ok "settlement_hold_days = $h is accepted" "$(approve "$ADMIN_B" "$RB")"
+  expect_value "settlement hold is now $h days" "$(hold)" "$h"
+done
+RB=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": false, "note": "no hold key"}')
+expect_ok "a settings request without settlement_hold_days is accepted" "$(approve "$ADMIN_B" "$RB")"
+expect_value "a missing settlement_hold_days keeps the current hold" "$(hold)" "14"
+RB=$(request "$ADMIN_A" earn_update_settings NULL '{"settlement_hold_days": 7, "note": "back to the default"}')
+expect_ok "settlement hold restored to 7 days" "$(approve "$ADMIN_B" "$RB")"
+expect_value "settlement hold back at 7 days" "$(hold)" "7"
 RE=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": true, "note": "Go-live approved by management"}')
 expect_ok "reward credit enabled through dual control" "$(approve "$ADMIN_B" "$RE")"
 expect_value "funded reward is credited" \

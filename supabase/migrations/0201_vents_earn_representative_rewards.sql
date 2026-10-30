@@ -884,6 +884,18 @@ BEGIN
        AND jsonb_typeof(r.payload->'legacy_commission_reconciled') IS DISTINCT FROM 'boolean' THEN
       RAISE EXCEPTION 'payload.legacy_commission_reconciled must be true or false';
     END IF;
+    -- Likewise ->>::integer would accept "7"; only a JSON whole number
+    -- 0..120 is taken (no text, decimals such as 7.0 or 7.5, booleans, null).
+    -- Nested IFs, so the numeric casts only ever see a JSON number.
+    IF r.payload ? 'settlement_hold_days' THEN
+      IF jsonb_typeof(r.payload->'settlement_hold_days') IS DISTINCT FROM 'number' THEN
+        RAISE EXCEPTION 'payload.settlement_hold_days must be a whole number of days from 0 to 120';
+      END IF;
+      IF scale((r.payload->'settlement_hold_days')::numeric) <> 0
+         OR (r.payload->'settlement_hold_days')::numeric NOT BETWEEN 0 AND 120 THEN
+        RAISE EXCEPTION 'payload.settlement_hold_days must be a whole number of days from 0 to 120';
+      END IF;
+    END IF;
   END IF;
 
   CASE r.action_type
