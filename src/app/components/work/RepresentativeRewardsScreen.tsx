@@ -34,7 +34,8 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
                 s={`Qualifying organizers · ${data.rate_review_threshold}+ can earn a higher rate`} />
               <Tile testId="rewards-tile-rate" k="Your rate" v={formatNaira(data.current_rate_kobo)} s="Per qualifying organizer" />
             </Tiles>
-            <RewardRulesNote programmeOpen={data.programme_open} payoutsEnabled={data.payouts_enabled} />
+            <RewardRulesNote programmeOpen={data.programme_open} payoutsEnabled={data.payouts_enabled}
+              holdDays={rep.performance?.settlement_hold_days} />
             <RewardsPanel rewards={data} reload={rep.reload} onNavigate={onNavigate} />
             <ExpensesPanel rewards={data} reload={rep.reload} totals={rep.performance?.expenses} />
           </>
@@ -44,11 +45,14 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
   );
 }
 
-export function RewardRulesNote({ programmeOpen, payoutsEnabled }: { programmeOpen: boolean; payoutsEnabled: boolean }) {
+// The hold length is an admin setting (0–120 days), so it is shown from the
+// backend; when it isn't known the note doesn't guess a number.
+export function RewardRulesNote({ programmeOpen, payoutsEnabled, holdDays }: { programmeOpen: boolean; payoutsEnabled: boolean; holdDays?: number | null }) {
+  const hold = typeof holdDays === 'number' ? `${holdDays}-day settlement` : 'settlement hold';
   return (
     <NoteBand>
       An organizer you referred qualifies after hosting an event that has ended, isn&apos;t cancelled and has finished its
-      7-day settlement. The organizer must be verified; they confirm you referred them, then two VENTS admins review it.
+      {' '}{hold}. The organizer must be verified; they confirm you referred them, then two VENTS admins review it.
       Approved rewards are paid into your earnings wallet, which you can withdraw, once VENTS ticket profit covers them.
       {!programmeOpen && ' Rewards open once VENTS finishes moving representatives off the old commission plan.'}
       {programmeOpen && !payoutsEnabled && ' Wallet payouts have not started yet.'}

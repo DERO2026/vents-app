@@ -69,7 +69,8 @@ export function RepresentativeDashboardScreen({ currentUser, onBack, onNavigate,
         {tab === 'monthly' && perf?.representative && <Monthly perf={perf} />}
         {tab === 'rewards' && rep.rewards?.representative && (
           <>
-            <RewardRulesNote programmeOpen={rep.rewards.programme_open} payoutsEnabled={rep.rewards.payouts_enabled} />
+            <RewardRulesNote programmeOpen={rep.rewards.programme_open} payoutsEnabled={rep.rewards.payouts_enabled}
+              holdDays={rep.performance?.settlement_hold_days} />
             <RewardsPanel rewards={rep.rewards} reload={rep.reload} onNavigate={onNavigate} />
           </>
         )}

@@ -142,6 +142,20 @@ describe('Representative dashboard', () => {
     expect(onNavigate).toHaveBeenCalledWith('representatives');
   });
 
+  it('the rules note shows the hold length set by admins, never a hardcoded figure', async () => {
+    rpcs.get_my_representative_performance = { data: perf({ settlement_hold_days: 14 }), error: null };
+    await dash('rewards');
+    expect(document.body.textContent).toContain('finished its 14-day settlement');
+    expect(document.body.textContent).not.toContain('7-day settlement');
+  });
+
+  it('without the performance figures the rules note does not guess a hold length', async () => {
+    rpcs.get_my_representative_performance = { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+    await dash('rewards');
+    expect(document.body.textContent).toContain('finished its settlement hold');
+    expect(document.body.textContent).not.toMatch(/\d+-day settlement/);
+  });
+
   it('overview: the reward lifecycle shows every approved stage with its count and amount', async () => {
     await dash();
     expect([...byTestId('rep-lifecycle')!.querySelectorAll('[data-testid^="lifecycle-"]')].map((e) => e.getAttribute('data-testid')))
