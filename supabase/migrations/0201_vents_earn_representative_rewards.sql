@@ -864,6 +864,28 @@ BEGIN
     END IF;
   END IF;
 
+  -- Yes/no settings must be real JSON booleans. ::boolean would coerce text
+  -- such as "t" or "yes", so anything else (text, number, null, missing
+  -- where required) is refused before any branch acts on it.
+  IF r.action_type = 'earn_decide_expense'
+     AND jsonb_typeof(r.payload->'approve') IS DISTINCT FROM 'boolean' THEN
+    RAISE EXCEPTION 'payload.approve must be true or false';
+  END IF;
+  IF r.action_type = 'earn_approve_reward' AND r.payload ? 'free_event_verified'
+     AND jsonb_typeof(r.payload->'free_event_verified') IS DISTINCT FROM 'boolean' THEN
+    RAISE EXCEPTION 'payload.free_event_verified must be true or false';
+  END IF;
+  IF r.action_type = 'earn_update_settings' THEN
+    IF r.payload ? 'payouts_enabled'
+       AND jsonb_typeof(r.payload->'payouts_enabled') IS DISTINCT FROM 'boolean' THEN
+      RAISE EXCEPTION 'payload.payouts_enabled must be true or false';
+    END IF;
+    IF r.payload ? 'legacy_commission_reconciled'
+       AND jsonb_typeof(r.payload->'legacy_commission_reconciled') IS DISTINCT FROM 'boolean' THEN
+      RAISE EXCEPTION 'payload.legacy_commission_reconciled must be true or false';
+    END IF;
+  END IF;
+
   CASE r.action_type
   WHEN 'earn_approve_reward' THEN
     IF NOT s.legacy_commission_reconciled THEN

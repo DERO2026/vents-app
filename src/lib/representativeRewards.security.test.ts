@@ -108,6 +108,18 @@ describe('0201: no role approves or pays itself', () => {
     expect(sql).toMatch(/representative_reward_claims_one_per_organizer\s+ON public\.representative_reward_claims \(organizer_id\) WHERE status <> 'rejected'/);
   });
 
+  it('yes/no payload settings must be real JSON booleans, never coerced text', () => {
+    const f = fn('earn_execute_admin_action');
+    for (const k of ['approve', 'free_event_verified', 'payouts_enabled', 'legacy_commission_reconciled']) {
+      expect(f).toContain(`jsonb_typeof(r.payload->'${k}') IS DISTINCT FROM 'boolean'`);
+      expect(f).toContain(`RAISE EXCEPTION 'payload.${k} must be true or false'`);
+    }
+    // approve is required: no "? 'approve'" presence guard that would let a missing value through.
+    expect(f).not.toContain(`r.payload ? 'approve'`);
+    // The checks run before the CASE that acts on the payload.
+    expect(f.indexOf("must be true or false")).toBeLessThan(f.indexOf('CASE r.action_type'));
+  });
+
   it('internal functions are not callable by any client role', () => {
     for (const f of ['earn_execute_admin_action(uuid)', 'earn_pool_move(text,bigint,uuid,uuid,uuid)', 'earn_event_eligibility(uuid)']) {
       expect(sql).toContain(`'public.${f}'`);

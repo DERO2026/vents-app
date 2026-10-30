@@ -147,7 +147,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 
 ## Tests
 
-- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 128 real-execution checks against local Postgres 16. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
+- **`scripts/local-pg-test/run-representative-rewards-verification.sh`:** 167 real-execution checks against local Postgres 16, including rejection of malformed yes/no values (`"t"`, `"yes"`, `"true"`, numbers, null, arrays, or a missing expense decision) in all four dual-control settings. Uses verbatim live maker-checker functions and the live `request_organizer_payout` / `complete_organizer_payout`.
 - **`scripts/local-pg-test/run-payout-gate-audit.sh`:** the 27-check security audit of the reward payout gate (2026-10-30). It covers:
   - `payouts_enabled` is enforced inside the credit function, with no bypass by direct table write, internal function or admin action;
   - two distinct admins, with the approver a super admin, and neither the representative nor the organizer able to request or approve their own reward;

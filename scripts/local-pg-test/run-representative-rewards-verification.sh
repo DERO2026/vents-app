@@ -215,10 +215,19 @@ expect_ok "organizer confirms" "$(as "$ORG" "SELECT public.respond_to_representa
 expect_value "claim moves to VENTS review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$C1';")" "pending_review"
 
 echo "== Admin approval (maker-checker) =="
+# Values ::boolean would coerce ("t", "yes", "true") or that are not booleans
+# at all. The executor must refuse every one of them (fail closed).
+BAD_BOOLS=('"t"' '"yes"' '"true"' '"false"' '1' 'null' '[true]')
 R=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\"}")
 expect_error "requester cannot approve their own request" "Cannot approve your own request" "$(approve "$ADMIN_A" "$R")"
 expect_error "a sub-admin cannot approve" "Super Admin access required" "$(approve "$SUB" "$R")"
 expect_error "approval blocked until the legacy 10% programme is reconciled" "Reconcile the legacy" "$(approve "$ADMIN_B" "$R")"
+for b in "${BAD_BOOLS[@]}"; do
+  RB=$(request "$ADMIN_A" earn_update_settings NULL "{\"legacy_commission_reconciled\": $b, \"note\": \"malformed\"}")
+  expect_error "legacy_commission_reconciled = $b is refused" "legacy_commission_reconciled must be true or false" "$(approve "$ADMIN_B" "$RB")"
+done
+expect_value "malformed reconciliation requests changed nothing and stay pending" \
+  "$(val "SELECT legacy_commission_reconciled::text FROM public.earn_settings;")/$(val "SELECT count(*) FROM public.admin_action_requests WHERE action_type = 'earn_update_settings' AND status = 'pending';")" "false/${#BAD_BOOLS[@]}"
 RS=$(request "$ADMIN_A" earn_update_settings NULL '{"legacy_commission_reconciled": true, "note": "Both reps accepted the 50k model in writing"}')
 expect_ok "reconciliation recorded through dual control" "$(approve "$ADMIN_B" "$RS")"
 expect_ok "second admin approves the reward" "$(approve "$ADMIN_B" "$R")"
@@ -284,6 +293,18 @@ echo "== Credit to the withdrawable earnings wallet =="
 # The representative already holds VENTS Wallet money; it must never move.
 "${PSQL[@]}" -q -c "INSERT INTO public.user_wallets (user_id, balance_kobo) VALUES ('$REP', 10000);"
 earn() { val "SELECT balance_kobo || '/' || pending_kobo || '/' || total_withdrawn_kobo || '/' || total_earned_kobo FROM public.organizer_wallets WHERE organizer_id = '$1';"; }
+for b in "${BAD_BOOLS[@]}"; do
+  RB=$(request "$ADMIN_A" earn_update_settings NULL "{\"payouts_enabled\": $b, \"note\": \"malformed\"}")
+  expect_error "payouts_enabled = $b is refused" "payouts_enabled must be true or false" "$(approve "$ADMIN_B" "$RB")"
+done
+RB=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": true, "legacy_commission_reconciled": "no", "note": "one bad flag"}')
+expect_error "one malformed flag refuses the whole settings request" "legacy_commission_reconciled must be true or false" "$(approve "$ADMIN_B" "$RB")"
+expect_value "reward credit is still off after every malformed request" \
+  "$(val "SELECT payouts_enabled::text || '/' || legacy_commission_reconciled::text FROM public.earn_settings;")" "false/true"
+RB=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": false, "note": "explicitly keep off"}')
+expect_ok "payouts_enabled = false (a real boolean) is accepted" "$(approve "$ADMIN_B" "$RB")"
+expect_value "payouts_enabled = false leaves reward credit off" \
+  "$(val "SELECT payouts_enabled::text FROM public.earn_settings;")" "false"
 RE=$(request "$ADMIN_A" earn_update_settings NULL '{"payouts_enabled": true, "note": "Go-live approved by management"}')
 expect_ok "reward credit enabled through dual control" "$(approve "$ADMIN_B" "$RE")"
 expect_value "funded reward is credited" \
@@ -347,6 +368,13 @@ CF=$(claim_id_for "$ORG_FREE")
 "${PSQL[@]}" -q -c "$(as "$ORG_FREE" "SELECT public.respond_to_representative_reward_claim('$CF', true);")" >/dev/null
 RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\"}")
 expect_error "a free event needs explicit verification" "free event must be explicitly verified" "$(approve "$ADMIN_B" "$RF")"
+for b in "${BAD_BOOLS[@]}"; do
+  RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"free_event_verified\":$b}")
+  expect_error "free_event_verified = $b is refused" "free_event_verified must be true or false" "$(approve "$ADMIN_B" "$RB")"
+done
+RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"free_event_verified\":false}")
+expect_error "free_event_verified = false (a real boolean) still does not qualify a free event" "free event must be explicitly verified" "$(approve "$ADMIN_B" "$RB")"
+expect_value "the free-event claim is still under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$CF';")" "pending_review"
 RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"free_event_verified\":true}")
 expect_ok "a verified free event qualifies" "$(approve "$ADMIN_B" "$RF")"
 
@@ -397,6 +425,20 @@ XA=$(val "SELECT id FROM public.representative_expenses WHERE representative_id 
 RX=$(request "$ADMIN_A" earn_decide_expense NULL "{\"expense_id\":\"$XA\",\"approve\":true}")
 expect_error "a representative-admin cannot approve their own expense" "cannot request or approve their own expense" "$(approve "$ADMIN_REP" "$RX")"
 X1=$(val "SELECT id FROM public.representative_expenses WHERE representative_id = '$REP';")
+for b in "${BAD_BOOLS[@]}"; do
+  RB=$(request "$ADMIN_A" earn_decide_expense NULL "{\"expense_id\":\"$X1\",\"approve\":$b}")
+  expect_error "expense approve = $b is refused" "approve must be true or false" "$(approve "$ADMIN_B" "$RB")"
+done
+RB=$(request "$ADMIN_A" earn_decide_expense NULL "{\"expense_id\":\"$X1\"}")
+expect_error "an expense decision with no approve value is refused" "approve must be true or false" "$(approve "$ADMIN_B" "$RB")"
+expect_value "malformed expense decisions left the expense undecided" \
+  "$(val "SELECT status FROM public.representative_expenses WHERE id = '$X1';")" "submitted"
+"${PSQL[@]}" -q -c "$(as "$REP2" "SELECT public.submit_representative_expense('support', 50000, 'Duplicate printing', current_date, NULL, gen_random_uuid());")" >/dev/null
+XR=$(val "SELECT id FROM public.representative_expenses WHERE representative_id = '$REP2';")
+RB=$(request "$ADMIN_A" earn_decide_expense NULL "{\"expense_id\":\"$XR\",\"approve\":false,\"reason\":\"duplicate\"}")
+expect_ok "expense approve = false (a real boolean) is accepted" "$(approve "$ADMIN_B" "$RB")"
+expect_value "approve = false rejects the expense" \
+  "$(val "SELECT status FROM public.representative_expenses WHERE id = '$XR';")" "rejected"
 RX=$(request "$ADMIN_A" earn_decide_expense NULL "{\"expense_id\":\"$X1\",\"approve\":true,\"reason\":\"receipt checked\"}")
 expect_ok "expense approved through dual control" "$(approve "$ADMIN_B" "$RX")"
 expect_value "expenses never touch the wallet or the pool" \
