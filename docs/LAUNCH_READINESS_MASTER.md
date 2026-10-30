@@ -56,9 +56,10 @@ where they exist.
   - 5 wallets, 2 of them out of line with their ledgers;
   - 5 withdrawal requests pending since 2026-09-02 (₦49,100);
   - 4 ₦100 test payouts cancelled with Paystack transfer codes.
-- **Test suites (PR #82):**
-  - `vitest`: 8 failing, all pre-existing on `main` (`aiSubscriptionPaystackVerify` 6, `paystackVerifyAbuse` 2);
-  - `tsc`: 1 pre-existing error (`adminSendAnnouncement.security.test.ts:319`).
+- **Test suites (PR #82, after Batch A):**
+  - `vitest`: 2950/2950 pass (the 8 baseline failures were stale tests, fixed in Batch A);
+  - `tsc`: 0 errors;
+  - local Postgres suites: all 12 pass.
 
 ---
 
@@ -74,8 +75,8 @@ where they exist.
 | PAY-6 | 4 cancelled ₦100 test payouts that had Paystack transfer codes | UNVERIFIED | Prod | `organizer_withdrawal_requests` (cancelled, transfer code set) | Paystack dashboard shows whether each was paid; ledger and balance corrected if so | — | Paystack dashboard access |
 | AUTH-1 | Public sign-up | BROKEN for public launch (or deliberate) | Prod: `disable_signups = true` | `app_config` | Owner confirms intent; re-enable at launch; sign-up → email code → profile works on web, iOS and Android | E2E sign-up on each platform | Owner |
 | SEC-1 | Preview cannot touch production money or messaging | DONE (code) | PR #82 only; production unaffected (byte-identical build) | `docs/preview-read-only.md` | — (already met) | `previewGuard.test.ts`, `previewReadOnly*.test.ts` | Merge PR #82 |
-| INF-1 | `LAUNCH_CHECKLIST.md` §9 reflects the live backend | BROKEN (stale doc) | Doc | §9 says the Supabase variables are absent from Production and PR #3 is unmerged, but production serves the Supabase app with live data | §9 rewritten from current facts (variables present, `PROJECT_ADMIN_DATABASE_URL` set, cron, Sentry alerts) | — | Owner Vercel access |
-| QA-1 | Pre-existing failing tests | BROKEN (tests stale, see Batch A) | Code (`main` and PR #82) | 8 vitest failures, 1 tsc error. Diagnosed 2026-10-30: all 8 send `req.body` as a plain object, but since 72a9b81 (raw-body HMAC fix) the handler reads the raw request bytes, so the tests never reach the code they check | 0 failures; or each documented as a known false-positive and quarantined **with an owner decision** (never silently skipped) | `npm test`, `tsc --noEmit` | — |
+| INF-1 | `LAUNCH_CHECKLIST.md` §9 reflects the live backend | DONE (doc, Batch A); owner items listed in §9.3 | Doc | §9 rewritten 2026-10-30 into 9.1 code status, 9.2 production status (read-only evidence: production deploy `5612ee0`; Paystack-referenced tickets and completed payouts prove the server payment path; today's 08:21 archive proves the cron; migrations 0192/0201–0203 absent), 9.3 owner-only items | Every claim names its evidence; no claim contradicted by a read-only check; owner-only facts are marked unchecked, never assumed | — | Owner confirms §9.3 |
+| QA-1 | Pre-existing failing tests | DONE (code, PR #82 Batch A) | Code | Root cause: since 72a9b81 (raw-body HMAC fix, F17) the handler reads raw request bytes, but 8 tests sent a parsed `req.body` and never reached the code under test. The tests now send real `Readable` raw bodies; no assertion was changed (diff shows only request construction). Mutation check: disabling the HMAC compare makes 5 tests fail. The tsc error was a tautological test (`'sub-admin' !== 'admin'` on two literals); it now derives allowed roles from `users_role_check` and the excluded role from the 0191 SQL | `vitest` 0 failures (2950/2950); `tsc --noEmit` 0 errors; no skipped or quarantined test | `npm test`, `tsc --noEmit`, `aiSubscriptionPaystackVerify.test.ts` (16, incl. 10 new raw-body cases), `paystackVerifyAbuse.test.ts` (2) | — |
 
 ## Must fix before public launch (P1)
 
@@ -116,7 +117,7 @@ Areas not listed as blockers above. Each row is P2 unless marked otherwise.
 | NOTIF-1 | Notifications / push | In-app, FCM push, cron sweep | PARTIAL / UNVERIFIED on device | Prod | `LAUNCH_CHECKLIST.md` §7, §10; Hobby cron is daily only | Push arrives in foreground/background/terminated states and opens the right screen | Device test |
 | SRCH-1 | Search and maps | Fuzzy search, nearby providers, Maps embed | PARTIAL | Prod | `MASTER_AUDIT.md` Part 4 #1 (key restrictions) | Key restricted to app/web referrers; search returns hidden/deleted nothing | Existing search tests |
 | ADM-1 | Admin console | Dual control, payouts, verification, reports, VC, system switches | PARTIAL | Prod | `MASTER_AUDIT.md` Part 5a; payouts single-admin (PAY-9) | Every privileged action audited; kill switches work | Existing admin tests |
-| SEC-3 | Security / RLS | Table grants and policies, SECURITY DEFINER checks | PARTIAL | Prod | Money tables: no client write grants (verified 2026-10-30); advisor findings in `MASTER_AUDIT.md` | Supabase advisors clean or accepted; no client write grant on money tables | Advisors + security tests |
+| SEC-3 | Security / RLS | Table grants and policies, SECURITY DEFINER checks | PARTIAL | Prod | Money tables: no client write grants (verified 2026-10-30). **New (2026-10-30, read-only):** RLS off on `_ddl_probe_tmp` (empty) and `vc_lifetime_final_reconciliation_log` (neither readable/writable by client roles); `anon`/`authenticated` keep default `TRUNCATE`/`TRIGGER`/`REFERENCES` on 37 public tables (not exposed by the REST API) | RLS on (or table dropped) for both; residual grants revoked in a reviewed migration; Supabase advisors clean or accepted | Advisors + a grants test |
 | ANL-1 | Analytics | PostHog events, masking | UNVERIFIED | Prod | `MASTER_AUDIT.md` Part 4 #5 | Masking confirmed; Preview sends nothing (done in PR #82) | — |
 | A11Y-1 | Accessibility | Labels, contrast, focus, dynamic type, screen readers | NOT STARTED | — | No audit on record | WCAG 2.1 AA on core flows (sign-in, browse, buy, ticket) | axe + VoiceOver/TalkBack pass |
 | PERF-1 | Performance | Bundle size, cold start, list rendering | NOT STARTED (no budget) | — | Vite warns about chunks > 500 kB | Budgets set (e.g. first load on 4G) and met | Lighthouse / build-size check |
@@ -137,7 +138,7 @@ refund shortfall, settlement, payout maker-checker, event verification) are
 
 | # | Batch | Items | Size | Gate |
 |---|---|---|---|---|
-| A | **Fix or formally quarantine the baseline failures**: the 8 Paystack-verify / AI-subscription vitest failures and the tsc error. Then rewrite the stale §9 of `LAUNCH_CHECKLIST.md`. | QA-1, INF-1 | Small | Owner confirmation for §9 facts |
+| A | ~~**Fix the baseline failures and rewrite §9**~~ — done in code (Batch A, PR #82). §9.3 lists what only the owner can confirm. | QA-1, INF-1 | — | Owner confirms §9.3 |
 | B | **Reconcile migration 0192 with 0203** (0192 redefines `confirm_ticket_payment` / `credit_organizer_wallet`, so 0203's drift guard refuses to run after it). Then prepare the production apply plan for 0202 → 0201 → 0203. It needs read-only pre-checks, a rollback note and the frontend shipped together. | PAY-1, PAY-3, EARN-1 | Small | PR #82 review |
 | C | **Payout operations clean-up** (no code): the 5 stale requests (₦49,100), the 4 test transfers, the 2 ledger gaps. Each gap is closed through an audited adjustment. | PAY-2, PAY-5, PAY-6 | Small | Paystack dashboard access |
 | D | **Paystack verification**: confirm the dispute webhook payload and the live/test key mode (PAY-4) from the dashboard. Then one live ₦100 purchase + refund by the owner after the migrations are applied. | PAY-4, REF-1 | Small | Owner; network access to paystack.com |
@@ -147,33 +148,28 @@ refund shortfall, settlement, payout maker-checker, event verification) are
 | H | **Operations**: alerts, SPF/DMARC, runbooks (payouts, refunds, disputes, Paystack outage) | OPS-1..3 | Small | Owner DNS/Sentry |
 | I | **Accessibility and performance** audits on core flows | A11Y-1, PERF-1 | Medium | — |
 
-## Next batch: A, prepared (2026-10-30)
+## Batch A result (2026-10-30)
 
-**Why A, not B, first.** Both are P0. B (0192 reconciliation and the
-production apply plan) unblocks more, but its proof is the test suite, and
-today the suite is red in exactly the code B ships: the Paystack verify
-path. Eight failures that everyone has learned to ignore hide any new
-failure in that path. A is small and code-only; B follows straight after.
-The strongest case against this order: A changes no production behaviour,
-and every day 0202/0203 stay unapplied, production keeps the known payout
-bugs (PAY-1). That is a reason to start B the same day, not to skip A.
+- **8 failing tests fixed by sending genuine raw bodies.** The handler reads the raw bytes and checks the HMAC before parsing. Every original assertion is unchanged; only how each request is built changed.
+- **New raw-body tests** (`aiSubscriptionPaystackVerify.test.ts`):
+  - a validly signed pretty-printed delivery is accepted;
+  - an amount altered after signing is refused (401);
+  - the same JSON with different whitespace is refused (401);
+  - appended bytes are refused (401);
+  - a signature made with another secret is refused (401);
+  - a missing signature is refused (400);
+  - signed malformed JSON is acknowledged with 200 and calls nothing;
+  - malformed JSON on the verify path is a 400 before authentication, rate limiting, Paystack or any RPC;
+  - a non-string reference is refused;
+  - a pre-parsed body (body parser wrongly on) fails closed with 500.
+- **Mutation check:** replacing the HMAC compare with `true` makes 5 tests fail.
+- **tsc:** the only error was a tautological test that compared two string literals. It now proves the rule from the SQL itself: the roles allowed by `users_role_check`, minus the roles excluded by the 0191 everyone branch, still include `sub-admin`. No cast, no `@ts-ignore`.
+- **§9 rewritten** with code status, production status and owner-only items separated (INF-1).
+- **Found while checking production (read-only), not fixed** (it needs a production migration): two public tables without RLS, and default `TRUNCATE`/`TRIGGER`/`REFERENCES` grants to client roles on 37 tables. Added to SEC-3.
 
-**Diagnosis (done, read-only):**
-- All 8 failures (`aiSubscriptionPaystackVerify` ×6, `paystackVerifyAbuse` ×2) are **stale tests, not a production bug**. Since commit 72a9b81 the handler disables the body parser and reads the raw bytes (needed for a correct HMAC check). The tests still pass `body` as a parsed object, so the handler fails before reaching the code under test (`res.status` is never called).
-- Proof: the same "single rejection" test passes unchanged except for `body: Buffer.from(JSON.stringify(...))`, which `readRawBody` accepts.
-- The tsc error (`adminSendAnnouncement.security.test.ts:319`) compares the literal `'sub-admin'` with `'admin'`. It is a test-typing issue, not app code.
+**Acceptance met:** `vitest` 2950/2950; `tsc` 0 errors; production build passes; all 12 local Postgres suites pass; §9 has no claim contradicted by a read-only check.
 
-**Scope:**
-1. Give the 8 tests a real body: a Buffer (or a Readable) of the JSON, and for the webhook cases the exact bytes that are signed. No assertion is weakened, removed or skipped.
-2. Add one regression test that a parsed-object body is refused cleanly (400), not thrown, so the handler never fails silently again. This is a small handler change only if the test shows it throws today.
-3. Fix the tsc error by typing the role variable as the union it is.
-4. Rewrite `LAUNCH_CHECKLIST.md` §9 from current, checkable facts (INF-1). Each fact is marked "owner to confirm" where only the Vercel or Paystack dashboard can show it. No secret values.
-
-**Acceptance:** `npm test` has 0 failures; `tsc --noEmit` has 0 errors; production build passes; §9 has no claim contradicted by the read-only production checks in this file.
-
-**Not in A:** applying any migration; any Paystack call; any production setting.
-
-**Then B:** reconcile 0192 with 0203's drift guard, and write the apply plan for 0202 → 0201 → 0203 (read-only pre-checks, rollback note, frontend shipped with it). This is for the owner to approve.
+**Next: Batch B** (0192 reconciliation and the apply plan): `docs/migration-apply-plan-0192-0203.md`.
 
 **Keeping this current:** update the status and evidence of an item in the same
 commit that changes it. Never mark an item DONE without naming the test or
