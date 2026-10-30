@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // network: the DB helper is mocked and FCM is left unconfigured.
 
 const adminRpc = vi.fn(async (..._args: unknown[]) => null as unknown);
-vi.mock('../_lib/projectAdminDb', () => ({
+vi.mock('./projectAdminDb', () => ({
   callProjectAdminRpc: (...a: unknown[]) => adminRpc(...a),
   callProjectAdminTableRpc: vi.fn(async () => []),
 }));
@@ -20,7 +20,7 @@ function mockRes() {
 }
 async function run(auth = 'Bearer cron-secret') {
   const res = mockRes();
-  await (await import('./run')).default({ method: 'GET', headers: { authorization: auth }, query: {} } as any, res);
+  await (await import('../cron/run')).default({ method: 'GET', headers: { authorization: auth }, query: {} } as any, res);
   return res;
 }
 

@@ -55,7 +55,7 @@ reports open holds and outstanding recoveries.
   - the drift guard (a changed live function is refused);
   - the ledger invariant after every step.
 - `run-payout-engine-verification.sh` now runs on 0203 too, authorizing each claim with two admins (50 checks).
-- Mocked API tests: an unauthorized claim never reaches Paystack (`payoutEngine.security.test.ts`); the cron release (`api/cron/earningsRelease.security.test.ts`); fee math (`src/lib/ticketFees.test.ts`, `walletMath.test.ts`).
+- Mocked API tests: an unauthorized claim never reaches Paystack (`payoutEngine.security.test.ts`); the cron release (`api/_lib/cronEarningsRelease.security.test.ts`); fee math (`src/lib/ticketFees.test.ts`, `walletMath.test.ts`).
 
 - `scripts/local-pg-test/run-payout-engine-verification.sh` (49 checks):
   - the full lifecycle on 0201 + 0202 with the live functions;
