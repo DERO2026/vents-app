@@ -519,6 +519,10 @@ CREATE TABLE public.representative_reward_claims (
                            ('pending_organizer', 'pending_review', 'approved', 'funded', 'credited', 'rejected', 'reversed')),
   is_free_event          boolean NOT NULL,
   free_event_verified    boolean NOT NULL DEFAULT false,
+  -- Approved rule: the qualifying event is verified by the approving admins,
+  -- and the organizer holds an approved organizer verification.
+  event_verified         boolean NOT NULL DEFAULT false,
+  organizer_verified     boolean NOT NULL DEFAULT false,
   organizer_confirmed_at timestamptz,
   approved_at            timestamptz,
   approved_by            uuid,
@@ -725,6 +729,12 @@ BEGIN
     RETURN jsonb_build_object('status', 'credited', 'claim_id', c.id, 'duplicate', true);
   END IF;
 
+  -- Re-checked at claim time: a verification revoked after approval blocks
+  -- the money until admins look again.
+  IF NOT public.earn_organizer_is_verified(c.organizer_id) THEN
+    RAISE EXCEPTION 'The organizer is no longer verified; this reward is on hold for admin review';
+  END IF;
+
   IF c.status = 'approved' THEN
     -- Lock the single pool row: concurrent claims serialize here.
     SELECT * INTO v_pool FROM public.earn_profit_pool WHERE id FOR UPDATE;
@@ -902,6 +912,19 @@ BEGIN
 END;
 $function$;
 
+-- An organizer is verified when their organizer (CAC) verification request
+-- has been approved by an admin (admin_approve_organizer_verification).
+CREATE OR REPLACE FUNCTION public.earn_organizer_is_verified(p_organizer_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  SELECT EXISTS (SELECT 1 FROM public.organizer_verification_requests v
+                  WHERE v.user_id = p_organizer_id AND v.status = 'approved')
+$function$;
+
 -- ---------------------------------------------------------------------------
 -- Dual-control executor (runs only inside approve_admin_action)
 -- ---------------------------------------------------------------------------
@@ -955,6 +978,10 @@ BEGIN
      AND jsonb_typeof(r.payload->'approve') IS DISTINCT FROM 'boolean' THEN
     RAISE EXCEPTION 'payload.approve must be true or false';
   END IF;
+  IF r.action_type = 'earn_approve_reward' AND r.payload ? 'event_verified'
+     AND jsonb_typeof(r.payload->'event_verified') IS DISTINCT FROM 'boolean' THEN
+    RAISE EXCEPTION 'payload.event_verified must be true or false';
+  END IF;
   IF r.action_type = 'earn_approve_reward' AND r.payload ? 'free_event_verified'
      AND jsonb_typeof(r.payload->'free_event_verified') IS DISTINCT FROM 'boolean' THEN
     RAISE EXCEPTION 'payload.free_event_verified must be true or false';
@@ -997,17 +1024,26 @@ BEGIN
     IF (v_elig->>'is_free_event')::boolean AND COALESCE((r.payload->>'free_event_verified')::boolean, false) IS NOT TRUE THEN
       RAISE EXCEPTION 'A free event must be explicitly verified as genuine (payload.free_event_verified = true)';
     END IF;
+    IF (r.payload->>'event_verified')::boolean IS NOT TRUE THEN
+      RAISE EXCEPTION 'The qualifying event must be verified by the approving admins (payload.event_verified = true)';
+    END IF;
+    IF NOT public.earn_organizer_is_verified(c.organizer_id) THEN
+      RAISE EXCEPTION 'The organizer must have an approved organizer verification before a reward is approved';
+    END IF;
     UPDATE public.representative_reward_claims
        SET status = 'approved', approved_at = now(), approved_by = v_approver,
            approval_requested_by = r.requested_by,
            is_free_event = (v_elig->>'is_free_event')::boolean,
            free_event_verified = COALESCE((r.payload->>'free_event_verified')::boolean, false),
+           event_verified = true,
+           organizer_verified = true,
            amount_kobo = public.representative_reward_rate_kobo(c.representative_id, c.reward_month),
            updated_at = now()
      WHERE id = c.id RETURNING * INTO c;
     PERFORM public.earn_audit('reward_claim', c.id, 'admin_approved', c.representative_id,
       jsonb_build_object('admin_request_id', r.id, 'requested_by', r.requested_by, 'eligibility', v_elig,
-                         'amount_kobo', c.amount_kobo, 'free_event_verified', c.free_event_verified));
+                         'amount_kobo', c.amount_kobo, 'free_event_verified', c.free_event_verified,
+                         'event_verified', c.event_verified, 'organizer_verified', c.organizer_verified));
     INSERT INTO public.notifications (user_id, type, title, body, read, icon, push_data)
     VALUES (c.representative_id, 'social', 'Reward approved',
             'VENTS approved your representative reward. You can claim it once VENTS profit covers it.',
@@ -1282,6 +1318,8 @@ BEGIN
       SELECT jsonb_agg(jsonb_build_object(
         'id', c.id, 'status', c.status, 'amount_kobo', c.amount_kobo, 'reward_month', c.reward_month,
         'is_free_event', c.is_free_event, 'free_event_verified', c.free_event_verified,
+        'event_verified', c.event_verified,
+        'organizer_verified_now', public.earn_organizer_is_verified(c.organizer_id),
         'representative_id', c.representative_id, 'representative_name', r.display_name,
         'organizer_id', c.organizer_id, 'organizer_name', COALESCE(u.full_name, u.username),
         'event_id', c.event_id, 'event_title', ev.title, 'created_at', c.created_at,
@@ -1383,6 +1421,7 @@ BEGIN
     'public.earn_event_eligibility(uuid)',
     'public.earn_ticket_refund_adjust_profit()',
     'public.earn_execute_admin_action(uuid)',
+    'public.earn_organizer_is_verified(uuid)',
     'public.representative_qualifying_count(uuid,date)',
     'public.representative_reward_rate_kobo(uuid,date)'
   ] LOOP

@@ -18,6 +18,17 @@ interface WalletData {
   balance_kobo: number;
   total_earned_kobo: number;
   pending_kobo: number;
+  // 0203: earned but inside the 7-day settlement hold. Absent before 0203
+  // is applied (the screen then reads it as 0).
+  on_hold_kobo?: number;
+}
+
+// 0203 settlement summary for the earnings card; null until loaded or when
+// the tables are not there yet (database without 0203).
+interface SettlementSummary {
+  nextReleaseKobo: number;
+  nextReleaseAt: string | null;
+  owedKobo: number;
 }
 
 // A ledger row's metadata is a free-form jsonb column -- older rows (or
@@ -34,6 +45,10 @@ interface TxnMetadata {
   quantity?: number;
   gross_kobo?: number;
   buyer_fee_kobo?: number;
+  // 0203: VENTS organizer commission and the net actually credited.
+  organizer_commission_kobo?: number;
+  net_kobo?: number;
+  fee_model?: string;
   paystack_reference?: string;
   buyer_name?: string;
   buyer_email?: string;
@@ -42,7 +57,7 @@ interface TxnMetadata {
 
 interface Transaction {
   id: string;
-  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund' | 'representative_reward' | 'representative_reward_reversal' | 'payout_reversal';
+  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund' | 'refund' | 'representative_reward' | 'representative_reward_reversal' | 'payout_reversal' | 'recovery_deduction';
   amount_kobo: number;
   description: string | null;
   withdrawal_request_id: string | null;
@@ -94,6 +109,10 @@ const TYPE_LABELS: Record<string, string> = {
   representative_reward_reversal: 'Representative Reward Reversed',
   // The bank sent a completed withdrawal back (0202): money returned to available.
   payout_reversal: 'Withdrawal Reversed — Returned to Balance',
+  refund: 'Ticket Refund',
+  // 0203: a refund your balance could not cover at the time, recovered from
+  // later earnings.
+  recovery_deduction: 'Refund Recovered from Earnings',
 };
 
 const WITHDRAWAL_REQUEST_LABELS: Record<WithdrawalRequest['status'], string> = {
@@ -160,7 +179,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // earnings balance or history also gets the withdrawal and bank sections.
   // request_organizer_payout itself has no capability gate; this only
   // decides what the screen offers.
-  const hasEarnings = !!wallet && (wallet.total_earned_kobo > 0 || wallet.balance_kobo > 0 || wallet.pending_kobo > 0);
+  const hasEarnings = !!wallet && (wallet.total_earned_kobo > 0 || wallet.balance_kobo > 0 || wallet.pending_kobo > 0 || (wallet.on_hold_kobo ?? 0) > 0);
+  const [settlement, setSettlement] = useState<SettlementSummary | null>(null);
   const isEarner = !!currentUser?.isOrganizer || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.is_service_provider === true || hasEarnings;
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
@@ -244,6 +264,35 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // own result if a newer load() completed in the meantime.
   const txnsGenerationRef = useRef(0);
 
+  // 0203 settlement: move matured held earnings to the available balance
+  // (reloading the balance if anything moved), then read the next release
+  // and any refund still owed. Best effort and outside the main load: the
+  // RPC is refused in the read-only Preview, and the tables do not exist on
+  // a database without 0203 -- the card then shows the balance as stored.
+  const loadSettlement = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const { data: moved, error: settleError } = await supabase.rpc('settle_my_earnings' as any);
+      if (!settleError && moved && ((moved as any).released_kobo > 0 || (moved as any).recovered_kobo > 0)) {
+        const { data: w, error: wErr } = await supabase.from('organizer_wallets').select('*').eq('organizer_id', currentUser.id).maybeSingle();
+        if (!wErr && w) setWallet(w as WalletData);
+      }
+      const [hRes, rRes] = await Promise.all([
+        supabase.from('earnings_holds' as any).select('amount_kobo, release_at').eq('owner_id', currentUser.id).is('released_at', null).gt('amount_kobo', 0).order('release_at', { ascending: true }).limit(1),
+        supabase.from('earnings_recoveries' as any).select('amount_kobo, recovered_kobo').eq('owner_id', currentUser.id).is('settled_at', null),
+      ]);
+      if (hRes.error || rRes.error) { setSettlement(null); return; }
+      const next = ((hRes.data as any[]) || [])[0];
+      setSettlement({
+        nextReleaseKobo: next ? Number(next.amount_kobo) : 0,
+        nextReleaseAt: next ? next.release_at : null,
+        owedKobo: ((rRes.data as any[]) || []).reduce((sum, x) => sum + Number(x.amount_kobo) - Number(x.recovered_kobo), 0),
+      });
+    } catch {
+      setSettlement(null);
+    }
+  };
+
   const load = async () => {
     if (!currentUser?.id) return;
     txnsGenerationRef.current += 1;
@@ -251,7 +300,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     setTxnsError('');
     try {
       const [wRes, tRes, wrRes, bRes, vRes] = await Promise.all([
-        supabase.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
+        // '*' so the screen keeps working on a database without 0203's on_hold_kobo.
+        supabase.from('organizer_wallets').select('*').eq('organizer_id', currentUser.id).maybeSingle(),
         supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
         // Only pending/processing/failed/rejected -- completed and cancelled
         // requests are already represented by their 'payout' / 'cancelled_
@@ -261,13 +311,14 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         supabase.rpc('is_email_verified'),
       ]);
+      void loadSettlement();
       // A failed wallet read must not look like an empty wallet: that would
       // hide the withdrawal and bank sections from anyone whose access
       // depends on hasEarnings. Keep the last known value and say so.
       if (wRes.error) {
         setTxnsError('Could not load your earnings balance. Pull to retry.');
       } else {
-        setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
+        setWallet((wRes.data as WalletData | null) || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
       }
       if (tRes.error) { setTxnsError(tRes.error.message); setTxns([]); } else {
         setTxns(tRes.data || []);
@@ -610,6 +661,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   const balance = wallet?.balance_kobo ?? 0;
   const pending = wallet?.pending_kobo ?? 0;
+  const onHold = wallet?.on_hold_kobo ?? 0;
   const totalEarned = wallet?.total_earned_kobo ?? 0;
 
   return (
@@ -652,6 +704,17 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                   <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
                   {pending > 0 && (
                     <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
+                  )}
+                  {onHold > 0 && (
+                    <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>
+                      On hold (7-day settlement): {fmt(onHold)}
+                      {settlement?.nextReleaseAt ? ` · next ${fmt(settlement.nextReleaseKobo)} on ${new Date(settlement.nextReleaseAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}` : ''}
+                    </p>
+                  )}
+                  {(settlement?.owedKobo ?? 0) > 0 && (
+                    <p style={{ margin: '4px 0 0', color: ventsColors.pending, fontSize: '12px' }}>
+                      Owed from a refund: {fmt(settlement!.owedKobo)} · taken from your next earnings
+                    </p>
                   )}
                 </div>
                 <button
@@ -1049,6 +1112,9 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       dateLabel = fmtDateTime(t.created_at);
       const gross = meta.gross_kobo ?? t.amount_kobo;
       const buyerFee = meta.buyer_fee_kobo;
+      // Sales from 0203 on carry the 5% organizer commission; older sales
+      // (legacy_5) had none and are shown as recorded.
+      const commission = meta.organizer_commission_kobo;
       rows = [
         { label: 'Gross amount', value: fmt(gross) },
         {
@@ -1056,6 +1122,9 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
           value: buyerFee != null ? `${fmt(buyerFee)} (paid by buyer, not deducted)` : 'Not available for this transaction',
           muted: true,
         },
+        ...(commission != null && commission > 0
+          ? [{ label: 'VENTS commission (5%)', value: `-${fmt(commission)}` }]
+          : []),
         { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
         { label: 'Currency', value: 'NGN (₦)' },
         { label: 'Event', value: na(meta.event_title) },

@@ -13,7 +13,7 @@ import { formatNaira, eligibilityReasonText } from '../../../lib/workRoles';
 interface Overview {
   settings: { payouts_enabled: boolean; legacy_commission_reconciled: boolean; settlement_hold_days: number; base_reward_kobo: number };
   pool: { available_kobo: number; reserved_kobo: number; credited_kobo: number };
-  claims: { id: string; status: string; amount_kobo: number; reward_month: string; is_free_event: boolean; representative_id: string; representative_name: string | null; organizer_name: string | null; event_title: string; decision_reason: string | null }[];
+  claims: { id: string; status: string; amount_kobo: number; reward_month: string; is_free_event: boolean; organizer_verified_now?: boolean; representative_id: string; representative_name: string | null; organizer_name: string | null; event_title: string; decision_reason: string | null }[];
   attributions: { id: string; representative_name: string | null; organizer_name: string | null; attributed_at: string; organizer_had_events_before: boolean }[];
   expenses: { id: string; representative_name: string | null; category: string; amount_kobo: number; description: string; incurred_on: string; status: string }[];
   monthly_counts: { representative_id: string; month: string; count: number }[];
@@ -160,13 +160,16 @@ export function AdminEarnScreen() {
             <div style={{ fontSize: 13, color: adminTheme.text }}>
               <strong>{c.representative_name || 'Representative'}</strong> → {c.organizer_name || 'Organizer'} · {c.event_title} · {formatNaira(c.amount_kobo)} · {c.reward_month.slice(0, 7)}
               {c.is_free_event && ' · FREE EVENT'}
+              {c.organizer_verified_now === false && ' · ORGANIZER NOT VERIFIED'}
             </div>
             <div style={muted}>{STATUS_LABEL[c.status] ?? c.status}{c.decision_reason ? ` · ${c.decision_reason}` : ''}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {c.status === 'pending_review' && (
-                <button style={btn()} onClick={() => {
+                <button style={btn()} disabled={c.organizer_verified_now === false} title={c.organizer_verified_now === false ? 'The organizer needs an approved organizer verification first' : undefined} onClick={() => {
+                  // Approved rule: the qualifying event must be verified by the approving admins.
+                  if (!window.confirm(`Confirm you verified "${c.event_title}" is a genuine event that took place as listed?`)) return;
                   if (c.is_free_event && !window.confirm('This is a free event. Confirm you verified it was a genuine event?')) return;
-                  request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, free_event_verified: c.is_free_event }, c.id);
+                  request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, event_verified: true, free_event_verified: c.is_free_event }, c.id);
                 }}>Request approval</button>
               )}
               {['pending_organizer', 'pending_review', 'approved'].includes(c.status) && (

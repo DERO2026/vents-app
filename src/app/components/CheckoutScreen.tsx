@@ -12,6 +12,7 @@ import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { computeTicketWalletChargeKobo, hasSufficientBalance } from '../../lib/walletMath';
+import { TICKET_SERVICE_FEE_LABEL, ticketServiceFee } from '../../lib/ticketFees';
 import { friendlyOperationalError } from '../../lib/operationalStatus';
 import { UserAutocomplete } from './shared/UserAutocomplete';
 
@@ -202,7 +203,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   };
 
   const subtotal = ticketType.price * quantity;
-  const serviceFee = Math.round(subtotal * 0.05);
+  const serviceFee = ticketServiceFee(subtotal);
   const discount = promoApplied ? Math.round(subtotal * (promoDiscountPct / 100)) : 0;
   const total = Math.max(0, subtotal + serviceFee - discount);
   // Matches confirm_ticket_payment_via_wallet's own expected-amount formula
@@ -976,7 +977,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(subtotal)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Service fee (5%)</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{TICKET_SERVICE_FEE_LABEL}</span>
               <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
             </div>
             {promoApplied && (

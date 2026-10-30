@@ -79,6 +79,10 @@ INSERT INTO public.users (id, role, is_organizer, full_name) VALUES
   ('$ORG_FREE', 'user', true, 'Org Free'), ('$ORG_PRE', 'user', true, 'Org Pre'),
   ('$ADMIN_A', 'admin', false, 'Admin A'), ('$ADMIN_B', 'admin', false, 'Admin B'),
   ('$SUB', 'sub-admin', false, 'Sub'), ('$OTHER', 'user', false, 'Other');
+-- Rule 4: rewards need an approved organizer verification. Every
+-- organizer starts verified; the negative case is tested explicitly.
+INSERT INTO public.organizer_verification_requests (user_id, status)
+  SELECT id, 'approved' FROM public.users WHERE is_organizer;
 SQL
 for r in "$REP" "$REP2" "$ADMIN_REP"; do
   "${PSQL[@]}" -q -c "$(as "$r" "SELECT public.register_as_recruiter('R', NULL);")" >/dev/null
@@ -245,7 +249,7 @@ echo "== Admin approval (maker-checker) =="
 # Values ::boolean would coerce ("t", "yes", "true") or that are not booleans
 # at all. The executor must refuse every one of them (fail closed).
 BAD_BOOLS=('"t"' '"yes"' '"true"' '"false"' '1' 'null' '[true]')
-R=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\"}")
+R=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":true}")
 expect_error "requester cannot approve their own request" "Cannot approve your own request" "$(approve "$ADMIN_A" "$R")"
 expect_error "a sub-admin cannot approve" "Super Admin access required" "$(approve "$SUB" "$R")"
 expect_error "approval blocked until the legacy 10% programme is reconciled" "Reconcile the legacy" "$(approve "$ADMIN_B" "$R")"
@@ -257,7 +261,23 @@ expect_value "malformed reconciliation requests changed nothing and stay pending
   "$(val "SELECT legacy_commission_reconciled::text FROM public.earn_settings;")/$(val "SELECT count(*) FROM public.admin_action_requests WHERE action_type = 'earn_update_settings' AND status = 'pending';")" "false/${#BAD_BOOLS[@]}"
 RS=$(request "$ADMIN_A" earn_update_settings NULL '{"legacy_commission_reconciled": true, "note": "Both reps accepted the 50k model in writing"}')
 expect_ok "reconciliation recorded through dual control" "$(approve "$ADMIN_B" "$RS")"
+echo "== Rule 4: verified organizer and admin-verified event =="
+RV=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\"}")
+expect_error "approval without an explicit event verification is refused" "qualifying event must be verified" "$(approve "$ADMIN_B" "$RV")"
+RV=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":false}")
+expect_error "event_verified = false is refused" "qualifying event must be verified" "$(approve "$ADMIN_B" "$RV")"
+RV=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":\"true\"}")
+expect_error "event_verified as a string is refused" "event_verified must be true or false" "$(approve "$ADMIN_B" "$RV")"
+"${PSQL[@]}" -q -c "UPDATE public.organizer_verification_requests SET status = 'rejected' WHERE user_id = '$ORG';" >/dev/null
+RV=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":true}")
+expect_error "an organizer without an approved verification blocks the reward" "approved organizer verification" "$(approve "$ADMIN_B" "$RV")"
+"${PSQL[@]}" -q -c "INSERT INTO public.organizer_verification_requests (user_id, status) VALUES ('$ORG', 'pending');" >/dev/null
+expect_error "a pending (not yet approved) verification still blocks it" "approved organizer verification" "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C1\",\"event_verified\":true}")")"
+"${PSQL[@]}" -q -c "UPDATE public.organizer_verification_requests SET status = 'approved' WHERE user_id = '$ORG';" >/dev/null
+expect_value "refused approvals left the claim under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$C1';")" "pending_review"
 expect_ok "second admin approves the reward" "$(approve "$ADMIN_B" "$R")"
+expect_value "approval records the event and organizer verification" \
+  "$(val "SELECT event_verified::text || '/' || organizer_verified::text FROM public.representative_reward_claims WHERE id = '$C1';")" "true/true"
 expect_value "claim approved at the base rate (₦50,000)" \
   "$(val "SELECT status || '/' || amount_kobo FROM public.representative_reward_claims WHERE id = '$C1';")" "approved/5000000"
 expect_value "admin request marked approved" "$(val "SELECT status FROM public.admin_action_requests WHERE id = '$R';")" "approved"
@@ -266,13 +286,17 @@ expect_value "admin request marked approved" "$(val "SELECT status FROM public.a
 "${PSQL[@]}" -q -c "$(as "$ADMIN_REP" "SELECT public.submit_representative_reward_claim('$ORG3', '00000000-0000-0000-0000-0000000e0008');")" >/dev/null
 C3=$(claim_id_for "$ORG3")
 "${PSQL[@]}" -q -c "$(as "$ORG3" "SELECT public.respond_to_representative_reward_claim('$C3', true);")" >/dev/null
-R3=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C3\"}")
+R3=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C3\",\"event_verified\":true}")
 expect_error "an admin who is the representative cannot approve their own reward" "cannot request or approve their own reward" "$(approve "$ADMIN_REP" "$R3")"
-R3b=$(request "$ADMIN_REP" earn_approve_reward NULL "{\"claim_id\":\"$C3\"}")
+R3b=$(request "$ADMIN_REP" earn_approve_reward NULL "{\"claim_id\":\"$C3\",\"event_verified\":true}")
 expect_error "an admin who is the representative cannot request approval of their own reward" "cannot request or approve their own reward" "$(approve "$ADMIN_B" "$R3b")"
 expect_value "the representative-admin's claim is still under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$C3';")" "pending_review"
 
 echo "== Funding against realized profit =="
+"${PSQL[@]}" -q -c "UPDATE public.organizer_verification_requests SET status = 'rejected' WHERE user_id = '$ORG';" >/dev/null
+expect_error "a verification revoked after approval blocks the claim" "no longer verified" \
+  "$(as "$REP" "SELECT public.claim_representative_reward('$C1', gen_random_uuid());")"
+"${PSQL[@]}" -q -c "UPDATE public.organizer_verification_requests SET status = 'approved' WHERE user_id = '$ORG';" >/dev/null
 expect_value "no realized profit: claim returns awaiting_profit, nothing reserved" \
   "$(val "$(as "$REP" "SELECT public.claim_representative_reward('$C1', '11111111-1111-1111-1111-111111111111')->>'status';")")" "awaiting_profit"
 expect_value "pool untouched" "$(pool)" "0/0/0"
@@ -304,8 +328,8 @@ echo "== Concurrency: two claims, profit for one =="
 "${PSQL[@]}" -q -c "$(as "$REP2" "SELECT public.submit_representative_reward_claim('$ORG2', '00000000-0000-0000-0000-0000000e0007');")" >/dev/null
 C2=$(claim_id_for "$ORG2")
 "${PSQL[@]}" -q -c "$(as "$ORG2" "SELECT public.respond_to_representative_reward_claim('$C2', true);")" >/dev/null
-"${PSQL[@]}" -q -c "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C2\"}")")" >/dev/null
-"${PSQL[@]}" -q -c "$(approve "$ADMIN_A" "$(request "$ADMIN_B" earn_approve_reward NULL "{\"claim_id\":\"$C3\"}")")" >/dev/null
+"${PSQL[@]}" -q -c "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$C2\",\"event_verified\":true}")")" >/dev/null
+"${PSQL[@]}" -q -c "$(approve "$ADMIN_A" "$(request "$ADMIN_B" earn_approve_reward NULL "{\"claim_id\":\"$C3\",\"event_verified\":true}")")" >/dev/null
 "${PSQL[@]}" -q -c "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_recognize_event_profit NULL '{"event_id":"00000000-0000-0000-0000-0000000e0007","cost_deductions_kobo":50000,"note":"fees"}')")" >/dev/null
 expect_value "pool before the race: exactly one reward available" "$(pool)" "5000000/5000000/0"
 ( "${PSQL[@]}" -tA -c "$(as "$REP2" "SELECT public.claim_representative_reward('$C2', gen_random_uuid())->>'status';")" | tail -n1 >"$OUT.a" ) &
@@ -416,16 +440,16 @@ echo "== Free events =="
 "${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.submit_representative_reward_claim('$ORG_FREE', '00000000-0000-0000-0000-0000000e0009');")" >/dev/null
 CF=$(claim_id_for "$ORG_FREE")
 "${PSQL[@]}" -q -c "$(as "$ORG_FREE" "SELECT public.respond_to_representative_reward_claim('$CF', true);")" >/dev/null
-RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\"}")
+RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_verified\":true}")
 expect_error "a free event needs explicit verification" "free event must be explicitly verified" "$(approve "$ADMIN_B" "$RF")"
 for b in "${BAD_BOOLS[@]}"; do
-  RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"free_event_verified\":$b}")
+  RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_verified\":true,\"free_event_verified\":$b}")
   expect_error "free_event_verified = $b is refused" "free_event_verified must be true or false" "$(approve "$ADMIN_B" "$RB")"
 done
-RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"free_event_verified\":false}")
+RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_verified\":true,\"free_event_verified\":false}")
 expect_error "free_event_verified = false (a real boolean) still does not qualify a free event" "free event must be explicitly verified" "$(approve "$ADMIN_B" "$RB")"
 expect_value "the free-event claim is still under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$CF';")" "pending_review"
-RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"free_event_verified\":true}")
+RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_verified\":true,\"free_event_verified\":true}")
 expect_ok "a verified free event qualifies" "$(approve "$ADMIN_B" "$RF")"
 
 echo "== Monthly rate review =="

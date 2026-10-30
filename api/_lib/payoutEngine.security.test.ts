@@ -25,6 +25,7 @@ type Handler = (url: string, init?: RequestInit) => Response | Promise<Response>
 let paystackTransfer: Handler;
 let paystackVerify: Handler;
 let markOk = true;
+let claimRefusal: string | null = null;
 const calls: { url: string; body?: any }[] = [];
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -35,6 +36,7 @@ const fetchMock = vi.fn(async (input: any, init?: RequestInit) => {
   calls.push({ url, body });
   if (url === `${SUPABASE}/auth/v1/user`) return json(200, { id: 'admin-1', email: 'a@x' });
   if (url.endsWith('/rpc/admin_claim_payout_for_processing')) {
+    if (claimRefusal) return json(400, { message: claimRefusal });
     return json(200, [{ request_id: REQUEST_ID, organizer_id: 'org', amount_kobo: 50000, recipient_code: 'RCP_1', status: 'processing', claimed: true }]);
   }
   if (url.endsWith('/rpc/admin_mark_payout_processing')) return markOk ? json(200, null) : json(400, { message: 'not processing' });
@@ -67,6 +69,7 @@ beforeEach(() => {
   adminRpc.mockClear();
   adminTableRpc.mockClear();
   markOk = true;
+  claimRefusal = null;
   listRows = [];
   paystackTransfer = () => json(200, { status: true, data: { transfer_code: 'TRF_1', status: 'pending' } });
   paystackVerify = () => json(404, { status: false, message: 'Transfer not found' });
@@ -146,6 +149,24 @@ describe('approval', () => {
     paystackVerify = () => json(500, { status: false, message: 'Server error' });
     await approve();
     expect(rpcCalls('admin_release_payout_claim')).toHaveLength(0);
+  });
+});
+
+describe('two-admin authorization (0203)', () => {
+  it('a withdrawal the database refuses to claim (not authorized) never reaches Paystack', async () => {
+    claimRefusal = "This withdrawal needs a second admin's authorization before it can be paid";
+    const res = await approve();
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/second admin's authorization/);
+    expect(transferPosts()).toHaveLength(0);
+    expect(rpcCalls('admin_mark_payout_processing')).toHaveLength(0);
+  });
+
+  it('a bank recipient changed after authorization is refused the same way', async () => {
+    claimRefusal = 'The bank account changed after this withdrawal was authorized; authorize it again';
+    const res = await approve();
+    expect(res.statusCode).toBe(400);
+    expect(transferPosts()).toHaveLength(0);
   });
 });
 

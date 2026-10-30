@@ -53,6 +53,7 @@ trap cleanup EXIT
 ORG="00000000-0000-0000-0000-0000000000a1"
 ORG2="00000000-0000-0000-0000-0000000000a2"
 ADMIN="00000000-0000-0000-0000-0000000000b1"
+ADMIN2="00000000-0000-0000-0000-0000000000b3"
 SUB="00000000-0000-0000-0000-0000000000b2"
 OTHER="00000000-0000-0000-0000-0000000000c1"
 BANK="00000000-0000-0000-0000-0000000000d1"
@@ -75,7 +76,17 @@ req_status() { val "SELECT status FROM public.organizer_withdrawal_requests WHER
 # Ledger, pending and open requests all agree for every wallet.
 reconciled() { val "$(as "$ADMIN" "SELECT count(*) FILTER (WHERE cardinality(issues) > 0) FROM public.admin_earnings_reconciliation();")"; }
 request() { val "$(as "$1" "SELECT public.request_organizer_payout($2, '$3', '$4');")"; }
-claim() { val "$(as "$ADMIN" "SELECT claimed::text FROM public.admin_claim_payout_for_processing('$1');")"; }
+# After 0203 a request is claimable only once two admins authorized it:
+# ADMIN2 requests the authorization, ADMIN approves it (maker-checker), then
+# the claim runs. Skipped when already authorized or no longer pending.
+authorize() {
+  if [ "$(val "SELECT (status = 'pending' AND approved_by IS NULL)::text FROM public.organizer_withdrawal_requests WHERE id = '$1';")" = "true" ]; then
+    local amt ar; amt=$(val "SELECT amount_kobo FROM public.organizer_withdrawal_requests WHERE id = '$1';")
+    ar=$(val "$(as "$ADMIN2" "SELECT public.request_admin_action('authorize_withdrawal', 'withdrawal', '$1', 'test', '{\"amount_kobo\": $amt}'::jsonb)->>'id';")")
+    "${PSQL[@]}" -q -c "$(as "$ADMIN" "SELECT public.approve_admin_action('$ar');")" >/dev/null
+  fi
+}
+claim() { authorize "$1"; val "$(as "$ADMIN" "SELECT claimed::text FROM public.admin_claim_payout_for_processing('$1');")"; }
 ref_for() { echo "payout_$(echo "$1" | tr -d '-')"; }
 srv() { val "SELECT status FROM public.$1;"; }   # server-side (webhook) call, as the DB owner
 
@@ -89,90 +100,22 @@ done
 "${PSQL[@]}" -q -f "$MIG/0201_vents_earn_representative_rewards.sql" >/dev/null
 
 # Live helpers and the two live payout functions 0202 does not replace.
-"${PSQL[@]}" -q <<'SQL'
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email text;
-CREATE OR REPLACE FUNCTION public.is_admin_or_root() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS
-$$ SELECT public.is_super_admin() $$;
-
-CREATE OR REPLACE FUNCTION public.fail_organizer_payout(p_request_id text, p_reason text)
- RETURNS TABLE(status text, organizer_email text, organizer_name text, amount_kobo bigint)
- LANGUAGE plpgsql SECURITY DEFINER SET search_path TO ''
-AS $function$
-DECLARE
-  v_id uuid; v_organizer_id uuid; v_amount_kobo bigint; v_status text; v_rows int;
-BEGIN
-  SELECT r.id, r.organizer_id, r.amount_kobo, r.status
-    INTO v_id, v_organizer_id, v_amount_kobo, v_status
-  FROM public.organizer_withdrawal_requests r
-  WHERE r.id::text = p_request_id OR r.transfer_code = p_request_id OR r.paystack_reference = p_request_id
-  FOR UPDATE;
-  IF v_organizer_id IS NULL THEN
-    RETURN QUERY SELECT 'not_found'::text, NULL::text, NULL::text, NULL::bigint; RETURN;
-  END IF;
-  IF v_status IN ('completed', 'failed', 'rejected') THEN
-    RETURN QUERY SELECT 'already_finalized'::text, NULL::text, NULL::text, NULL::bigint; RETURN;
-  END IF;
-  UPDATE public.organizer_withdrawal_requests
-  SET status = 'failed', admin_note = COALESCE(p_reason, admin_note), updated_at = now()
-  WHERE id = v_id AND public.organizer_withdrawal_requests.status IN ('pending', 'processing');
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  IF v_rows = 0 THEN
-    RETURN QUERY SELECT 'already_finalized'::text, NULL::text, NULL::text, NULL::bigint; RETURN;
-  END IF;
-  UPDATE public.organizer_wallets
-  SET balance_kobo = balance_kobo + v_amount_kobo,
-      pending_kobo = GREATEST(0, pending_kobo - v_amount_kobo),
-      updated_at = now()
-  WHERE organizer_id = v_organizer_id;
-  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
-  VALUES (auth.uid(), 'fail_payout', v_organizer_id,
-          jsonb_build_object('request_id', v_id, 'previous_status', v_status, 'amount_kobo', v_amount_kobo, 'reason', p_reason),
-          COALESCE(public.actor_role(), 'system:project_admin'));
-  RETURN QUERY SELECT 'failed'::text, u.email, u.full_name, v_amount_kobo FROM public.users u WHERE u.id = v_organizer_id;
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.admin_reject_organizer_payout(p_request_id uuid, p_reason text)
- RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path TO ''
-AS $function$
-DECLARE
-  v_organizer_id uuid; v_amount_kobo bigint;
-BEGIN
-  IF NOT public.is_admin_or_root() THEN RAISE EXCEPTION 'Super Admin access required'; END IF;
-  IF public.payouts_disabled() THEN RAISE EXCEPTION 'payouts_disabled'; END IF;
-  UPDATE public.organizer_withdrawal_requests
-  SET status = 'rejected', admin_note = p_reason, resolved_by = auth.uid(), updated_at = now()
-  WHERE id = p_request_id AND status = 'pending'
-  RETURNING organizer_id, amount_kobo INTO v_organizer_id, v_amount_kobo;
-  IF v_organizer_id IS NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM public.organizer_withdrawal_requests WHERE id = p_request_id) THEN
-      RAISE EXCEPTION 'Request not found';
-    END IF;
-    RAISE EXCEPTION 'Only pending requests can be rejected';
-  END IF;
-  UPDATE public.organizer_wallets
-  SET balance_kobo = balance_kobo + v_amount_kobo, pending_kobo = GREATEST(0, pending_kobo - v_amount_kobo), updated_at = now()
-  WHERE organizer_id = v_organizer_id;
-  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
-  VALUES (auth.uid(), 'reject_payout_request', v_organizer_id,
-          jsonb_build_object('request_id', p_request_id, 'amount_kobo', v_amount_kobo, 'reason', p_reason), public.actor_role());
-  RETURN 'rejected';
-END;
-$function$;
-
--- Live-equivalent client grants for the admin payout RPCs.
-GRANT EXECUTE ON FUNCTION public.admin_reject_organizer_payout(uuid, text) TO authenticated;
-SQL
+"${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-live-payout-extras.sql" >/dev/null
 
 echo "== Applying 0202 =="
 "${PSQL[@]}" -q -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
 pass "0202 applies on top of 0201 and the live payout functions"
+# 0203 (earnings policies) on top, so the engine is tested as it ships.
+"${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-earnings-policies.sql" >/dev/null 2>&1
+"${PSQL[@]}" -q -f "$SCRIPT_DIR/live-money-functions.sql" >/dev/null
+"${PSQL[@]}" -q -f "$MIG/0203_earnings_policies.sql" >/dev/null
+pass "0203 applies on top of 0202"
 "${PSQL[@]}" -q -c "GRANT EXECUTE ON FUNCTION public.admin_claim_payout_for_processing(uuid), public.admin_mark_payout_processing(uuid,text,text), public.admin_release_payout_claim(uuid,text), public.admin_cancel_processing_payout(uuid,text) TO authenticated;"
 
 "${PSQL[@]}" -q <<SQL
 INSERT INTO public.users (id, role, is_organizer, full_name, email) VALUES
   ('$ORG', 'user', true, 'Org One', 'org1@example.test'), ('$ORG2', 'user', true, 'Org Two', 'org2@example.test'),
-  ('$ADMIN', 'admin', false, 'Admin', 'a@example.test'), ('$SUB', 'sub-admin', false, 'Sub', 's@example.test'),
+  ('$ADMIN', 'admin', false, 'Admin', 'a@example.test'), ('$ADMIN2', 'admin', false, 'Admin Two', 'a2@example.test'), ('$SUB', 'sub-admin', false, 'Sub', 's@example.test'),
   ('$OTHER', 'user', false, 'Other', 'o@example.test');
 INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_code, account_number, account_name, recipient_code, is_active)
 VALUES ('$BANK', '$ORG', 'Test Bank', '000', '0000000001', 'ORG ONE', 'RCP_test_1', true),

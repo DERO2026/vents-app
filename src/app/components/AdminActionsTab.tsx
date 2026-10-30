@@ -64,6 +64,7 @@ function describe(r: ActionRequest): string {
     restore_deleted_event: `${who} requested to restore event “${label}”`,
     set_user_role: `${who} requested to change role of ${label} → ${r.payload?.new_role || '?'}`,
     reject_payout: `${who} requested to reject a payout`,
+    authorize_withdrawal: `${who} requested to AUTHORIZE a withdrawal of ${typeof r.payload?.amount_kobo === 'number' ? '₦' + (r.payload.amount_kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 }) : '?'} (${label})`,
     toggle_user_verified: `${who} requested to change verification of ${label}`,
     credit_vents_cents: `${who} requested to credit ${r.payload?.amount ?? '?'} VC to ${label}`,
     earn_approve_reward: `${who} requested to APPROVE a representative reward (${label})`,

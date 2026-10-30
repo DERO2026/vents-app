@@ -133,6 +133,15 @@ CREATE UNIQUE INDEX user_wallet_transactions_spend_ref_idx ON public.user_wallet
 CREATE UNIQUE INDEX user_wallet_transactions_refund_ref_idx ON public.user_wallet_transactions USING btree (reference_id) WHERE ((type = 'refund'::text) AND (reference_id IS NOT NULL));
 CREATE UNIQUE INDEX user_wallet_transactions_vc_conversion_ref_idx ON public.user_wallet_transactions USING btree (reference_id) WHERE ((type = 'vc_conversion'::text) AND (reference_id IS NOT NULL));
 
+-- Organizer (CAC) verification, as live (0002 + 0005), trimmed to the
+-- columns the reward rules read.
+CREATE TABLE public.organizer_verification_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE public.admin_action_requests (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   action_type       text NOT NULL,

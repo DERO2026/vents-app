@@ -129,6 +129,10 @@ INSERT INTO public.users (id, role, is_organizer, full_name) VALUES
   ('$REP', 'user', false, 'Rep'), ('$REP2', 'user', false, 'Rep Two'), ('$ORG', 'user', true, 'Org'),
   ('$ORG_ADMIN', 'admin', true, 'Org Admin'), ('$ADMIN_A', 'admin', false, 'Admin A'), ('$ADMIN_B', 'admin', false, 'Admin B'),
   ('$SUB', 'sub-admin', false, 'Sub'), ('$PLAIN_ORG', 'user', true, 'Plain Org'), ('$OTHER', 'user', false, 'Other');
+-- Rule 4: rewards need an approved organizer verification. Every
+-- organizer starts verified; the negative case is tested explicitly.
+INSERT INTO public.organizer_verification_requests (user_id, status)
+  SELECT id, 'approved' FROM public.users WHERE is_organizer;
 SQL
 for r in "$REP" "$REP2"; do "${PSQL[@]}" -q -c "$(as "$r" "SELECT public.register_as_recruiter('R', NULL);")" >/dev/null; done
 link() {  # link <representative> <organizer>: invite + accept, which attributes the organizer
@@ -161,7 +165,7 @@ C1=$(val "SELECT id FROM public.representative_reward_claims WHERE organizer_id 
 "${PSQL[@]}" -q -c "$(as "$ORG" "SELECT public.respond_to_representative_reward_claim('$C1', true);")" >/dev/null
 
 echo "== Checks 3/4: dual control and parties =="
-R=$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C1\"}")
+R=$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C1\",\"event_verified\":true}")
 expect_error "same admin cannot request and approve" "Cannot approve your own request" "$(approve "$ADMIN_A" "$R")"
 expect_error "sub-admin cannot be the approving admin" "Super Admin access required" "$(approve "$SUB" "$R")"
 expect_error "the representative (not an admin) cannot approve" "Super Admin access required" "$(approve "$REP" "$R")"
@@ -175,9 +179,9 @@ expect_error "an approved request cannot be approved again" "Request already app
 "${PSQL[@]}" -q -c "$(as "$REP2" "SELECT public.submit_representative_reward_claim('$ORG_ADMIN', '$E2');")" >/dev/null
 C2=$(val "SELECT id FROM public.representative_reward_claims WHERE organizer_id = '$ORG_ADMIN';")
 "${PSQL[@]}" -q -c "$(as "$ORG_ADMIN" "SELECT public.respond_to_representative_reward_claim('$C2', true);")" >/dev/null
-R2=$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C2\",\"free_event_verified\":true}")
+R2=$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C2\",\"event_verified\":true,\"free_event_verified\":true}")
 expect_error "the organizer (an admin) cannot approve a reward for their own referral" "cannot request or approve their own reward" "$(approve "$ORG_ADMIN" "$R2")"
-R2B=$(request "$ORG_ADMIN" earn_approve_reward "{\"claim_id\":\"$C2\",\"free_event_verified\":true}")
+R2B=$(request "$ORG_ADMIN" earn_approve_reward "{\"claim_id\":\"$C2\",\"event_verified\":true,\"free_event_verified\":true}")
 expect_error "the organizer (an admin) cannot request approval of it either" "cannot request or approve their own reward" "$(approve "$ADMIN_B" "$R2B")"
 
 echo "== Checks 1/2: the reward-credit gate =="

@@ -5,6 +5,7 @@ import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
+import { TICKET_BUYER_MULTIPLIER } from '../../lib/ticketFees';
 
 interface PaymentRequestDetails {
   event_title: string;
@@ -183,16 +184,18 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
 
   const isRequester = details?.viewer_is_requester === true;
 
-  // Real 5% VENTS service fee, baked server-side into amount_kobo itself
-  // (0058_ticket_payment_requests.sql: v_amount_kobo := unit_price * count *
-  // (1.05 - discount)). Reconstructing subtotal/fee here as amount/1.05 is
+  // Real 4% VENTS service fee, baked server-side into amount_kobo itself
+  // (create_pending_purchase after 0203: v_amount_kobo := unit_price * count *
+  // (1.04 - discount)). Reconstructing subtotal/fee here as amount/1.04 is
   // exact when no promo was applied; the details view doesn't expose the
-  // original discount_pct, so this can be slightly approximate for a
-  // promo'd request -- still the real formula, not an invented ratio.
+  // original discount_pct or fee model, so this is approximate for a
+  // promo'd request, and for a request created before 0203 (5% fee, which
+  // expires within 48 hours of the release). The amount charged is always
+  // the server's amount_kobo.
   const feeBreakdown = details
     ? (() => {
         const total = details.amount_kobo;
-        const subtotal = Math.round(total / 1.05);
+        const subtotal = Math.round(total / TICKET_BUYER_MULTIPLIER);
         return { subtotal, fee: total - subtotal, total };
       })()
     : null;
@@ -258,7 +261,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
             </div>
 
             {/* Fee breakdown, matching C4's subtotal/service-fee/total card
-                -- derived from the real 5% fee already baked server-side
+                -- derived from the real 4% fee already baked server-side
                 into amount_kobo (see feeBreakdown comment above). */}
             {feeBreakdown && (
               <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px', marginBottom: '16px' }}>
@@ -266,7 +269,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
                   <span>Subtotal</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatPrice(Math.round(feeBreakdown.subtotal / 100))}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', color: ventsColors.ink2 }}>
-                  <span>VENTS service fee (5%)</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatPrice(Math.round(feeBreakdown.fee / 100))}</span>
+                  <span>VENTS service fee (4%)</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatPrice(Math.round(feeBreakdown.fee / 100))}</span>
                 </div>
                 <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14.5px', padding: '4px 0' }}>

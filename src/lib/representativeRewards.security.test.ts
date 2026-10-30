@@ -156,7 +156,7 @@ describe('earnings wallet screen shows representative rewards', () => {
   });
 
   it('offers withdrawal to anyone with earnings, not only organizers and providers', () => {
-    expect(wallet).toMatch(/const hasEarnings = !!wallet && \(wallet\.total_earned_kobo > 0 \|\| wallet\.balance_kobo > 0 \|\| wallet\.pending_kobo > 0\);/);
+    expect(wallet).toMatch(/const hasEarnings = !!wallet && \(wallet\.total_earned_kobo > 0 \|\| wallet\.balance_kobo > 0 \|\| wallet\.pending_kobo > 0 \|\| \(wallet\.on_hold_kobo \?\? 0\) > 0\);/);
     expect(wallet).toMatch(/const isEarner = [^\n]*\|\| hasEarnings;/);
   });
 });
@@ -167,7 +167,7 @@ describe('CodeRabbit review of f860f5d/51d5b55', () => {
   const actions = readFileSync(join(components, 'AdminActionsTab.tsx'), 'utf8');
 
   it('a failed wallet read is reported, never replaced with a zero balance', () => {
-    expect(wallet).toMatch(/if \(wRes\.error\) \{\s*setTxnsError\([^)]*\);\s*\} else \{\s*setWallet\(wRes\.data \|\| \{ balance_kobo: 0/);
+    expect(wallet).toMatch(/if \(wRes\.error\) \{\s*setTxnsError\([^)]*\);\s*\} else \{\s*setWallet\(\(wRes\.data as WalletData \| null\) \|\| \{ balance_kobo: 0/);
   });
 
   it('linked payout accounts stay visible without an earner role', () => {
@@ -221,7 +221,9 @@ describe('retired 10% commission model: only the fixed reward is active', () => 
   it('no app or API code sends, reads or computes a commission split', () => {
     const files = [...sourceFiles(join(root, 'src')), ...sourceFiles(join(root, 'api'))];
     const offenders = files.filter((p) =>
-      /commission_split_bps|commissionSplitBps|COMMISSION_BPS|commission_rate|commission_kobo/i.test(readFileSync(p, 'utf8')));
+      // organizer_commission_kobo / ticket_fee_commission_kobo are the approved 5% VENTS ticket commission
+      // (0203), recorded on the organizer's own sale -- not a representative split.
+      /commission_split_bps|commissionSplitBps|COMMISSION_BPS|commission_rate|(?<!organizer_|ticket_fee_)commission_kobo/i.test(readFileSync(p, 'utf8')));
     expect(offenders).toEqual([]);
   });
 
