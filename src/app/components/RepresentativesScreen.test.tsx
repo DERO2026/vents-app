@@ -4,8 +4,8 @@ import { createRoot, Root } from 'react-dom/client';
 
 // VENTS Representatives frontend (migration 0193's backend, not yet
 // applied to production). These tests mock supabase entirely -- no real
-// RPC or network call happens, and no commission amount/payout UI should
-// ever render here, since that logic is intentionally not built yet.
+// RPC or network call happens. The fixed organizer reward is informational
+// only; no earnings balance or payout logic is built yet.
 
 const rpcCalls: { name: string; args: any }[] = [];
 let recruiterRowExists = false;
@@ -398,7 +398,7 @@ describe('RepresentativesScreen', () => {
     expect(container.textContent).not.toMatch(/[Cc]ommission split \(%\)/);
   });
 
-  it('sending a valid invite always calls invite_recruiter_partnership with the fixed full commission (10000 bps), never a UI-derived value', async () => {
+  it('keeps the legacy partnership RPC argument fixed and independent of user input', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -417,12 +417,13 @@ describe('RepresentativesScreen', () => {
     expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
   });
 
-  it('describes the commission arrangement as the full, fixed VENTS commission -- never "5%" or a negotiable split', async () => {
+  it('describes the fixed organizer reward without promising revenue commission', async () => {
     recruiterRowExists = false;
     await mount();
-    expect(container.textContent).toMatch(/full commission/i);
-    expect(container.textContent).not.toMatch(/5%/);
-    expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
+    expect(container.textContent).toMatch(/₦50,000/);
+    expect(container.textContent).toMatch(/eligible organizer onboarded/i);
+    expect(container.textContent).toMatch(/payout timing.*finalized/i);
+    expect(container.textContent).not.toMatch(/\b10%\b|\bcommission\b/i);
   });
 
   it('resolves the caller\'s own service_providers.id before filtering incoming provider-side invitations', async () => {
@@ -648,11 +649,14 @@ describe('RepresentativesScreen', () => {
     expect((acceptBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('never renders a commission amount, earnings total, or payout control anywhere', async () => {
+  it('shows the informational fixed reward but no earnings total or payout control', async () => {
     recruiterRowExists = true;
     await mount();
     const text = container.textContent || '';
-    expect(text).not.toMatch(/earned|payout|withdraw.*commission|\$\d/i);
+    expect(text).toMatch(/₦50,000/);
+    expect(text).toMatch(/does not create an earned balance/i);
+    expect(container.querySelectorAll('button').length).toBeGreaterThan(0);
+    expect(text).not.toMatch(/\d+ earned|earned total|withdraw.*reward/i);
   });
 
   // Mobile UI fix: the root-container color override is necessary but not
