@@ -267,7 +267,7 @@ still missing or genuinely unverified, stated explicitly either way.*
 - [ ] **Apply 0201 to production** (needs approval).
 - [x] **Reward credits go to the withdrawable earnings wallet** (decided 2026-10-30, implemented in 0201).
 - [ ] Management records the legacy 10% reconciliation through dual control. Reward approvals stay blocked until then.
-- [ ] Confirm the 7-day settlement hold and the conservative policy choices (doc, blocker 4).
+- [x] **7-day settlement hold and the policy choices confirmed** (2026-10-30): first-accepted permanent attribution, event created after attribution, month counted by the event's end date, rate set per representative. Already how 0201 behaves; no code change.
 - [ ] Turn on reward credit to the earnings wallet (`earn_settings.payouts_enabled`) through dual control, only after the items above. Withdrawals themselves already run on the existing payout switch.
 - [ ] Define VENTS Unlock, VENTS Split and VENTS Circle. No definition exists anywhere in the repo, design source or approved mockups, so nothing was built.
 

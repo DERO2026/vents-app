@@ -126,9 +126,9 @@ recognized event later takes that ticket's fee back out of the pool.
 ## Blocked or needing a decision
 
 1. ~~VENTS Wallet vs. withdrawable.~~ **Resolved 2026-10-30:** rewards go to the withdrawable earnings wallet (see "Earnings wallet integration"). Reward credit stays off until it is enabled through dual control.
-2. **Settlement hold** defaults to 7 days. Refunds can still be issued after an event, and no hold period was specified. The hold can be changed through dual control (0–120 days).
+2. ~~Settlement hold.~~ **Confirmed 2026-10-30:** 7 days (the shipped default). Refunds can still be issued after an event, which is why there is a hold. It can still be changed later through dual control (0–120 days).
 3. **Processor fees and VC reward costs** must be entered by admins at recognition. Applying 0192 and recording Paystack fees would let this be computed.
-4. **Policy choices made conservatively. Please confirm:**
+4. ~~Policy choices.~~ **Confirmed 2026-10-30**, as implemented:
    - attribution is first-accepted and permanent;
    - the event must be created after attribution;
    - the month is counted by the event's end date;
