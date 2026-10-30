@@ -42,6 +42,10 @@ import { ReferralScreen } from '../src/app/components/ReferralScreen';
 import { PromotionsScreen } from '../src/app/components/PromotionsScreen';
 import { AdminConsoleShell } from '../src/app/components/admin/AdminConsoleShell';
 import { RepresentativesScreen } from '../src/app/components/RepresentativesScreen';
+import { VentsWorkScreen } from '../src/app/components/work/VentsWorkScreen';
+import { VentsEarningsScreen } from '../src/app/components/work/VentsEarningsScreen';
+import { RepresentativeRewardsScreen } from '../src/app/components/work/RepresentativeRewardsScreen';
+import { AdminEarnScreen } from '../src/app/components/admin/AdminEarnScreen';
 import { AdminDashboard } from '../src/app/components/admin/AdminDashboard';
 import { AdminUsersList } from '../src/app/components/admin/AdminUsersList';
 import { AdminUserDetail } from '../src/app/components/admin/AdminUserDetail';
@@ -221,6 +225,24 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   notifications: () => (
     <NotificationsScreen currentUser={{ id: 'org-1' }} onBack={() => {}} />
+  ),
+  // VENTS Work (approved mockups B-D).
+  'vents-work': () => (
+    <VentsWorkScreen currentUser={{ id: 'org-1', role: 'user', isOrganizer: true, is_service_provider: false, is_verified: false }}
+      onBack={() => {}} onNavigate={() => {}} onOpenCreatorStudio={() => {}} />
+  ),
+  'vents-earnings': () => (
+    <VentsEarningsScreen currentUser={{ id: 'org-1' }} onBack={() => {}} onNavigate={() => {}} />
+  ),
+  'representative-dashboard': () => (
+    <RepresentativesScreen onBack={() => {}} currentUser={{ id: 'rep-1', role: 'user', full_name: 'Adaeze Okonkwo', username: 'adaeze' }}
+      onOpenRewards={() => {}} />
+  ),
+  'representative-rewards': () => (
+    <RepresentativeRewardsScreen currentUser={{ id: 'rep-1' }} onBack={() => {}} onNavigate={() => {}} />
+  ),
+  'admin-vents-earn': () => (
+    <div style={{ background: '#0a0810', minHeight: '100vh', padding: 16 }}><AdminEarnScreen /></div>
   ),
   'manage-provider-services': () => (
     <ManageProviderServicesScreen providerId="prov-1" accountCountry="NG" onBack={() => {}} />

@@ -109,9 +109,23 @@ const FIXTURES: Record<string, Row[]> = {
     { provider_id: 'sp-2', category: 'Beauty' },
   ],
   service_provider_ratings: [],
+  // VENTS Work / Representative dashboard: rep-1 is an active
+  // Representative with 3 accepted partners and 2 open invitations.
+  recruiters: [
+    { id: 'rep-1', display_name: 'Adaeze Okonkwo', bio: null, status: 'active', created_at: '2026-10-03T09:00:00Z' },
+  ],
   // RepresentativesScreen Invitations tab (recipient side): org-1 has one
   // pending invitation from user-3 and one it already accepted from user-4.
   recruiter_partnerships: [
+    ...['user-2', 'user-3', 'user-4'].map((org, i) => ({
+      id: `rp-rep-${i}`, recruiter_id: 'rep-1', organizer_id: `rep-org-${i}`, provider_id: null, status: 'accepted',
+      commission_split_bps: 10000, invited_at: new Date(Date.now() - (20 - i) * 86400000).toISOString(),
+      responded_at: new Date(Date.now() - (18 - i) * 86400000).toISOString(),
+    })),
+    ...[0, 1].map((i) => ({
+      id: `rp-rep-pending-${i}`, recruiter_id: 'rep-1', organizer_id: `rep-invitee-${i}`, provider_id: null, status: 'pending',
+      commission_split_bps: 10000, invited_at: new Date(Date.now() - i * 3600000).toISOString(), responded_at: null,
+    })),
     {
       id: 'rp-pending', recruiter_id: 'user-3', organizer_id: 'org-1', provider_id: null, status: 'pending',
       commission_split_bps: 10000, invited_at: new Date(Date.now() - 2 * 3600000).toISOString(), responded_at: null,
@@ -440,6 +454,51 @@ const RPC_FIXTURES: Record<string, any> = {
   ],
   // ── Admin Console dashboard/event-detail RPCs ───────────────────────────
   admin_get_vc_aggregates: [{ circulation: 128400 }],
+  // VENTS Work / VENTS Earn (QA fixture values, mockup-sized).
+  get_my_vc_balance: { spendable: 1250, expired_this_call: 0 },
+  vc_tier_and_multiplier_for_user: [{ tier: 'Silver', lifetime_earned: 4900, multiplier: 1.1 }],
+  get_my_wallet: [{ balance_kobo: 320000 }],
+  get_my_referral_confirmations: [
+    { id: 'claim-confirm-1', status: 'pending_organizer', created_at: new Date().toISOString(), representative_name: 'Adaeze Okonkwo', event_title: 'Lagos Music Festival' },
+  ],
+  get_my_representative_rewards: {
+    representative: { id: 'rep-1', status: 'active', created_at: '2026-10-03T09:00:00Z', display_name: 'Adaeze Okonkwo' },
+    payouts_enabled: false, programme_open: true, current_month: '2026-10-01', current_rate_kobo: 5000000,
+    base_reward_kobo: 5000000, rate_review_threshold: 9, qualifying_this_month: 2, qualifying_last_month: 0,
+    funding_available: false,
+    attributions: [
+      { organizer_id: 'user-3', organizer_name: 'Tobi Oyelaran', organizer_username: 'tobi.o', attributed_at: '2026-10-05T09:00:00Z',
+        events: [{ event_id: 'evt-x1', title: 'Abuja Comedy Night', eligibility: { eligible: true, reasons: [], is_free_event: false } }] },
+      { organizer_id: 'user-2', organizer_name: 'Priya Nair', organizer_username: 'priya.n', attributed_at: '2026-10-08T09:00:00Z',
+        events: [{ event_id: 'evt-x2', title: 'Lekki Art Walk', eligibility: { eligible: false, reasons: ['settlement_hold'] } }] },
+      { organizer_id: 'user-4', organizer_name: 'Ada Chukwu', organizer_username: 'ada.chukwu', attributed_at: '2026-10-09T09:00:00Z', events: [] },
+    ],
+    claims: [
+      { id: 'cl-1', organizer_id: 'user-9', organizer_name: 'Kemi Adeyemi', event_id: 'evt-y1', event_title: 'Ikoyi Jazz Brunch', status: 'approved', amount_kobo: 5000000, reward_month: '2026-10-01', created_at: '2026-10-20T09:00:00Z', decision_reason: null, credited_at: null },
+      { id: 'cl-2', organizer_id: 'user-8', organizer_name: 'Femi Bello', event_id: 'evt-y2', event_title: 'Yaba Tech Fair', status: 'pending_review', amount_kobo: 5000000, reward_month: '2026-10-01', created_at: '2026-10-24T09:00:00Z', decision_reason: null, credited_at: null },
+    ],
+    expenses: [
+      { id: 'ex-1', category: 'transport', amount_kobo: 250000, description: 'Bus to Ikeja meeting', incurred_on: '2026-10-21', status: 'submitted', decision_reason: null, created_at: '2026-10-21T09:00:00Z' },
+    ],
+  },
+  admin_get_vents_earn_overview: {
+    settings: { payouts_enabled: false, legacy_commission_reconciled: false, settlement_hold_days: 7, base_reward_kobo: 5000000 },
+    pool: { available_kobo: 0, reserved_kobo: 0, credited_kobo: 0 },
+    claims: [
+      { id: 'cl-2', status: 'pending_review', amount_kobo: 5000000, reward_month: '2026-10-01', is_free_event: false, free_event_verified: false, representative_id: 'rep-1', representative_name: 'Adaeze Okonkwo', organizer_id: 'user-8', organizer_name: 'Femi Bello', event_id: 'evt-y2', event_title: 'Yaba Tech Fair', created_at: '2026-10-24T09:00:00Z', decision_reason: null },
+    ],
+    attributions: [
+      { id: 'at-1', representative_id: 'rep-1', representative_name: 'Adaeze Okonkwo', organizer_id: 'user-3', organizer_name: 'Tobi Oyelaran', attributed_at: '2026-10-05T09:00:00Z', organizer_had_events_before: false },
+    ],
+    expenses: [
+      { id: 'ex-1', representative_id: 'rep-1', representative_name: 'Adaeze Okonkwo', category: 'transport', amount_kobo: 250000, description: 'Bus to Ikeja meeting', incurred_on: '2026-10-21', status: 'submitted', created_at: '2026-10-21T09:00:00Z' },
+    ],
+    monthly_counts: [{ representative_id: 'rep-1', month: '2026-10-01', count: 2 }],
+    recognitions: [],
+    audit: [
+      { id: 'au-1', entity_type: 'settings', entity_id: null, action: 'legacy_commission_snapshot', actor_id: null, subject_user_id: null, details: {}, created_at: '2026-10-30T09:00:00Z' },
+    ],
+  },
   // Real shape: a bare scalar (Number(data)), not an array/object.
   admin_pending_request_count: 3,
   admin_get_verification_stats: [{ pending_count: 2 }],

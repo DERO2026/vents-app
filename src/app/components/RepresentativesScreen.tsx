@@ -993,21 +993,22 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
           </div>
         )}
 
+        {/* Tabs styled as approved mockup D (.tabs): compact, no icons. */}
         <nav
+          role="tablist"
           style={{
             display: 'flex',
-            gap: ventsSpacing.unit[1],
+            gap: 6,
             background: ventsColors.surface,
-            border: `1px solid ${ventsColors.border}`,
-            borderRadius: ventsRadii.md,
+            borderRadius: 12,
             padding: 4,
             marginBottom: ventsSpacing.unit[3],
           }}
         >
           {([
-            { id: 'find' as const, label: 'Find', icon: <Search size={16} /> },
-            { id: 'invitations' as const, label: 'Invitations', icon: <UserPlus size={16} /> },
-            { id: 'team' as const, label: 'My Team', icon: <Users size={16} /> },
+            { id: 'find' as const, label: 'Find' },
+            { id: 'invitations' as const, label: 'Invitations' },
+            { id: 'team' as const, label: 'My Team' },
           ]).map((t) => (
             <button
               key={t.id}
@@ -1016,24 +1017,20 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
               onClick={() => setTab(t.id)}
               style={{
                 flex: 1,
-                minHeight: ventsSpacing.minTouchTarget,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
+                minHeight: 36,
+                padding: '6px 4px',
                 border: 'none',
-                borderRadius: ventsRadii.sm,
+                borderRadius: 9,
                 background: tab === t.id ? ventsColors.accentStrong : 'transparent',
                 color: tab === t.id ? ventsColors.white : ventsColors.ink2,
                 fontFamily: ventsTypography.fontBody,
-                ...ventsTypography.caption,
-                fontWeight: tab === t.id ? 800 : 600,
+                fontSize: 11,
+                fontWeight: 700,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
-                boxShadow: tab === t.id ? '0 6px 16px -6px rgba(142,92,247,0.7)' : 'none',
               }}
             >
-              {t.icon} {t.label}
+              {t.label}
             </button>
           ))}
         </nav>

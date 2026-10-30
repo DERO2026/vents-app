@@ -19,6 +19,7 @@ export const workPage: CSSProperties = {
   background: ventsColors.bg,
   color: ventsColors.ink1,
   fontFamily: ventsTypography.fontBody,
+  lineHeight: 1.6,
   overflowX: 'hidden',
 };
 
@@ -28,7 +29,7 @@ export const workScroll: CSSProperties = {
   overflowY: 'auto',
   overscrollBehavior: 'contain',
   WebkitOverflowScrolling: 'touch',
-  padding: '0 12px calc(110px + env(safe-area-inset-bottom))',
+  padding: '10px 12px calc(110px + env(safe-area-inset-bottom))',
   display: 'grid',
   gap: 10,
   alignContent: 'start',
@@ -45,8 +46,9 @@ export function WorkBar({ title, sub, onBack, right }: { title: string; sub?: st
       >
         <span aria-hidden style={{ width: 28, height: 28, borderRadius: '50%', background: ventsColors.elevated, display: 'grid', placeItems: 'center', color: ventsColors.ink2, fontSize: 14 }}>‹</span>
       </button>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <h1 style={{ margin: 0, fontWeight: 800, fontSize: 15, color: ventsColors.ink1 }}>{title}</h1>
+      {/* Not flex: 1 -- in the mockup a status pill sits right after the title. */}
+      <div style={{ minWidth: 0 }}>
+        <h1 style={{ margin: 0, fontWeight: 800, fontSize: 15, lineHeight: 1.6, color: ventsColors.ink1 }}>{title}</h1>
         {sub && <div style={{ fontSize: 11, color: ventsColors.ink3 }}>{sub}</div>}
       </div>
       {right}
