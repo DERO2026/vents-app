@@ -739,6 +739,28 @@ async function handleWebhook(req, res, rawBody: Buffer) {
     }
   }
 
+  // ── Payment disputes (chargebacks) ─────────────────────────────────────
+  // 0203: a dispute on a ticket or booking payment freezes that sale's held
+  // earnings (an admin hold, never lifted automatically) so they cannot be
+  // withdrawn while Paystack decides. Already-released earnings are logged
+  // for an admin instead. Idempotent per dispute id; resolutions are left to
+  // an admin (admin_set_earnings_hold), who sees the outcome in Paystack.
+  if (event?.event === 'charge.dispute.create' || event?.event === 'charge.dispute.remind') {
+    const disputedReference = event.data?.transaction?.reference;
+    const disputeId = event.data?.id != null ? String(event.data.id) : null;
+    if (!disputedReference) {
+      console.error('[Paystack webhook] dispute event missing transaction.reference', event.data?.id);
+      return res.status(200).json({ received: true });
+    }
+    try {
+      const status = await callProjectAdminRpc<string>('place_payment_dispute_hold', [disputedReference, disputeId]);
+      console.log(`[Paystack webhook] ${event.event} -> place_payment_dispute_hold:`, status, 'for', disputedReference);
+    } catch (err: any) {
+      console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
+      hadTransientFailure = true;
+    }
+  }
+
   // ── Organizer payout transfer status ──────────────────────────────────
   // This is the authoritative completion signal for a payout -- the
   // synchronous /transfer response only means "accepted for processing",

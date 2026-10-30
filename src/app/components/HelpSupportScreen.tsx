@@ -42,7 +42,7 @@ const FAQS = [
   },
   {
     q: 'How do organisers withdraw their earnings?',
-    a: 'Go to your Organiser Dashboard → Wallet → Withdraw. Enter your bank details and the amount. Withdrawals are processed within 1–3 business days. Minimum withdrawal is ₦1,000.',
+    a: 'Go to your Organiser Dashboard → Wallet → Withdraw. Enter your bank details and the amount. Ticket earnings become withdrawable 48 hours after your event ends (service earnings 48 hours after the booking is completed). Each withdrawal is approved by two VENTS admins, then usually arrives within 1–3 business days. Minimum withdrawal is ₦100.',
   },
   {
     q: 'How do I delete my account?',

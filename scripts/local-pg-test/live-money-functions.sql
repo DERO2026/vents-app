@@ -1699,4 +1699,63 @@ BEGIN
 END;
 $function$;
 
+-- complete_service_booking (not patched by 0203; md5 dd7b87dce8f49459baac1e6c2d06e98d = production).
+-- 0203 stamps completed_at by trigger on its status update.
+CREATE OR REPLACE FUNCTION public.complete_service_booking(p_booking_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_booking record;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  SELECT b.id, b.customer_id, b.status, b.payment_status, sp.user_id AS provider_user_id
+    INTO v_booking
+    FROM public.service_bookings b
+    JOIN public.service_providers sp ON sp.id = b.provider_id
+   WHERE b.id = p_booking_id
+   FOR UPDATE OF b;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Booking not found';
+  END IF;
+
+  IF v_booking.provider_user_id IS DISTINCT FROM auth.uid()
+     AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Only the service provider or an admin can mark this booking complete';
+  END IF;
+
+  IF v_booking.status = 'completed' THEN
+    RETURN jsonb_build_object('status', 'already_completed', 'booking_id', v_booking.id);
+  END IF;
+
+  IF v_booking.payment_status <> 'paid' THEN
+    RAISE EXCEPTION 'Only a paid booking can be marked complete (current payment status: %)', v_booking.payment_status;
+  END IF;
+
+  IF v_booking.status <> 'confirmed' THEN
+    RAISE EXCEPTION 'Only a confirmed booking can be marked complete (current status: %)', v_booking.status;
+  END IF;
+
+  UPDATE public.service_bookings
+     SET status = 'completed', updated_at = now()
+   WHERE id = v_booking.id;
+
+  INSERT INTO public.notifications (user_id, type, title, body)
+  VALUES (v_booking.customer_id, 'booking', 'Booking completed',
+          'Your service booking has been marked complete by the provider. You can now leave a review.');
+
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), 'complete_service_booking', v_booking.customer_id,
+          jsonb_build_object('booking_id', v_booking.id), public.actor_role());
+
+  RETURN jsonb_build_object('status', 'completed', 'booking_id', v_booking.id);
+END;
+$function$;
+
 RESET check_function_bodies;

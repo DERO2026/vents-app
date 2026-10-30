@@ -3,8 +3,11 @@
 #
 #   rule 5  tickets: buyer pays face + 4%, organizer is settled face - 5%;
 #           rows from before 0203 keep the legacy 5% buyer-fee arithmetic;
-#   rule 2  organizer / provider earnings are held 7 days, then released
-#           (idempotently, under concurrency);
+#   rule 2  ticket earnings become withdrawable exactly 48 hours after the
+#           event ends, provider earnings 48 hours after the booking is
+#           completed; pending refunds, deleted/hidden events, cancelled
+#           bookings, admin holds and Paystack disputes block the release;
+#           release is idempotent, concurrent-safe and timezone-safe;
 #   rule 1  a refund the wallet cannot cover becomes a recorded receivable,
 #           recovered from later earnings; never a negative balance;
 #   rule 3  a withdrawal needs two different admins, neither the organizer,
@@ -58,6 +61,13 @@ ADMIN_A="00000000-0000-0000-0000-0000000003c1"
 ADMIN_B="00000000-0000-0000-0000-0000000003c2"
 SUB="00000000-0000-0000-0000-0000000003c3"
 EVENT="00000000-0000-0000-0000-0000000003e1"
+E_R2="00000000-0000-0000-0000-0000000003e3"
+E_PROMO="00000000-0000-0000-0000-0000000003e4"
+E_W1="00000000-0000-0000-0000-0000000003e5"
+E_S2="00000000-0000-0000-0000-0000000003e6"
+E_B1="00000000-0000-0000-0000-0000000003e7"
+E_B2="00000000-0000-0000-0000-0000000003e8"
+ORG3="00000000-0000-0000-0000-0000000003a4"
 EVENT2="00000000-0000-0000-0000-0000000003e2"
 BANK="00000000-0000-0000-0000-0000000003d1"
 BANK_OA="00000000-0000-0000-0000-0000000003d2"
@@ -90,7 +100,21 @@ confirm() {
   val "SELECT public.confirm_ticket_payment('$1', $2);"
 }
 hold_of() { val "SELECT amount_kobo || '/' || refunded_kobo || '/' || released_kobo FROM public.earnings_holds WHERE source_key = '$1';"; }
-mature() { "${PSQL[@]}" -q -c "UPDATE public.earnings_holds SET release_at = now() - interval '1 second' WHERE source_key = '$1';"; }
+# Time travel for an event (test-only owner write): it ended <ago> ago, and
+# its sales were made before that end (default: just over 48 hours ago).
+end_event() {
+  local ago="${2:-48 hours 1 minute}"
+  "${PSQL[@]}" -q -c "UPDATE public.events SET event_date = now() - interval '$ago' - interval '3 hours', end_date = now() - interval '$ago' WHERE id = '$1';
+    UPDATE public.earnings_holds SET event_end_at_sale = now() - interval '$ago' WHERE event_id = '$1';"
+}
+# Time travel for a completed booking: completed <ago> ago (the stamp is
+# trigger-protected, so the test disables it for this one write).
+complete_ago() {
+  "${PSQL[@]}" -q -c "ALTER TABLE public.service_bookings DISABLE TRIGGER service_bookings_stamp_completion;
+    UPDATE public.service_bookings SET completed_at = now() - interval '${2:-48 hours 1 minute}' WHERE id = '$1';
+    ALTER TABLE public.service_bookings ENABLE TRIGGER service_bookings_stamp_completion;"
+}
+blockers() { val "SELECT string_agg(b, ',' ORDER BY b) FROM public.earnings_holds h, jsonb_array_elements_text(public.earnings_hold_state(h.id)->'blockers') b WHERE h.source_key = '$1';"; }
 settle() { val "$(as "$1" "SELECT public.settle_my_earnings()::text;")"; }
 first_ticket() { val "SELECT id FROM public.tickets WHERE payment_ref = '$1' ORDER BY id LIMIT 1;"; }
 request_admin() { val "$(as "$1" "SELECT public.request_admin_action('$2', 'withdrawal', '$3', 'test', '$4'::jsonb)->>'id';")"; }
@@ -112,15 +136,21 @@ done
 "${PSQL[@]}" -q <<SQL
 GRANT EXECUTE ON FUNCTION public.create_pending_purchase(uuid,text,jsonb,text,text), public.confirm_ticket_payment_via_wallet(text),
   public.refund_ticket(uuid,text), public.cancel_service_booking(uuid,text), public.get_event_analytics(uuid),
-  public.admin_claim_payout_for_processing(uuid) TO authenticated;
+  public.admin_claim_payout_for_processing(uuid), public.complete_service_booking(uuid) TO authenticated;
 INSERT INTO public.users (id, role, is_organizer, full_name, email) VALUES
   ('$ORG', 'user', true, 'Org', 'org@example.test'), ('$ORG_ADMIN', 'admin', true, 'Org Admin', 'oa@example.test'),
   ('$PROV', 'user', false, 'Provider', 'p@example.test'),
   ('$BUYER', 'user', false, 'Buyer', 'b@example.test'), ('$BUYER2', 'user', false, 'Buyer Two', 'b2@example.test'),
   ('$ADMIN_A', 'admin', false, 'Admin A', 'aa@example.test'), ('$ADMIN_B', 'admin', false, 'Admin B', 'ab@example.test'),
-  ('$SUB', 'sub-admin', false, 'Sub', 's@example.test');
+  ('$SUB', 'sub-admin', false, 'Sub', 's@example.test'), ('$ORG3', 'user', true, 'Org Three', 'o3@example.test');
 INSERT INTO public.events (id, organizer_id, title, event_date, status, ticket_types) VALUES
   ('$EVENT', '$ORG', 'Concert', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_R2', '$ORG', 'Concert night 2', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_PROMO', '$ORG', 'Promo night', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_W1', '$ORG', 'Wallet night', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_S2', '$ORG', 'Second season', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_B1', '$ORG3', 'Blockers 1', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
+  ('$E_B2', '$ORG3', 'Blockers 2', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 10000}]'),
   ('$EVENT2', '$ORG_ADMIN', 'Admin gig', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 5000}]');
 INSERT INTO public.promo_codes (code, discount_percentage) VALUES ('TEN', 10);
 INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_code, account_number, account_name, recipient_code, is_active) VALUES
@@ -165,7 +195,7 @@ expect_error "a drifted live function is refused, not patched" "differs from the
   "$(printf '%s\n' "$DRIFT_SQL" | sed "s/public.refund_ticket(uuid,text)/public.drift_probe()/")"
 
 echo "== Rule 5: 4% attendee fee + 5% organizer commission =="
-R2=$(buy "$BUYER2" "$EVENT" 2)
+R2=$(buy "$BUYER2" "$E_R2" 2)
 expect_value "checkout charges face + 4% (2 x ₦10,000 -> ₦20,800)" "$(amount_of "$R2")" "2080000"
 expect_value "the new pending purchase is v2_4_5" "$(val "SELECT fee_model FROM public.pending_purchases WHERE payment_ref = '$R2';")" "v2_4_5"
 expect_value "underpayment by 1 kobo is refused" "$(confirm "$R2" 2079999)" "amount_mismatch:2080000:2079999"
@@ -179,13 +209,13 @@ expect_value "ledger credit records gross, buyer fee, commission, net and model"
 expect_value "buyer paid = organizer net + VENTS fee + VENTS commission (no double charge)" "$((1900000 + 80000 + 100000))" "2080000"
 expect_value "duplicate webhook: already_paid, no second credit, no second hold" \
   "$(confirm "$R2" 2080000)/$(val "SELECT count(*) FROM public.organizer_transactions WHERE type = 'credit' AND organizer_id = '$ORG';")/$(val "SELECT count(*) FROM public.earnings_holds WHERE source_key = '$R2';")" "already_paid/2/1"
-expect_value "the hold releases 7 days after confirmation" \
-  "$(val "SELECT (release_at - created_at = interval '7 days')::text FROM public.earnings_holds WHERE source_key = '$R2';")" "true"
+expect_value "the hold waits for the event: with no end_date the end is event_date + 24h (event_effective_end_at), release 48h later" \
+  "$(val "SELECT ((public.earnings_hold_state(id)->>'release_at')::timestamptz - (SELECT event_date FROM public.events WHERE id = '$E_R2') = interval '72 hours')::text FROM public.earnings_holds WHERE source_key = '$R2';")" "true"
 expect_value "a legacy purchase confirmed after 0203 still charges 5%" "$(confirm "$LEG_OPEN" 1040000)" "amount_mismatch:1050000:1040000"
 expect_value "and credits the full face (no commission on legacy), on hold" \
   "$(confirm "$LEG_OPEN" 1050000)/$(val "SELECT amount_kobo || '/' || (metadata->>'organizer_commission_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$LEG_OPEN")';")" \
   "confirmed/1000000/0/legacy_5"
-PROMO=$(buy "$BUYER" "$EVENT" 1 "'ten'")
+PROMO=$(buy "$BUYER" "$E_PROMO" 1 "'ten'")
 expect_value "a 10% promo discounts the face value, fee rate unchanged (₦10,000 x (1.04 - 0.10))" "$(amount_of "$PROMO")" "940000"
 expect_value "with a promo the organizer is still settled face - 5% (VENTS funds the discount)" \
   "$(confirm "$PROMO" 940000)/$(val "SELECT amount_kobo FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$PROMO")';")" "confirmed/950000"
@@ -199,7 +229,7 @@ expect_value "a 30-minute-old legacy pending purchase is not reused for a new v2
 
 echo "== Rule 5: VENTS Wallet checkout and refunds =="
 "${PSQL[@]}" -q -c "INSERT INTO public.user_wallets (user_id, balance_kobo) VALUES ('$BUYER', 1040000);"
-W1=$(buy "$BUYER" "$EVENT" 1)
+W1=$(buy "$BUYER" "$E_W1" 1)
 expect_value "wallet checkout debits face + 4% exactly" \
   "$(val "$(as "$BUYER" "SELECT public.confirm_ticket_payment_via_wallet('$W1');")")/$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$BUYER';")" "confirmed/0"
 W1T=$(first_ticket "$W1")
@@ -215,18 +245,20 @@ expect_value "a legacy Paystack refund still returns face + 5%" \
 expect_value "its finalization debits the legacy owed amount (full face) from the available balance" \
   "$(val "SELECT status FROM public.finalize_ticket_refund('RF_leg');")/$(wallet "$ORG")" "finalized/0/0/3850000"
 expect_value "duplicate refund webhook does nothing" "$(val "SELECT status FROM public.finalize_ticket_refund('RF_leg');")/$(wallet "$ORG")" "already_refunded/0/0/3850000"
-expect_value "event analytics: organizer earned = gross - commission (₦40,000 gross; 3 v2 tickets x ₦500)" \
-  "$(val "$(as "$ORG" "SELECT (public.get_event_analytics('$EVENT')->'overview'->>'organizerEarnedKobo') || '/' || (public.get_event_analytics('$EVENT')->'overview'->>'ventsCommissionKobo');")")" "3850000/150000"
+expect_value "event analytics: organizer earned = gross - commission (₦20,000 gross, 2 x ₦500)" \
+  "$(val "$(as "$ORG" "SELECT (public.get_event_analytics('$E_R2')->'overview'->>'organizerEarnedKobo') || '/' || (public.get_event_analytics('$E_R2')->'overview'->>'ventsCommissionKobo');")")" "1900000/100000"
 
-echo "== Rule 2: 7-day settlement hold =="
+echo "== Rule 2: release 48 hours after the event ends =="
 expect_error "held earnings cannot be withdrawn" "Insufficient balance" \
   "$(as "$ORG" "SELECT public.request_organizer_payout(1, '$BANK', 'early');")"
-expect_value "settling before maturity releases nothing" "$(settle "$ORG")" '{"released_kobo": 0, "recovered_kobo": 0}'
-mature "$R2"
+expect_value "settling before the event has ended releases nothing" "$(settle "$ORG")/$(blockers "$R2")" '{"released_kobo": 0, "recovered_kobo": 0}/not_yet'
+end_event "$E_R2" "47 hours 59 minutes"
+expect_value "47h59m after the end: still held" "$(settle "$ORG")/$(blockers "$R2")" '{"released_kobo": 0, "recovered_kobo": 0}/not_yet'
+end_event "$E_R2"
 expect_value "a matured hold is released once" "$(settle "$ORG")/$(settle "$ORG")" \
   '{"released_kobo": 1900000, "recovered_kobo": 0}/{"released_kobo": 0, "recovered_kobo": 0}'
 expect_value "released earnings are available" "$(wallet "$ORG")/$(hold_of "$R2")" "1900000/0/1950000/0/0/1900000"
-mature "$LEG_OPEN"
+end_event "$EVENT"
 # Two concurrent settlements of the same wallet: the row lock serializes
 # them and the second finds nothing to release.
 ( "${PSQL[@]}" -tA -c "BEGIN; SET LOCAL test.uid='$ORG'; SELECT public.settle_my_earnings(); SELECT pg_sleep(1); COMMIT;" >"$TMP/c1" 2>&1 & )
@@ -234,14 +266,72 @@ sleep 0.3
 "${PSQL[@]}" -tA -c "SET test.uid='$ORG'; SELECT public.settle_my_earnings();" >"$TMP/c2" 2>&1; sleep 1
 expect_value "concurrent settlements release a hold exactly once" \
   "$(grep -c '"released_kobo": 1000000' "$TMP/c1" "$TMP/c2" | awk -F: '{s+=$2} END {print s}')/$(wallet "$ORG")" "1/2900000/0/950000"
-mature "$PROMO"
+end_event "$E_PROMO"
 expect_value "the cron release settles every matured wallet (server only)" \
   "$(val "SELECT public.release_matured_earnings()->>'released_kobo';")/$(wallet "$ORG")" "950000/3850000/0/0"
 expect_error "a client cannot call the cron release" "permission denied" "$(as "$ORG" "SELECT public.release_matured_earnings();")"
 expect_error "a client cannot settle someone else's wallet" "permission denied" "$(as "$BUYER" "SELECT public.settle_earnings('$ORG');")"
-expect_error "a client cannot write holds" "permission denied" "$(as "$ORG" "UPDATE public.earnings_holds SET release_at = now();")"
+expect_error "a client cannot write holds" "permission denied" "$(as "$ORG" "UPDATE public.earnings_holds SET admin_hold_at = NULL;")"
 expect_value "an organizer sees only their own holds" "$(val "$(as "$BUYER" "SELECT count(*) FROM public.earnings_holds;")")" "0"
 expect_value "after release every wallet reconciles" "$(reconciled)" "0"
+expect_value "each release records the rule and times it used" \
+  "$(val "SELECT (release_basis->>'rule') || '/' || (release_basis->'blockers')::text || '/' || ((release_basis->>'release_at')::timestamptz <= released_at)::text FROM public.earnings_holds WHERE source_key = '$R2';")" \
+  'event_end_plus_48h/[]/true'
+
+echo "== Rule 2: what blocks a release =="
+B1=$(buy "$BUYER" "$E_B1" 1); confirm "$B1" 1040000 >/dev/null
+B1X=$(buy "$BUYER2" "$E_B1" 1); confirm "$B1X" 1040000 >/dev/null
+B2=$(buy "$BUYER" "$E_B2" 1); confirm "$B2" 1040000 >/dev/null
+end_event "$E_B1"
+"${PSQL[@]}" -q -c "$(as "$ORG3" "SELECT public.refund_ticket('$(first_ticket "$B1X")', 'duplicate order');")" >/dev/null
+expect_value "a pending refund on the event blocks the release of its other sales" "$(blockers "$B1")/$(settle "$ORG3")" \
+  'refund_pending/{"released_kobo": 0, "recovered_kobo": 0}'
+"${PSQL[@]}" -q -c "UPDATE public.tickets SET refund_id = 'RF_b1x' WHERE id = '$(first_ticket "$B1X")';"
+"${PSQL[@]}" -q -c "SELECT public.finalize_ticket_refund('RF_b1x');" >/dev/null
+expect_value "once the refund completes, the sale releases" "$(blockers "$B1")/$(settle "$ORG3")" \
+  '/{"released_kobo": 950000, "recovered_kobo": 0}'
+end_event "$E_B2"
+expect_value "after its end + 48h, a sale has no blockers" "$(blockers "$B2")" ""
+"${PSQL[@]}" -q -c "UPDATE public.events SET end_date = now() + interval '1 day' WHERE id = '$E_B2';"
+expect_value "postponing the event delays the release" "$(blockers "$B2")" "not_yet"
+"${PSQL[@]}" -q -c "UPDATE public.events SET event_date = now() - interval '10 days', end_date = now() - interval '9 days' WHERE id = '$E_B2';
+  UPDATE public.earnings_holds SET event_end_at_sale = now() + interval '1 hour' WHERE source_key = '$B2';"
+expect_value "moving the event earlier than the end recorded at the sale does not hasten it" "$(blockers "$B2")" "not_yet"
+end_event "$E_B2"
+"${PSQL[@]}" -q -c "UPDATE public.events SET hidden_by_admin = true WHERE id = '$E_B2';"
+expect_value "an event hidden by an admin blocks the release" "$(blockers "$B2")" "event_hidden_by_admin"
+"${PSQL[@]}" -q -c "UPDATE public.events SET hidden_by_admin = false, deleted_at = now() WHERE id = '$E_B2';"
+expect_value "a deleted event blocks the release" "$(blockers "$B2")" "event_deleted"
+"${PSQL[@]}" -q -c "UPDATE public.events SET deleted_at = NULL WHERE id = '$E_B2';"
+HB2=$(val "SELECT id FROM public.earnings_holds WHERE source_key = '$B2';")
+expect_value "a Paystack dispute freezes the sale's held earnings (idempotent)" \
+  "$(val "SELECT public.place_payment_dispute_hold('$B2', 'DSP_1');")/$(val "SELECT public.place_payment_dispute_hold('$B2', 'DSP_1');")/$(blockers "$B2")" "held/already_held/payment_dispute"
+expect_value "the cron does not release disputed earnings" "$(val "SELECT public.release_matured_earnings()->>'released_kobo';")/$(wallet "$ORG3")" "0/950000/0/950000"
+expect_error "a sub-admin cannot lift a hold" "Super Admin access required" "$(as "$SUB" "SELECT public.admin_set_earnings_hold('$HB2', false, 'x');")"
+expect_error "a hold cannot be lifted without a reason" "A reason is required" "$(as "$ADMIN_B" "SELECT public.admin_set_earnings_hold('$HB2', false, ' ');")"
+expect_error "the organizer cannot lift a hold on their own earnings" "Super Admin access required" "$(as "$ORG3" "SELECT public.admin_set_earnings_hold('$HB2', false, 'mine');")"
+expect_ok "a super admin lifts it after review" "$(as "$ADMIN_B" "SELECT public.admin_set_earnings_hold('$HB2', false, 'Dispute resolved in our favour');")"
+expect_value "the lift is audited with the dispute it cleared" \
+  "$(val "SELECT (details->>'dispute_reference') || '/' || (admin_id = '$ADMIN_B')::text FROM public.admin_logs WHERE action = 'earnings_hold_lifted' AND details->>'hold_id' = '$HB2';")" "DSP_1/true"
+expect_ok "any admin can place a hold" "$(as "$SUB" "SELECT public.admin_set_earnings_hold('$HB2', true, 'Attendee complaint under review');")"
+expect_value "an admin hold blocks the release" "$(blockers "$B2")/$(settle "$ORG3")" 'admin_hold/{"released_kobo": 0, "recovered_kobo": 0}'
+"${PSQL[@]}" -q -c "$(as "$ADMIN_A" "SELECT public.admin_set_earnings_hold('$HB2', false, 'Complaint closed');")" >/dev/null
+expect_value "lifted, the cron releases it" "$(val "SELECT public.release_matured_earnings()->>'released_kobo';")/$(wallet "$ORG3")" "950000/1900000/0/0"
+expect_value "a dispute after release is logged for admins, not silently ignored" \
+  "$(val "SELECT public.place_payment_dispute_hold('$B2', 'DSP_2');")/$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'payment_dispute_after_release';")" "already_released/1"
+expect_value "the client listing shows release times and blockers, own wallet only" \
+  "$(val "$(as "$ORG" "SELECT count(*) FROM public.get_earnings_holds();")")" "0"
+expect_error "an organizer cannot list someone else's holds" "Not authorized" "$(as "$ORG" "SELECT * FROM public.get_earnings_holds('$ORG3');")"
+
+expect_value "representative rewards keep their separate 7-day hold (0201), untouched by 0203" \
+  "$(val "SELECT settlement_hold_days FROM public.earn_settings;")/$(val "SELECT (prosrc LIKE '%settlement_hold_days%')::text FROM pg_proc WHERE proname = 'earn_event_eligibility';")" "7/true"
+echo "== Rule 2: timezone and DST safety =="
+# 2026-11-01 01:30 EDT is 25 hours before a fall-back; '2 days' would be 49h there.
+TZ_SQL="SET TimeZone = 'America/New_York'; SELECT extract(epoch FROM ('2026-10-31 02:00-04'::timestamptz + public.earnings_release_delay()) - '2026-10-31 02:00-04'::timestamptz)::int || '/' || extract(epoch FROM ('2026-10-31 02:00-04'::timestamptz + interval '2 days') - '2026-10-31 02:00-04'::timestamptz)::int;"
+expect_value "the delay is exactly 172800 s across a DST change ('2 days' would not be)" "$(val "$TZ_SQL")" "172800/176400"
+TZ_A=$(val "SET TimeZone = 'Africa/Lagos'; SELECT extract(epoch FROM (public.earnings_hold_state(id)->>'release_at')::timestamptz) FROM public.earnings_holds WHERE source_key = '$W1';")
+TZ_B=$(val "SET TimeZone = 'Pacific/Auckland'; SELECT extract(epoch FROM (public.earnings_hold_state(id)->>'release_at')::timestamptz) FROM public.earnings_holds WHERE source_key = '$W1';")
+expect_value "the release instant is identical whatever the session timezone (Lagos vs Auckland)" "$([ -n "$TZ_A" ] && [ "$TZ_A" = "$TZ_B" ] && echo same)" "same"
 
 echo "== Rule 1: refund shortfall recovered from future earnings =="
 WD=$(val "$(as "$ORG" "SELECT public.request_organizer_payout(3850000, '$BANK', 'all');")")
@@ -257,10 +347,10 @@ expect_value "the admin log links the shortfall to its recovery" \
   "$(val "SELECT (details->>'shortfall_kobo') || '/' || (details->>'recovery_id' = (SELECT id::text FROM public.earnings_recoveries WHERE source_key = '$R2T'))::text FROM public.admin_logs WHERE action = 'refund_wallet_shortfall' AND details->>'ticket_id' = '$R2T';")" "950000/true"
 expect_value "the receivable is reported (not a ledger gap)" \
   "$(reconciled)/$(val "$(as "$ADMIN_A" "SELECT outstanding_recovery_kobo FROM public.admin_earnings_reconciliation() WHERE organizer_id = '$ORG';")")" "0/950000"
-S2=$(buy "$BUYER" "$EVENT" 1)
+S2=$(buy "$BUYER" "$E_S2" 1)
 confirm "$S2" 1040000 >/dev/null
 expect_value "new earnings are held; the debt is not taken from a hold early" "$(wallet "$ORG")" "0/3850000/950000"
-mature "$S2"
+end_event "$E_S2"
 expect_value "on release the receivable is deducted first, in full" \
   "$(settle "$ORG")/$(wallet "$ORG")/$(val "SELECT recovered_kobo || '/' || (settled_at IS NOT NULL)::text FROM public.earnings_recoveries WHERE source_key = '$R2T';")" \
   '{"released_kobo": 950000, "recovered_kobo": 950000}/0/3850000/0/950000/true'
@@ -282,7 +372,19 @@ expect_value "a booking refund with nothing to debit becomes a receivable" \
 "${PSQL[@]}" -q -c "INSERT INTO public.service_bookings (id, customer_id, provider_id, payment_status, payment_method, payment_ref, subtotal_kobo, fee_kobo, total_kobo) VALUES
   ('00000000-0000-0000-0000-0000000003f4', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BK3', 200000, 10000, 210000);"
 "${PSQL[@]}" -q -o /dev/null -c "SELECT public.credit_provider_wallet_for_booking('$PROV', 200000, '00000000-0000-0000-0000-0000000003f4', 'Service booking payment');"
-mature "00000000-0000-0000-0000-0000000003f4"
+expect_value "a paid booking is held until it is completed, however long it waits" \
+  "$(blockers "00000000-0000-0000-0000-0000000003f4")" "not_completed"
+expect_error "a provider cannot write the booking (no client UPDATE grant, as in production)" "permission denied" \
+  "$(as "$PROV" "UPDATE public.service_bookings SET completed_at = now() - interval '9 days' WHERE id = '00000000-0000-0000-0000-0000000003f4';")"
+expect_value "marking it complete stamps the time and who confirmed it" \
+  "$(val "$(as "$PROV" "SELECT public.complete_service_booking('00000000-0000-0000-0000-0000000003f4')->>'status';")")/$(val "SELECT (completed_at > now() - interval '1 minute')::text || '/' || (completed_by = '$PROV')::text FROM public.service_bookings WHERE id = '00000000-0000-0000-0000-0000000003f4';")" "completed/true/true"
+expect_value "the stamp cannot be moved by a later update (even by the owner of the table)" \
+  "$(val "WITH u AS (UPDATE public.service_bookings SET completed_at = now() - interval '9 days', updated_at = now() WHERE id = '00000000-0000-0000-0000-0000000003f4' RETURNING (completed_at > now() - interval '1 minute')::text AS ok) SELECT ok FROM u;")" "true"
+expect_value "release at exactly completion + 48 hours" \
+  "$(val "SELECT ((public.earnings_hold_state(h.id)->>'release_at')::timestamptz - b.completed_at = interval '48 hours')::text || '/' || (public.earnings_hold_state(h.id)->>'rule') FROM public.earnings_holds h JOIN public.service_bookings b ON b.id = h.booking_id WHERE h.source_key = '00000000-0000-0000-0000-0000000003f4';")" "true/booking_completed_plus_48h"
+complete_ago "00000000-0000-0000-0000-0000000003f4" "47 hours 59 minutes"
+expect_value "47h59m after completion: still held" "$(blockers "00000000-0000-0000-0000-0000000003f4")" "not_yet"
+complete_ago "00000000-0000-0000-0000-0000000003f4"
 expect_value "a smaller release recovers part of the receivable; the rest stays outstanding" \
   "$(settle "$PROV")/$(wallet "$PROV")/$(val "SELECT recovered_kobo || '/' || (settled_at IS NULL)::text FROM public.earnings_recoveries WHERE owner_id = '$PROV';")" \
   '{"released_kobo": 200000, "recovered_kobo": 200000}/0/0/0/200000/true'

@@ -10,15 +10,29 @@
 --    organizer's next released earnings, and from any later available
 --    money, as ledger rows of type 'recovery_deduction'. Balances never go
 --    negative and nothing is absorbed silently.
--- 2. Organizer and service-provider earnings are held for 7 days.
---    A ticket sale or booking credit goes to on_hold_kobo (one
---    earnings_holds row per order or booking) and moves to the withdrawable
---    balance 7 days after payment confirmation. It moves when
---    settle_earnings runs: on a withdrawal request, when the owner opens
---    their wallet, and in the daily cron. Balances that already exist
---    before this migration stay available.
---    Representative rewards keep their own 0201 hold. A reversed payout
---    returns to the available balance.
+-- 2. Settlement (approved 2026-10-30, replacing the earlier 7-day hold):
+--    - Ticket earnings become withdrawable exactly 48 hours after the
+--      event ends (public.event_effective_end_at; never earlier than the
+--      end recorded at the sale, so moving an event earlier cannot release
+--      money early).
+--    - Service-provider earnings become withdrawable exactly 48 hours
+--      after the booking is marked completed (service_bookings.completed_at,
+--      stamped once by trigger).
+--    A credit goes to on_hold_kobo (one earnings_holds row per order or
+--    booking). It is released by settle_earnings when nothing blocks it:
+--    a pending refund on the event or booking, a deleted or admin-hidden
+--    event, a cancelled booking, an admin hold, or a Paystack dispute
+--    (which places an admin hold). Release runs on every withdrawal request,
+--    when the owner opens their wallet, and in the scheduled cron, which is
+--    hourly through pg_cron when that extension is installed and daily
+--    through Vercel otherwise. A withdrawal request settles first, so money
+--    is withdrawable at exactly the 48-hour mark even between cron runs.
+--    Every release records the rule and the times it used (release_basis).
+--    All times are timestamptz and the delay is interval '48 hours'
+--    (absolute, independent of the session TimeZone and of DST).
+--    Balances that already exist before this migration stay available.
+--    Representative rewards keep their separate 7-day hold (0201). A
+--    reversed payout returns to the available balance.
 -- 3. Withdrawals need two admins.
 --    Admin A calls request_admin_action('authorize_withdrawal', ...).
 --    Admin B approves it with approve_admin_action. Self-approval is already
@@ -190,15 +204,59 @@ CREATE TABLE IF NOT EXISTS public.earnings_holds (
   amount_kobo   bigint NOT NULL CHECK (amount_kobo >= 0),
   refunded_kobo bigint NOT NULL DEFAULT 0 CHECK (refunded_kobo >= 0),
   released_kobo bigint NOT NULL DEFAULT 0 CHECK (released_kobo >= 0),
-  release_at    timestamptz NOT NULL,
+  -- What the release waits for: the event (ticket sales) or the booking.
+  event_id      uuid REFERENCES public.events(id) ON DELETE RESTRICT,
+  event_end_at_sale timestamptz,
+  booking_id    uuid REFERENCES public.service_bookings(id) ON DELETE RESTRICT,
+  -- An admin (or a Paystack dispute) can freeze a hold; only a super admin
+  -- who is not the owner can lift it (admin_set_earnings_hold).
+  admin_hold_at     timestamptz,
+  admin_hold_by     uuid,
+  admin_hold_reason text,
+  dispute_reference text,
   released_at   timestamptz,
+  -- The rule, times and checks the release was decided on (audit).
+  release_basis jsonb,
   created_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT earnings_holds_source_once UNIQUE (source_kind, source_key),
+  CONSTRAINT earnings_holds_has_subject CHECK (
+    (source_kind = 'ticket_sale' AND event_id IS NOT NULL AND event_end_at_sale IS NOT NULL)
+    OR (source_kind = 'service_booking' AND booking_id IS NOT NULL)),
   CONSTRAINT earnings_holds_adds_up CHECK (amount_kobo + refunded_kobo + released_kobo = original_kobo),
   CONSTRAINT earnings_holds_released_empty CHECK (released_at IS NULL OR amount_kobo = 0)
 );
-CREATE INDEX IF NOT EXISTS earnings_holds_open_by_owner ON public.earnings_holds (owner_id, release_at) WHERE released_at IS NULL;
-CREATE INDEX IF NOT EXISTS earnings_holds_open_by_release ON public.earnings_holds (release_at) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS earnings_holds_open_by_owner ON public.earnings_holds (owner_id) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS earnings_holds_open_by_event ON public.earnings_holds (event_id) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS earnings_holds_open_by_booking ON public.earnings_holds (booking_id) WHERE released_at IS NULL;
+
+-- When a booking was confirmed completed, and by whom: stamped once, by
+-- trigger, on whichever path sets status = 'completed'
+-- (complete_service_booking today).
+ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+ALTER TABLE public.service_bookings ADD COLUMN IF NOT EXISTS completed_by uuid;
+CREATE OR REPLACE FUNCTION public.service_bookings_stamp_completion()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.completed_at IS NOT NULL THEN
+    NEW.completed_at := OLD.completed_at;   -- never moved once set
+    NEW.completed_by := OLD.completed_by;
+  ELSIF NEW.status = 'completed' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'completed') THEN
+    NEW.completed_at := now();
+    NEW.completed_by := auth.uid();
+  ELSE
+    NEW.completed_at := NULL;               -- callers cannot set it
+    NEW.completed_by := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+DROP TRIGGER IF EXISTS service_bookings_stamp_completion ON public.service_bookings;
+CREATE TRIGGER service_bookings_stamp_completion BEFORE INSERT OR UPDATE ON public.service_bookings
+  FOR EACH ROW EXECUTE FUNCTION public.service_bookings_stamp_completion();
 
 -- Money an owner still owes VENTS (a refund or payout their wallet could not
 -- cover at the time). Recovered from later earnings, never forgiven here.
@@ -230,25 +288,93 @@ DROP POLICY IF EXISTS earnings_recoveries_owner_or_admin_read ON public.earnings
 CREATE POLICY earnings_recoveries_owner_or_admin_read ON public.earnings_recoveries
   FOR SELECT TO authenticated USING (owner_id = (SELECT auth.uid()) OR public.is_admin());
 
-CREATE OR REPLACE FUNCTION public.earnings_hold_interval()
+-- 48 hours, as an absolute interval (not '2 days', which follows the
+-- session TimeZone across a DST change).
+CREATE OR REPLACE FUNCTION public.earnings_release_delay()
  RETURNS interval
  LANGUAGE sql
  IMMUTABLE
  SET search_path TO ''
 AS $function$
-  SELECT interval '7 days';
+  SELECT interval '48 hours';
 $function$;
 
 -- Called by the credit functions while they hold the wallet row lock.
-CREATE OR REPLACE FUNCTION public.earnings_place_hold(p_owner uuid, p_kind text, p_key text, p_amount_kobo bigint)
+-- p_subject is the event id (ticket_sale) or the booking id (service_booking).
+CREATE OR REPLACE FUNCTION public.earnings_place_hold(p_owner uuid, p_kind text, p_key text, p_amount_kobo bigint, p_subject uuid)
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
 AS $function$
+DECLARE
+  v_end timestamptz;
 BEGIN
-  INSERT INTO public.earnings_holds (owner_id, source_kind, source_key, original_kobo, amount_kobo, release_at)
-  VALUES (p_owner, p_kind, p_key, p_amount_kobo, p_amount_kobo, now() + public.earnings_hold_interval());
+  IF p_kind = 'ticket_sale' THEN
+    SELECT public.event_effective_end_at(e.event_date, e.end_date) INTO v_end FROM public.events e WHERE e.id = p_subject;
+    INSERT INTO public.earnings_holds (owner_id, source_kind, source_key, original_kobo, amount_kobo, event_id, event_end_at_sale)
+    VALUES (p_owner, p_kind, p_key, p_amount_kobo, p_amount_kobo, p_subject, v_end);
+  ELSE
+    INSERT INTO public.earnings_holds (owner_id, source_kind, source_key, original_kobo, amount_kobo, booking_id)
+    VALUES (p_owner, p_kind, p_key, p_amount_kobo, p_amount_kobo, p_subject);
+  END IF;
+END;
+$function$;
+
+-- When a hold may be released, and what (if anything) blocks it now.
+-- {release_at, blockers[], rule, ...}; releasable when blockers is [].
+CREATE OR REPLACE FUNCTION public.earnings_hold_state(p_hold_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  h public.earnings_holds;
+  e record;
+  b record;
+  v_end timestamptz;
+  v_release timestamptz;
+  v_blockers text[] := ARRAY[]::text[];
+BEGIN
+  SELECT * INTO h FROM public.earnings_holds WHERE id = p_hold_id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  IF h.released_at IS NOT NULL THEN
+    RETURN jsonb_build_object('released', true, 'released_at', h.released_at, 'blockers', '[]'::jsonb);
+  END IF;
+  IF h.admin_hold_at IS NOT NULL THEN
+    v_blockers := array_append(v_blockers, CASE WHEN h.dispute_reference IS NOT NULL THEN 'payment_dispute' ELSE 'admin_hold' END);
+  END IF;
+
+  IF h.source_kind = 'ticket_sale' THEN
+    SELECT ev.event_date, ev.end_date, ev.deleted_at, COALESCE(ev.hidden_by_admin, false) AS hidden
+      INTO e FROM public.events ev WHERE ev.id = h.event_id;
+    -- The later of the end recorded at the sale and the event's current end:
+    -- postponing delays the release, moving the end earlier does not hasten it.
+    v_end := GREATEST(h.event_end_at_sale, public.event_effective_end_at(e.event_date, e.end_date));
+    v_release := v_end + public.earnings_release_delay();
+    IF e.deleted_at IS NOT NULL THEN v_blockers := array_append(v_blockers, 'event_deleted'); END IF;
+    IF e.hidden THEN v_blockers := array_append(v_blockers, 'event_hidden_by_admin'); END IF;
+    IF EXISTS (SELECT 1 FROM public.tickets t WHERE t.event_id = h.event_id AND t.payment_status = 'refund_pending') THEN
+      v_blockers := array_append(v_blockers, 'refund_pending');
+    END IF;
+    IF now() < v_release THEN v_blockers := array_append(v_blockers, 'not_yet'); END IF;
+    RETURN jsonb_build_object('rule', 'event_end_plus_48h', 'event_end_at', v_end, 'event_end_at_sale', h.event_end_at_sale,
+                              'release_at', v_release, 'checked_at', now(), 'blockers', to_jsonb(v_blockers));
+  END IF;
+
+  SELECT sb.status, sb.payment_status, sb.completed_at INTO b FROM public.service_bookings sb WHERE sb.id = h.booking_id;
+  v_release := b.completed_at + public.earnings_release_delay();
+  IF b.status = 'cancelled' THEN v_blockers := array_append(v_blockers, 'booking_cancelled'); END IF;
+  IF b.payment_status IN ('refund_pending', 'refunded') THEN v_blockers := array_append(v_blockers, 'refund_pending'); END IF;
+  IF b.status IS DISTINCT FROM 'completed' OR b.completed_at IS NULL THEN
+    v_blockers := array_append(v_blockers, 'not_completed');
+  ELSIF now() < v_release THEN
+    v_blockers := array_append(v_blockers, 'not_yet');
+  END IF;
+  RETURN jsonb_build_object('rule', 'booking_completed_plus_48h', 'completed_at', b.completed_at,
+                            'release_at', v_release, 'checked_at', now(), 'blockers', to_jsonb(v_blockers));
 END;
 $function$;
 
@@ -346,6 +472,7 @@ DECLARE
   v_released bigint := 0;
   v_recovered bigint := 0;
   v_take     bigint;
+  v_state    jsonb;
   h public.earnings_holds;
   r public.earnings_recoveries;
 BEGIN
@@ -355,11 +482,14 @@ BEGIN
   END IF;
 
   FOR h IN SELECT * FROM public.earnings_holds
-            WHERE owner_id = p_owner AND released_at IS NULL AND release_at <= now()
-            ORDER BY release_at, id FOR UPDATE
+            WHERE owner_id = p_owner AND released_at IS NULL
+            ORDER BY created_at, id FOR UPDATE
   LOOP
+    v_state := public.earnings_hold_state(h.id);
+    CONTINUE WHEN jsonb_array_length(v_state->'blockers') > 0;
     UPDATE public.earnings_holds
-       SET released_at = now(), released_kobo = released_kobo + h.amount_kobo, amount_kobo = 0
+       SET released_at = now(), released_kobo = released_kobo + h.amount_kobo, amount_kobo = 0,
+           release_basis = v_state
      WHERE id = h.id;
     v_released := v_released + h.amount_kobo;
   END LOOP;
@@ -409,7 +539,8 @@ BEGIN
 END;
 $function$;
 
--- Cron entry point (server only): settles every wallet with a matured hold.
+-- Cron entry point (server only): settles every wallet with a hold that is
+-- releasable now.
 -- SKIP LOCKED leaves a wallet that is busy right now to the next run (or to
 -- its owner's next withdrawal request, which settles first anyway).
 CREATE OR REPLACE FUNCTION public.release_matured_earnings(p_limit integer DEFAULT 500)
@@ -428,7 +559,8 @@ BEGIN
   FOR v_owner IN
     SELECT w.organizer_id FROM public.organizer_wallets w
      WHERE EXISTS (SELECT 1 FROM public.earnings_holds h
-                    WHERE h.owner_id = w.organizer_id AND h.released_at IS NULL AND h.release_at <= now())
+                    WHERE h.owner_id = w.organizer_id AND h.released_at IS NULL
+                      AND jsonb_array_length(public.earnings_hold_state(h.id)->'blockers') = 0)
      ORDER BY w.organizer_id
      LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 500), 5000))
      FOR UPDATE OF w SKIP LOCKED
@@ -439,6 +571,127 @@ BEGIN
     v_recovered := v_recovered + (v_res->>'recovered_kobo')::bigint;
   END LOOP;
   RETURN jsonb_build_object('wallets', v_wallets, 'released_kobo', v_released, 'recovered_kobo', v_recovered);
+END;
+$function$;
+
+-- Optional: run the release hourly inside the database when pg_cron is
+-- already installed (it is not installed by this migration). The Vercel
+-- daily cron calls the same function either way.
+DO $cron$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    EXECUTE $q$SELECT cron.schedule('vents_release_matured_earnings', '7 * * * *', 'SELECT public.release_matured_earnings(500)')$q$;
+  ELSE
+    RAISE NOTICE '0203: pg_cron is not installed; matured earnings are released by the Vercel cron and on each withdrawal request';
+  END IF;
+END
+$cron$;
+
+-- Place (any admin) or lift (a super admin) a hold on held earnings, e.g.
+-- while a complaint is investigated. Neither can be done by the owner.
+CREATE OR REPLACE FUNCTION public.admin_set_earnings_hold(p_hold_id uuid, p_hold boolean, p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  h public.earnings_holds;
+BEGIN
+  IF p_reason IS NULL OR trim(p_reason) = '' THEN RAISE EXCEPTION 'A reason is required'; END IF;
+  IF p_hold AND NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
+  IF NOT p_hold AND NOT public.is_super_admin() THEN RAISE EXCEPTION 'Super Admin access required to lift a hold'; END IF;
+  PERFORM 1 FROM public.organizer_wallets w JOIN public.earnings_holds x ON x.owner_id = w.organizer_id
+   WHERE x.id = p_hold_id FOR UPDATE OF w;
+  SELECT * INTO h FROM public.earnings_holds WHERE id = p_hold_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Hold not found'; END IF;
+  IF h.owner_id = auth.uid() THEN RAISE EXCEPTION 'An admin cannot place or lift a hold on their own earnings'; END IF;
+  IF h.released_at IS NOT NULL THEN RAISE EXCEPTION 'These earnings were already released'; END IF;
+
+  UPDATE public.earnings_holds
+     SET admin_hold_at = CASE WHEN p_hold THEN COALESCE(admin_hold_at, now()) END,
+         admin_hold_by = CASE WHEN p_hold THEN COALESCE(admin_hold_by, auth.uid()) END,
+         admin_hold_reason = CASE WHEN p_hold THEN COALESCE(admin_hold_reason, trim(p_reason)) END,
+         dispute_reference = CASE WHEN p_hold THEN dispute_reference END
+   WHERE id = h.id;
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), CASE WHEN p_hold THEN 'earnings_hold_placed' ELSE 'earnings_hold_lifted' END, h.owner_id,
+          jsonb_build_object('hold_id', h.id, 'source_kind', h.source_kind, 'source_key', h.source_key,
+                             'amount_kobo', h.amount_kobo, 'reason', trim(p_reason),
+                             'previous_hold_reason', h.admin_hold_reason, 'dispute_reference', h.dispute_reference),
+          public.actor_role());
+  RETURN jsonb_build_object('hold_id', h.id, 'admin_hold', p_hold);
+END;
+$function$;
+
+-- Paystack charge.dispute.* (server only): freeze the disputed sale's held
+-- earnings. Never lifted automatically; an admin lifts it after review.
+-- If the earnings were already released, the dispute is logged for admins.
+CREATE OR REPLACE FUNCTION public.place_payment_dispute_hold(p_reference text, p_dispute_id text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_ref text;
+  h public.earnings_holds;
+BEGIN
+  IF p_reference IS NULL OR p_reference = '' THEN RETURN 'not_found'; END IF;
+  SELECT x.payment_ref INTO v_ref FROM public.get_pending_purchase_owner(p_reference) x;
+  SELECT * INTO h FROM public.earnings_holds
+   WHERE (source_kind = 'ticket_sale' AND source_key = COALESCE(v_ref, p_reference))
+      OR (source_kind = 'service_booking' AND booking_id = (SELECT sb.id FROM public.service_bookings sb WHERE sb.payment_ref = p_reference LIMIT 1))
+   LIMIT 1;
+  IF NOT FOUND THEN RETURN 'not_found'; END IF;
+  PERFORM 1 FROM public.organizer_wallets w WHERE w.organizer_id = h.owner_id FOR UPDATE;
+  SELECT * INTO h FROM public.earnings_holds WHERE id = h.id FOR UPDATE;
+
+  IF h.released_at IS NOT NULL THEN
+    INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+    VALUES (NULL, 'payment_dispute_after_release', h.owner_id,
+            jsonb_build_object('hold_id', h.id, 'reference', p_reference, 'dispute_id', p_dispute_id), 'webhook');
+    RETURN 'already_released';
+  END IF;
+  IF h.dispute_reference IS NOT DISTINCT FROM p_dispute_id AND h.admin_hold_at IS NOT NULL THEN
+    RETURN 'already_held';
+  END IF;
+  UPDATE public.earnings_holds
+     SET admin_hold_at = COALESCE(admin_hold_at, now()),
+         admin_hold_reason = COALESCE(admin_hold_reason, 'Paystack payment dispute ' || COALESCE(p_dispute_id, '')),
+         dispute_reference = COALESCE(p_dispute_id, p_reference)
+   WHERE id = h.id;
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (NULL, 'earnings_hold_placed', h.owner_id,
+          jsonb_build_object('hold_id', h.id, 'reason', 'payment_dispute', 'reference', p_reference, 'dispute_id', p_dispute_id),
+          'webhook');
+  RETURN 'held';
+END;
+$function$;
+
+-- Held earnings with their release time and blockers, for the wallet
+-- (own) and the admin console (anyone's).
+CREATE OR REPLACE FUNCTION public.get_earnings_holds(p_owner uuid DEFAULT NULL)
+ RETURNS TABLE(hold_id uuid, source_kind text, amount_kobo bigint, original_kobo bigint, release_at timestamptz,
+               blockers jsonb, admin_hold_reason text, event_title text, created_at timestamptz)
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_owner uuid := COALESCE(p_owner, auth.uid());
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF v_owner <> auth.uid() AND NOT public.is_admin() THEN RAISE EXCEPTION 'Not authorized'; END IF;
+  RETURN QUERY
+  SELECT h.id, h.source_kind, h.amount_kobo, h.original_kobo,
+         (s.st->>'release_at')::timestamptz, s.st->'blockers', h.admin_hold_reason, ev.title, h.created_at
+    FROM public.earnings_holds h
+    CROSS JOIN LATERAL (SELECT public.earnings_hold_state(h.id) AS st) s
+    LEFT JOIN public.events ev ON ev.id = h.event_id
+   WHERE h.owner_id = v_owner AND h.released_at IS NULL AND h.amount_kobo > 0
+   ORDER BY (s.st->>'release_at')::timestamptz NULLS LAST, h.created_at;
 END;
 $function$;
 
@@ -712,13 +965,13 @@ $x0203$,
 -- credit_organizer_wallet
 SELECT pg_temp.vents_0203_patch('public.credit_organizer_wallet(uuid,bigint,text,uuid,jsonb)', '9b889f4696ceb56f990cdf582c40c679', ARRAY[
   $x0203$  SELECT t.id, e.organizer_id, t.payment_status
-$x0203$, $x0203$  SELECT t.id, e.organizer_id, t.payment_status, t.payment_ref
+$x0203$, $x0203$  SELECT t.id, e.organizer_id, t.payment_status, t.payment_ref, e.id AS event_id
 $x0203$,
   $x0203$  INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo)
   VALUES (p_organizer_id, p_amount_kobo, p_amount_kobo)
   ON CONFLICT (organizer_id) DO UPDATE
-    SET balance_kobo      = organizer_wallets.balance_kobo + p_amount_kobo,$x0203$, $x0203$  -- Settlement hold: the sale is earned now but withdrawable only after
-  -- public.earnings_hold_interval() (see earnings_holds).
+    SET balance_kobo      = organizer_wallets.balance_kobo + p_amount_kobo,$x0203$, $x0203$  -- Settlement hold: the sale is earned now but withdrawable only 48
+  -- hours after the event ends (see earnings_hold_state).
   INSERT INTO public.organizer_wallets (organizer_id, on_hold_kobo, total_earned_kobo)
   VALUES (p_organizer_id, p_amount_kobo, p_amount_kobo)
   ON CONFLICT (organizer_id) DO UPDATE
@@ -727,7 +980,8 @@ $x0203$,
 END;$x0203$, $x0203$  VALUES (p_organizer_id, 'credit', p_amount_kobo, p_description, p_ticket_sale_id, p_metadata);
 
   PERFORM public.earnings_place_hold(p_organizer_id, 'ticket_sale',
-                                     COALESCE(v_ticket.payment_ref, p_ticket_sale_id::text), p_amount_kobo);
+                                     COALESCE(v_ticket.payment_ref, p_ticket_sale_id::text), p_amount_kobo,
+                                     v_ticket.event_id);
 END;$x0203$
 ]);
 
@@ -736,7 +990,7 @@ SELECT pg_temp.vents_0203_patch('public.credit_provider_wallet_for_booking(uuid,
   $x0203$  INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo, pending_kobo)
   VALUES (p_provider_user_id, p_amount_kobo, p_amount_kobo, 0, 0)
   ON CONFLICT (organizer_id) DO UPDATE
-    SET balance_kobo = public.organizer_wallets.balance_kobo + p_amount_kobo,$x0203$, $x0203$  -- Settlement hold (see credit_organizer_wallet).
+    SET balance_kobo = public.organizer_wallets.balance_kobo + p_amount_kobo,$x0203$, $x0203$  -- Settlement hold until 48 hours after completion (see earnings_hold_state).
   INSERT INTO public.organizer_wallets (organizer_id, on_hold_kobo, total_earned_kobo, total_withdrawn_kobo, pending_kobo)
   VALUES (p_provider_user_id, p_amount_kobo, p_amount_kobo, 0, 0)
   ON CONFLICT (organizer_id) DO UPDATE
@@ -744,7 +998,7 @@ SELECT pg_temp.vents_0203_patch('public.credit_provider_wallet_for_booking(uuid,
   $x0203$  VALUES (p_provider_user_id, 'credit', p_amount_kobo, p_description, jsonb_build_object('service_booking_id', p_booking_id));
 END;$x0203$, $x0203$  VALUES (p_provider_user_id, 'credit', p_amount_kobo, p_description, jsonb_build_object('service_booking_id', p_booking_id));
 
-  PERFORM public.earnings_place_hold(p_provider_user_id, 'service_booking', p_booking_id::text, p_amount_kobo);
+  PERFORM public.earnings_place_hold(p_provider_user_id, 'service_booking', p_booking_id::text, p_amount_kobo, p_booking_id);
 END;$x0203$
 ]);
 
@@ -978,7 +1232,9 @@ AS $function$
   ), hold AS (
     SELECT h.owner_id,
            COALESCE(SUM(h.amount_kobo) FILTER (WHERE h.released_at IS NULL), 0) AS open_kobo,
-           COUNT(*) FILTER (WHERE h.released_at IS NULL AND h.release_at < now() - interval '2 days')::int AS overdue
+           COUNT(*) FILTER (WHERE h.released_at IS NULL
+                              AND jsonb_array_length(public.earnings_hold_state(h.id)->'blockers') = 0
+                              AND (public.earnings_hold_state(h.id)->>'release_at')::timestamptz < now() - interval '1 day')::int AS overdue
       FROM public.earnings_holds h GROUP BY h.owner_id
   ), rec AS (
     SELECT x.owner_id, COALESCE(SUM(x.amount_kobo - x.recovered_kobo), 0) AS outstanding
@@ -1015,7 +1271,10 @@ BEGIN
   -- Internal: reachable only from other SECURITY DEFINER functions.
   FOREACH f IN ARRAY ARRAY[
     'public.tickets_fee_model_guard()',
-    'public.earnings_place_hold(uuid,text,text,bigint)',
+    'public.earnings_place_hold(uuid,text,text,bigint,uuid)',
+    'public.earnings_hold_state(uuid)',
+    'public.service_bookings_stamp_completion()',
+    'public.place_payment_dispute_hold(text,text)',
     'public.earnings_debit_for_refund(uuid,bigint,text,text,text,text,text,uuid,jsonb,uuid,text,text)',
     'public.settle_earnings(uuid)',
     'public.execute_withdrawal_authorization(uuid)',
@@ -1028,7 +1287,9 @@ BEGIN
   FOREACH f IN ARRAY ARRAY[
     'public.ticket_fee_buyer_multiplier(text)',
     'public.ticket_fee_commission_kobo(bigint,text)',
-    'public.earnings_hold_interval()',
+    'public.earnings_release_delay()',
+    'public.get_earnings_holds(uuid)',
+    'public.admin_set_earnings_hold(uuid,boolean,text)',
     'public.settle_my_earnings()',
     'public.admin_earnings_reconciliation()'
   ] LOOP
@@ -1037,6 +1298,7 @@ BEGIN
   END LOOP;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'project_admin') THEN
     GRANT EXECUTE ON FUNCTION public.release_matured_earnings(integer) TO project_admin;
+    GRANT EXECUTE ON FUNCTION public.place_payment_dispute_hold(text, text) TO project_admin;
   END IF;
 END
 $grants$;

@@ -18,6 +18,9 @@ import { Sentry } from '../../../lib/sentry';
 export function AdminPayoutsScreen() {
   const [requests, setRequests] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
+  // 0203: held earnings of one organizer/provider, opened from the wallets list.
+  const [holdsFor, setHoldsFor] = useState<string | null>(null);
+  const [holds, setHolds] = useState<any[] | null>(null);
   const [memberWallets, setMemberWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [payoutsDisabled, setPayoutsDisabled] = useState(false);
@@ -241,6 +244,24 @@ export function AdminPayoutsScreen() {
 
   const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 
+  const loadHolds = async (ownerId: string) => {
+    setHoldsFor(ownerId);
+    setHolds(null);
+    const { data, error } = await supabase.rpc('get_earnings_holds' as any, { p_owner: ownerId });
+    if (error) { flash(false, error.message || 'Could not load held earnings'); setHolds([]); return; }
+    setHolds((data as any[]) || []);
+  };
+  // Any admin may place a review hold; lifting one needs a super admin who is
+  // not the earner (enforced by admin_set_earnings_hold). Both are audited.
+  const setEarningsHold = async (holdId: string, hold: boolean) => {
+    const reason = window.prompt(hold ? 'Why are these earnings being held?' : 'Why is this hold being lifted?');
+    if (!reason?.trim()) return;
+    const { error } = await supabase.rpc('admin_set_earnings_hold' as any, { p_hold_id: holdId, p_hold: hold, p_reason: reason.trim() });
+    if (error) { flash(false, error.message || 'Could not update the hold'); return; }
+    flash(true, hold ? 'Hold placed — these earnings will not be released until it is lifted.' : 'Hold lifted — the earnings release once nothing else blocks them.');
+    if (holdsFor) await loadHolds(holdsFor);
+  };
+
   // Buttons for a pending withdrawal: authorize (two admins) -> pay -> or reject.
   const pendingActions = (r: any, marginTop: number) => {
     const a = approvals?.[r.request_id];
@@ -328,11 +349,39 @@ export function AdminPayoutsScreen() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: adminTheme.accentText }}>Balance: <strong>{fmt(w.balance_kobo)}</strong></span>
                 {(w.pending_kobo ?? 0) > 0 && <span style={{ fontSize: 12, color: adminTheme.amber }}>Pending: {fmt(w.pending_kobo)}</span>}
-                {(w.on_hold_kobo ?? 0) > 0 && <span style={{ fontSize: 12, color: adminTheme.textMuted }}>On hold (7 days): {fmt(w.on_hold_kobo)}</span>}
+                {(w.on_hold_kobo ?? 0) > 0 && <span style={{ fontSize: 12, color: adminTheme.textMuted }}>On hold: {fmt(w.on_hold_kobo)}</span>}
                 <span style={{ fontSize: 12, color: adminTheme.textMuted }}>Earned: {fmt(w.total_earned_kobo)}</span>
                 <span style={{ fontSize: 12, color: adminTheme.textMuted }}>Withdrawn: {fmt(w.total_withdrawn_kobo ?? 0)}</span>
               </div>
               {pendingReq && pendingActions(pendingReq, 2)}
+              {(w.on_hold_kobo ?? 0) > 0 && (
+                <button onClick={() => (holdsFor === w.organizer_id ? setHoldsFor(null) : loadHolds(w.organizer_id))} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: adminTheme.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  {holdsFor === w.organizer_id ? 'Hide held earnings' : 'Held earnings'}
+                </button>
+              )}
+              {holdsFor === w.organizer_id && (
+                <div data-testid="admin-earnings-holds" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {holds === null ? <span style={{ fontSize: 12, color: adminTheme.textMuted }}>Loading…</span>
+                    : holds.length === 0 ? <span style={{ fontSize: 12, color: adminTheme.textMuted }}>Nothing held.</span>
+                    : holds.map((h: any) => {
+                      const blockers: string[] = Array.isArray(h.blockers) ? h.blockers : [];
+                      const held = blockers.includes('admin_hold') || blockers.includes('payment_dispute');
+                      return (
+                        <div key={h.hold_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: adminTheme.text }}>
+                          <span style={{ flex: 1 }}>
+                            {fmt(h.amount_kobo)} · {h.source_kind === 'ticket_sale' ? (h.event_title || 'Ticket sale') : 'Service booking'}
+                            {h.release_at ? ` · releases ${new Date(h.release_at).toLocaleString('en-NG')}` : ''}
+                            {blockers.filter((b) => b !== 'not_yet').length > 0 ? ` · paused: ${blockers.filter((b) => b !== 'not_yet').join(', ')}` : ''}
+                            {h.admin_hold_reason ? ` (${h.admin_hold_reason})` : ''}
+                          </span>
+                          <button onClick={() => setEarningsHold(h.hold_id, !held)} style={{ background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '4px 8px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                            {held ? 'Lift hold' : 'Hold'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
           );
         })

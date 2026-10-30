@@ -18,8 +18,9 @@ interface WalletData {
   balance_kobo: number;
   total_earned_kobo: number;
   pending_kobo: number;
-  // 0203: earned but inside the 7-day settlement hold. Absent before 0203
-  // is applied (the screen then reads it as 0).
+  // 0203: earned but not yet withdrawable -- ticket earnings until 48 hours
+  // after the event ends, provider earnings until 48 hours after the
+  // booking is completed. Absent before 0203 is applied (read as 0).
   on_hold_kobo?: number;
 }
 
@@ -28,8 +29,23 @@ interface WalletData {
 interface SettlementSummary {
   nextReleaseKobo: number;
   nextReleaseAt: string | null;
+  // Held amounts that are paused by something other than time (a pending
+  // refund, a review hold, a dispute, a booking not yet completed).
+  pausedKobo: number;
+  pausedReason: string | null;
   owedKobo: number;
 }
+
+// get_earnings_holds blockers -> what the earner is told.
+const HOLD_BLOCKER_TEXT: Record<string, string> = {
+  not_completed: 'waiting for the booking to be marked completed',
+  refund_pending: 'a refund is being processed',
+  admin_hold: 'under review by VENTS',
+  payment_dispute: 'a payment dispute is open',
+  event_deleted: 'the event was removed',
+  event_hidden_by_admin: 'the event is under review',
+  booking_cancelled: 'the booking was cancelled',
+};
 
 // A ledger row's metadata is a free-form jsonb column -- older rows (or
 // rows written before 0039_wallet_transaction_metadata.sql) may have none,
@@ -278,14 +294,26 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         if (!wErr && w) setWallet(w as WalletData);
       }
       const [hRes, rRes] = await Promise.all([
-        supabase.from('earnings_holds' as any).select('amount_kobo, release_at').eq('owner_id', currentUser.id).is('released_at', null).gt('amount_kobo', 0).order('release_at', { ascending: true }).limit(1),
+        // Release time and blockers are computed by the database (event end
+        // or booking completion + 48 hours), never by this screen.
+        supabase.rpc('get_earnings_holds' as any),
         supabase.from('earnings_recoveries' as any).select('amount_kobo, recovered_kobo').eq('owner_id', currentUser.id).is('settled_at', null),
       ]);
       if (hRes.error || rRes.error) { setSettlement(null); return; }
-      const next = ((hRes.data as any[]) || [])[0];
+      const holds = ((hRes.data as any[]) || []).map((h) => ({
+        amount: Number(h.amount_kobo),
+        releaseAt: h.release_at as string | null,
+        blockers: (Array.isArray(h.blockers) ? h.blockers : []) as string[],
+      }));
+      const waiting = holds.filter((h) => h.blockers.length === 1 && h.blockers[0] === 'not_yet' && h.releaseAt)
+        .sort((a, b) => Date.parse(a.releaseAt!) - Date.parse(b.releaseAt!));
+      const paused = holds.filter((h) => h.blockers.some((b) => b !== 'not_yet'));
+      const firstReason = paused[0]?.blockers.find((b) => b !== 'not_yet') ?? null;
       setSettlement({
-        nextReleaseKobo: next ? Number(next.amount_kobo) : 0,
-        nextReleaseAt: next ? next.release_at : null,
+        nextReleaseKobo: waiting[0] ? waiting.filter((h) => h.releaseAt === waiting[0].releaseAt).reduce((sum, h) => sum + h.amount, 0) : 0,
+        nextReleaseAt: waiting[0]?.releaseAt ?? null,
+        pausedKobo: paused.reduce((sum, h) => sum + h.amount, 0),
+        pausedReason: firstReason ? (HOLD_BLOCKER_TEXT[firstReason] ?? 'paused') : null,
         owedKobo: ((rRes.data as any[]) || []).reduce((sum, x) => sum + Number(x.amount_kobo) - Number(x.recovered_kobo), 0),
       });
     } catch {
@@ -701,14 +729,24 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                     <img src="/brand/vents-logo-small.png" alt="" style={{ height: '15px', width: 'auto', display: 'block', opacity: 0.95, flexShrink: 0 }} />
                   </div>
                   <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
-                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Withdraw to your bank · not spendable in-app</p>
                   {pending > 0 && (
                     <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
                   )}
                   {onHold > 0 && (
                     <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>
-                      On hold (7-day settlement): {fmt(onHold)}
-                      {settlement?.nextReleaseAt ? ` · next ${fmt(settlement.nextReleaseKobo)} on ${new Date(settlement.nextReleaseAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}` : ''}
+                      On hold: {fmt(onHold)}
+                      {settlement?.nextReleaseAt ? ` · next ${fmt(settlement.nextReleaseKobo)} withdrawable ${new Date(settlement.nextReleaseAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+                    </p>
+                  )}
+                  {onHold > 0 && (
+                    <p data-testid="wallet-hold-rule" style={{ margin: '2px 0 0', color: ventsColors.ink3, fontSize: '11px' }}>
+                      Ticket earnings become withdrawable 48 hours after the event ends; service earnings 48 hours after the booking is completed.
+                    </p>
+                  )}
+                  {(settlement?.pausedKobo ?? 0) > 0 && (
+                    <p style={{ margin: '4px 0 0', color: ventsColors.pending, fontSize: '12px' }}>
+                      Paused: {fmt(settlement!.pausedKobo)} · {settlement!.pausedReason}
                     </p>
                   )}
                   {(settlement?.owedKobo ?? 0) > 0 && (

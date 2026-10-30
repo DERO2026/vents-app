@@ -179,13 +179,13 @@ patches.append(('get_event_analytics', [
 # --- credit functions: earnings go on hold -----------------------------------
 patches.append(('credit_organizer_wallet', [
     ("  SELECT t.id, e.organizer_id, t.payment_status\n",
-     "  SELECT t.id, e.organizer_id, t.payment_status, t.payment_ref\n"),
+     "  SELECT t.id, e.organizer_id, t.payment_status, t.payment_ref, e.id AS event_id\n"),
     ("  INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo)\n"
      "  VALUES (p_organizer_id, p_amount_kobo, p_amount_kobo)\n"
      "  ON CONFLICT (organizer_id) DO UPDATE\n"
      "    SET balance_kobo      = organizer_wallets.balance_kobo + p_amount_kobo,",
-     "  -- Settlement hold: the sale is earned now but withdrawable only after\n"
-     "  -- public.earnings_hold_interval() (see earnings_holds).\n"
+     "  -- Settlement hold: the sale is earned now but withdrawable only 48\n"
+     "  -- hours after the event ends (see earnings_hold_state).\n"
      "  INSERT INTO public.organizer_wallets (organizer_id, on_hold_kobo, total_earned_kobo)\n"
      "  VALUES (p_organizer_id, p_amount_kobo, p_amount_kobo)\n"
      "  ON CONFLICT (organizer_id) DO UPDATE\n"
@@ -193,21 +193,22 @@ patches.append(('credit_organizer_wallet', [
     ("  VALUES (p_organizer_id, 'credit', p_amount_kobo, p_description, p_ticket_sale_id, p_metadata);\nEND;",
      "  VALUES (p_organizer_id, 'credit', p_amount_kobo, p_description, p_ticket_sale_id, p_metadata);\n\n"
      "  PERFORM public.earnings_place_hold(p_organizer_id, 'ticket_sale',\n"
-     "                                     COALESCE(v_ticket.payment_ref, p_ticket_sale_id::text), p_amount_kobo);\nEND;"),
+     "                                     COALESCE(v_ticket.payment_ref, p_ticket_sale_id::text), p_amount_kobo,\n"
+     "                                     v_ticket.event_id);\nEND;"),
 ]))
 patches.append(('credit_provider_wallet_for_booking', [
     ("  INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo, pending_kobo)\n"
      "  VALUES (p_provider_user_id, p_amount_kobo, p_amount_kobo, 0, 0)\n"
      "  ON CONFLICT (organizer_id) DO UPDATE\n"
      "    SET balance_kobo = public.organizer_wallets.balance_kobo + p_amount_kobo,",
-     "  -- Settlement hold (see credit_organizer_wallet).\n"
+     "  -- Settlement hold until 48 hours after completion (see earnings_hold_state).\n"
      "  INSERT INTO public.organizer_wallets (organizer_id, on_hold_kobo, total_earned_kobo, total_withdrawn_kobo, pending_kobo)\n"
      "  VALUES (p_provider_user_id, p_amount_kobo, p_amount_kobo, 0, 0)\n"
      "  ON CONFLICT (organizer_id) DO UPDATE\n"
      "    SET on_hold_kobo = public.organizer_wallets.on_hold_kobo + p_amount_kobo,"),
     ("  VALUES (p_provider_user_id, 'credit', p_amount_kobo, p_description, jsonb_build_object('service_booking_id', p_booking_id));\nEND;",
      "  VALUES (p_provider_user_id, 'credit', p_amount_kobo, p_description, jsonb_build_object('service_booking_id', p_booking_id));\n\n"
-     "  PERFORM public.earnings_place_hold(p_provider_user_id, 'service_booking', p_booking_id::text, p_amount_kobo);\nEND;"),
+     "  PERFORM public.earnings_place_hold(p_provider_user_id, 'service_booking', p_booking_id::text, p_amount_kobo, p_booking_id);\nEND;"),
 ]))
 
 # --- request_organizer_payout: release matured earnings first ----------------
