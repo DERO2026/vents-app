@@ -316,17 +316,11 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
     }
   }
 
-  // Commission is not negotiated through this screen: a Representative
-  // always earns the full, fixed VENTS commission (10000 bps = 100% of
-  // the recruiter's own designated commission share) on revenue from the
-  // organizer/provider they recruit -- there is no 0-10% slider, no
-  // partial split, and no "5%" default. FULL_COMMISSION_BPS is passed
-  // unconditionally; nothing in this component ever reads or sets a
-  // different value. (The underlying recruiter_partnerships.commission_split_bps
-  // column and its 0-10000 CHECK constraint are unchanged -- this is a
-  // UI/default-value correction, not a schema change: the column simply
-  // never receives anything other than the maximum value from this UI.)
-  const FULL_COMMISSION_BPS = 10000;
+  // The partnership RPC still requires this legacy field. It is retained
+  // only for API compatibility until the commission-split schema is
+  // replaced by the fixed organizer reward model; it does not calculate or
+  // authorize any earnings or payout.
+  const LEGACY_PARTNERSHIP_SPLIT_BPS = 10000;
 
   async function handleSendInvite() {
     if (!inviteTarget) return;
@@ -344,7 +338,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
     const { error } = await supabase.rpc('invite_recruiter_partnership', {
       p_organizer_id: wantsProvider ? null : inviteTarget.id,
       p_provider_id: wantsProvider ? targetProviderId : null,
-      p_commission_split_bps: FULL_COMMISSION_BPS,
+      p_commission_split_bps: LEGACY_PARTNERSHIP_SPLIT_BPS,
     });
     setInviteBusy(false);
     if (error) {
@@ -778,7 +772,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
             color: ventsColors.ink2,
           }}
         >
-          {p.provider_id ? 'Service provider partnership' : 'Organizer partnership'} · <span style={{ color: ventsColors.accentSoft }}>full VENTS commission</span>
+          {p.provider_id ? 'Service provider partnership' : 'Organizer partnership'}
         </div>
         {isPending && (
           <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
@@ -938,7 +932,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
               Become a VENTS Representative
             </h2>
             <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink2, margin: `0 0 ${ventsSpacing.unit[4]}px`, lineHeight: 1.55 }}>
-              Become a VENTS Representative to invite organizers and service providers into a partnership. You earn VENTS&apos; full commission on revenue from events belonging to the organizer you recruit — fixed, not negotiated.
+              Invite organizers and service providers to partner with you. The fixed reward is ₦50,000 per eligible organizer onboarded. The organizer must host an event that is not cancelled, and both the organizer and a VENTS event admin must approve it. The event must be over and its ticket sales finalized before withdrawal; VENTS must also have at least ₦50,000 in pooled ticket profit before representatives can claim rewards. Genuine free events may qualify after review. An invitation does not create an earned balance; payout setup is still in progress.
             </p>
             <div
               style={{
@@ -956,14 +950,14 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                 style={{
                   fontSize: 22,
                   fontWeight: 800,
-                  minWidth: 54,
+                  whiteSpace: 'nowrap',
                   color: ventsColors.accentSoft,
                 }}
               >
-                10%
+                ₦50,000
               </span>
               <span style={{ ...ventsTypography.caption, color: ventsColors.ink2, lineHeight: 1.4 }}>
-                You earn VENTS&apos; full <strong style={{ color: ventsColors.ink1 }}>10% commission</strong> on revenue from events belonging to the organizer you recruit.
+                Withdrawal is available only after an approved event ends, its ticket sales are finalized, and VENTS has at least ₦50,000 in pooled ticket profit.
               </span>
             </div>
             <button
@@ -976,6 +970,26 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
             </button>
             {registerError && <div style={{ marginTop: ventsSpacing.unit[2] }}><ErrorBanner title="Could not register" body={registerError} /></div>}
           </div>
+        )}
+
+        {isRecruiter === true && (
+          <section
+            data-testid="vents-work-reward-terms"
+            style={{
+              borderRadius: ventsRadii.md,
+              padding: `${ventsSpacing.unit[3]}px ${ventsSpacing.unit[3]}px`,
+              marginBottom: ventsSpacing.unit[3],
+              background: ventsColors.surface,
+              border: `1px solid ${ventsColors.border}`,
+            }}
+          >
+            <h2 style={{ ...ventsTypography.label, color: ventsColors.ink1, margin: `0 0 ${ventsSpacing.unit[1]}px` }}>
+              VENTS Work reward: ₦50,000 per eligible organizer
+            </h2>
+            <p style={{ ...ventsTypography.caption, color: ventsColors.ink2, margin: 0, lineHeight: 1.5 }}>
+              The organizer must host a non-cancelled event approved by both the organizer and a VENTS event admin. Withdrawal is after the event ends and ticket sales are finalized, when VENTS has at least ₦50,000 in pooled ticket profit. Genuine free events may qualify after review. Reward tracking and payouts are still being implemented.
+            </p>
+          </section>
         )}
 
         <nav
@@ -1146,7 +1160,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                     >
                       <Sparkles size={14} color={ventsColors.accentSoft} style={{ flexShrink: 0, marginTop: 2 }} />
                       <p style={{ ...ventsTypography.label, color: ventsColors.ink2, margin: 0, textTransform: 'none', letterSpacing: 'normal', lineHeight: 1.5 }}>
-                        You will earn VENTS&apos; full commission on revenue from this organizer&apos;s events. This is fixed and not negotiable.
+                        This invitation starts an organizer partnership. It does not create an earned balance; organizer reward eligibility is verified separately.
                       </p>
                     </div>
                     <button
@@ -1276,7 +1290,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                       color: ventsColors.ink2,
                     }}
                   >
-                    <span style={{ color: ventsColors.accentSoft }}>Full VENTS commission</span>
+                    <span style={{ color: ventsColors.accentSoft }}>Partnership</span>
                   </div>
                   {p.status === 'pending' && (
                     <button

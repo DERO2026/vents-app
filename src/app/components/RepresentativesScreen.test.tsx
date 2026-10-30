@@ -4,8 +4,8 @@ import { createRoot, Root } from 'react-dom/client';
 
 // VENTS Representatives frontend (migration 0193's backend, not yet
 // applied to production). These tests mock supabase entirely -- no real
-// RPC or network call happens, and no commission amount/payout UI should
-// ever render here, since that logic is intentionally not built yet.
+// RPC or network call happens. The fixed organizer reward is informational
+// only; no earnings balance or payout logic is built yet.
 
 const rpcCalls: { name: string; args: any }[] = [];
 let recruiterRowExists = false;
@@ -398,7 +398,7 @@ describe('RepresentativesScreen', () => {
     expect(container.textContent).not.toMatch(/[Cc]ommission split \(%\)/);
   });
 
-  it('sending a valid invite always calls invite_recruiter_partnership with the fixed full commission (10000 bps), never a UI-derived value', async () => {
+  it('keeps the legacy partnership RPC argument fixed and independent of user input', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -417,12 +417,14 @@ describe('RepresentativesScreen', () => {
     expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
   });
 
-  it('describes the commission arrangement as the full, fixed VENTS commission -- never "5%" or a negotiable split', async () => {
+  it('describes the fixed organizer reward without promising revenue commission', async () => {
     recruiterRowExists = false;
     await mount();
-    expect(container.textContent).toMatch(/full commission/i);
-    expect(container.textContent).not.toMatch(/5%/);
-    expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
+    expect(container.textContent).toMatch(/₦50,000/);
+    expect(container.textContent).toMatch(/eligible organizer onboarded/i);
+    expect(container.textContent).toMatch(/event must be over and its ticket sales finalized/i);
+    expect(container.textContent).toMatch(/at least ₦50,000 in pooled ticket profit/i);
+    expect(container.textContent).not.toMatch(/\b10%\b|\bcommission\b/i);
   });
 
   it('resolves the caller\'s own service_providers.id before filtering incoming provider-side invitations', async () => {
@@ -648,11 +650,17 @@ describe('RepresentativesScreen', () => {
     expect((acceptBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('never renders a commission amount, earnings total, or payout control anywhere', async () => {
+  it('shows the fixed reward to an existing Representative without claiming the payout flow is live', async () => {
     recruiterRowExists = true;
     await mount();
     const text = container.textContent || '';
-    expect(text).not.toMatch(/earned|payout|withdraw.*commission|\$\d/i);
+    expect(text).toMatch(/₦50,000/);
+    expect(container.querySelector('[data-testid="vents-work-reward-terms"]')).toBeTruthy();
+    expect(text).toMatch(/non-cancelled event approved by both the organizer and a VENTS event admin/i);
+    expect(text).toMatch(/at least ₦50,000 in pooled ticket profit/i);
+    expect(text).toMatch(/reward tracking and payouts are still being implemented/i);
+    expect(text).not.toMatch(/\d+ earned|earned total/i);
+    expect(Array.from(container.querySelectorAll('button')).some((button) => /withdraw/i.test(button.textContent || ''))).toBe(false);
   });
 
   // Mobile UI fix: the root-container color override is necessary but not
@@ -683,7 +691,7 @@ describe('RepresentativesScreen', () => {
 
     it('registration (empty/prompt) state: the prompt paragraph and button text have explicit non-black colors', async () => {
       await mount();
-      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('Become a VENTS Representative'));
+      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('fixed reward is ₦50,000'));
       notBlack(prompt ?? null);
       const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Become a Representative');
       expect(btn).toBeTruthy();
