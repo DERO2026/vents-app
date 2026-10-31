@@ -139,7 +139,7 @@ refund shortfall, settlement, payout maker-checker, event verification) are
 | # | Batch | Items | Size | Gate |
 |---|---|---|---|---|
 | A | ~~**Fix the baseline failures and rewrite §9**~~ — done in code (Batch A, PR #82). §9.3 lists what only the owner can confirm. | QA-1, INF-1 | — | Owner confirms §9.3 |
-| B | **Reconcile migration 0192 with 0203** (0192 redefines `confirm_ticket_payment` / `credit_organizer_wallet`, so 0203's drift guard refuses to run after it). Then prepare the production apply plan for 0202 → 0201 → 0203. It needs read-only pre-checks, a rollback note and the frontend shipped together. | PAY-1, PAY-3, EARN-1 | Small | PR #82 review |
+| B | **Reconcile 0192 and plan the production apply**: investigation done (read-only), see `docs/migration-apply-plan-0192-0203.md`. Order is **0201 → 0202 → 0203** (0202 → 0201 drops `payout_reversal`; proven). 0192 is superseded and must not be applied (a naive fix would silently undo 0203's fees and holds; proven). Applying needs owner approval and the frontend in the same window. | PAY-1, PAY-3, EARN-1 | Small | Owner decisions in plan §9 |
 | C | **Payout operations clean-up** (no code): the 5 stale requests (₦49,100), the 4 test transfers, the 2 ledger gaps. Each gap is closed through an audited adjustment. | PAY-2, PAY-5, PAY-6 | Small | Paystack dashboard access |
 | D | **Paystack verification**: confirm the dispute webhook payload and the live/test key mode (PAY-4) from the dashboard. Then one live ₦100 purchase + refund by the owner after the migrations are applied. | PAY-4, REF-1 | Small | Owner; network access to paystack.com |
 | E | ~~**VENTS Work screens**~~ — done in code (Batch E, PR #82). | EARN-2 | — | — |
