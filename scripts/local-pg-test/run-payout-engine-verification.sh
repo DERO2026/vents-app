@@ -197,8 +197,16 @@ expect_value "the transfer can be completed by its reference alone" \
 echo "== Legacy: a transfer that succeeds after the request was cancelled (P0-1) =="
 R4=$(request "$ORG2" 100000 "$BANK2" "legacy"); claim "$R4" >/dev/null
 "${PSQL[@]}" -q -c "$(as "$ADMIN" "SELECT public.admin_mark_payout_processing('$R4', '$(ref_for "$R4")', 'TRF_4');")" >/dev/null
-# What the pre-0202 cancel did: status cancelled, money back to available.
-"${PSQL[@]}" -q -c "UPDATE public.organizer_withdrawal_requests SET status = 'cancelled' WHERE id = '$R4'; UPDATE public.organizer_wallets SET balance_kobo = balance_kobo + 100000, pending_kobo = pending_kobo - 100000 WHERE organizer_id = '$ORG2';"
+# What the pre-0202 admin cancel did: status cancelled, money back to
+# available, a cancelled_payout_refund ledger row. (A historical row: the
+# transfer guard, which now forbids this, is lifted for that one write.)
+legacy_cancel() {
+  "${PSQL[@]}" -q -c "ALTER TABLE public.organizer_withdrawal_requests DISABLE TRIGGER organizer_withdrawal_transfer_guard;
+    UPDATE public.organizer_withdrawal_requests SET status = 'cancelled' WHERE id = '$1';
+    ALTER TABLE public.organizer_withdrawal_requests ENABLE TRIGGER organizer_withdrawal_transfer_guard;
+    $2"
+}
+legacy_cancel "$R4" "UPDATE public.organizer_wallets SET balance_kobo = balance_kobo + 100000, pending_kobo = pending_kobo - 100000 WHERE organizer_id = '$ORG2'; INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, withdrawal_request_id) VALUES ('$ORG2', 'cancelled_payout_refund', 100000, 'legacy cancel', '$R4');"
 before=$(wallet "$ORG2")
 expect_value "the late success completes the request and takes the returned money back" \
   "$(srv "complete_organizer_payout('TRF_4')")/$(wallet "$ORG2")" "completed/$((${before%%/*} - 100000))/50000/100000"
@@ -206,7 +214,7 @@ expect_value "no recovery shortfall when the money was still available" \
   "$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'payout_recovery_shortfall';")" "0"
 R5=$(request "$ORG2" 100000 "$BANK2" "legacy2"); claim "$R5" >/dev/null
 "${PSQL[@]}" -q -c "$(as "$ADMIN" "SELECT public.admin_mark_payout_processing('$R5', '$(ref_for "$R5")', 'TRF_5');")" >/dev/null
-"${PSQL[@]}" -q -c "UPDATE public.organizer_withdrawal_requests SET status = 'cancelled' WHERE id = '$R5'; UPDATE public.organizer_wallets SET balance_kobo = 30000, pending_kobo = pending_kobo - 100000 WHERE organizer_id = '$ORG2';"
+legacy_cancel "$R5" "UPDATE public.organizer_wallets SET balance_kobo = 30000, pending_kobo = pending_kobo - 100000 WHERE organizer_id = '$ORG2'; INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, withdrawal_request_id) VALUES ('$ORG2', 'cancelled_payout_refund', 100000, 'legacy cancel', '$R5');"
 expect_value "when the money was already spent, only what is available is taken back, never below zero" \
   "$(srv "complete_organizer_payout('TRF_5')")/$(val "SELECT balance_kobo FROM public.organizer_wallets WHERE organizer_id = '$ORG2';")" "completed/0"
 expect_value "the shortfall is recorded for an admin" \
@@ -233,6 +241,80 @@ expect_value "ORG's ledger explains balance + pending exactly" \
 expect_value "no wallet is negative" "$(val "SELECT count(*) FROM public.organizer_wallets WHERE balance_kobo < 0 OR pending_kobo < 0;")" "0"
 expect_value "the report flags a wallet whose ledger does not match" \
   "$("${PSQL[@]}" -q -c "UPDATE public.organizer_wallets SET balance_kobo = balance_kobo + 1 WHERE organizer_id = '$ORG';" >/dev/null; val "$(as "$ADMIN" "SELECT array_to_string(issues, ',') FROM public.admin_earnings_reconciliation() WHERE organizer_id = '$ORG';")")" "ledger_does_not_match_balance"
+
+echo "== 2026-07 incident: paid transfers cancelled by a status-only sweep =="
+# Production, 2026-07-10/12: four NGN 100 transfers were sent (transfer
+# codes recorded, Paystack: success), no transfer.success webhook was
+# processed, and a migration then set status = 'cancelled' directly --
+# no wallet change, no ledger row, no admin log. Later a webhook or
+# Reconcile completion was silently ignored ('already_completed').
+ORG3="00000000-0000-0000-0000-0000000000a3"; BANK3="00000000-0000-0000-0000-0000000000d3"
+"${PSQL[@]}" -q <<SQL
+INSERT INTO public.users (id, role, is_organizer, full_name, email) VALUES ('$ORG3', 'user', true, 'Org Three', 'org3@example.test');
+INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_code, account_number, account_name, recipient_code, is_active)
+VALUES ('$BANK3', '$ORG3', 'Test Bank', '000', '0000000003', 'ORG THREE', 'RCP_test_3', true);
+INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, total_earned_kobo) VALUES ('$ORG3', 100000, 100000);
+INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description) VALUES ('$ORG3', 'credit', 100000, 'ticket sales');
+SQL
+I1=$(request "$ORG3" 10000 "$BANK3" "inc1"); claim "$I1" >/dev/null
+"${PSQL[@]}" -q -c "$(as "$ADMIN" "SELECT public.admin_mark_payout_processing('$I1', '$(ref_for "$I1")', 'TRF_I1');")" >/dev/null
+expect_error "the sweep's direct UPDATE to cancelled is now refused once a transfer code exists" "a Paystack transfer exists" \
+  "UPDATE public.organizer_withdrawal_requests SET status = 'cancelled', admin_note = 'Test payout request cleared during platform launch sweep' WHERE id = '$I1';"
+expect_error "...and so is rejecting it" "a Paystack transfer exists" \
+  "UPDATE public.organizer_withdrawal_requests SET status = 'rejected' WHERE id = '$I1';"
+expect_error "...or putting it back to pending" "a Paystack transfer exists" \
+  "UPDATE public.organizer_withdrawal_requests SET status = 'pending' WHERE id = '$I1';"
+expect_error "its transfer code cannot be cleared (that would hide the transfer)" "cannot be changed or cleared" \
+  "UPDATE public.organizer_withdrawal_requests SET transfer_code = NULL WHERE id = '$I1';"
+expect_error "its reference cannot be changed" "cannot be changed or cleared" \
+  "UPDATE public.organizer_withdrawal_requests SET paystack_reference = 'payout_other' WHERE id = '$I1';"
+expect_value "the guarded request is still processing and its money still pending" "$(req_status "$I1")" "processing"
+expect_value "Paystack's success then completes it normally" "$(srv "complete_organizer_payout('TRF_I1')")" "completed"
+
+# The historical shape (made before the guard existed): status-only
+# cancel, the money still in pending.
+before=$(wallet "$ORG3")
+I2=$(request "$ORG3" 10000 "$BANK3" "inc2"); claim "$I2" >/dev/null
+"${PSQL[@]}" -q -c "$(as "$ADMIN" "SELECT public.admin_mark_payout_processing('$I2', '$(ref_for "$I2")', 'TRF_I2');")" >/dev/null
+legacy_cancel "$I2" "SELECT 1;"
+expect_value "a late success for a sweep-cancelled request whose money is still pending completes from pending (not the balance)" \
+  "$(srv "complete_organizer_payout('TRF_I2')")/$(req_status "$I2")" "completed/completed"
+expect_value "the balance is charged once, pending is cleared, withdrawn counts it" \
+  "$(wallet "$ORG3")" "$(( ${before%%/*} - 10000 ))/$(echo "$before" | cut -d/ -f2)/$(( $(echo "$before" | cut -d/ -f3) + 10000 ))"
+expect_value "exactly one payout ledger row, linked to the request" \
+  "$(val "SELECT count(*) || '/' || sum(amount_kobo) FROM public.organizer_transactions WHERE withdrawal_request_id = '$I2' AND type = 'payout';")" "1/10000"
+expect_value "a duplicate webhook changes nothing" "$(srv "complete_organizer_payout('$(ref_for "$I2")')")/$(wallet "$ORG3")" \
+  "already_completed/$(( ${before%%/*} - 10000 ))/$(echo "$before" | cut -d/ -f2)/$(( $(echo "$before" | cut -d/ -f3) + 10000 ))"
+expect_value "after the incident replay this wallet reconciles" \
+  "$(val "$(as "$ADMIN" "SELECT cardinality(issues) FROM public.admin_earnings_reconciliation() WHERE organizer_id = '$ORG3';")")" "0"
+
+# Production's actual state today: status-only cancel AND the money since
+# moved out of pending by a write the records do not show.
+I3=$(request "$ORG3" 10000 "$BANK3" "inc3"); claim "$I3" >/dev/null
+"${PSQL[@]}" -q -c "$(as "$ADMIN" "SELECT public.admin_mark_payout_processing('$I3', '$(ref_for "$I3")', 'TRF_I3');")" >/dev/null
+legacy_cancel "$I3" "UPDATE public.organizer_wallets SET pending_kobo = pending_kobo - 10000 WHERE organizer_id = '$ORG3';"
+expect_value "before any webhook, admins see it as a transfer code on a cancelled request (production's four today)" \
+  "$(val "$(as "$ADMIN" "SELECT exception_kind FROM public.admin_list_payout_exceptions() WHERE request_id = '$I3';")")" "transfer_code_on_cancelled_request"
+before=$(wallet "$ORG3")
+expect_value "a late success moves no money when the records cannot say where the money is" \
+  "$(srv "complete_organizer_payout('TRF_I3')")/$(wallet "$ORG3")/$(req_status "$I3")" "needs_review/$before/cancelled"
+expect_value "it is recorded as a durable exception, once, even if the webhook repeats" \
+  "$(srv "complete_organizer_payout('TRF_I3')")/$(val "SELECT count(*) || '/' || kind FROM public.payout_exceptions WHERE request_id = '$I3' GROUP BY kind;")" \
+  "needs_review/1/paid_after_cancel_unresolved"
+expect_value "no ledger row is fabricated for it" "$(val "SELECT count(*) FROM public.organizer_transactions WHERE withdrawal_request_id = '$I3';")" "0"
+expect_value "admins see the exception" \
+  "$(val "$(as "$ADMIN" "SELECT exception_kind FROM public.admin_list_payout_exceptions() WHERE request_id = '$I3';")")" "paid_after_cancel_unresolved"
+expect_value "the unresolved exception is logged for an admin" \
+  "$(val "SELECT count(*) FROM public.admin_logs WHERE action = 'payout_success_after_cancel_unresolved' AND details->>'request_id' = '$I3';")" "2"
+expect_value "a success after a Paystack failure is also kept as an exception" \
+  "$(val "SELECT kind FROM public.payout_exceptions WHERE request_id = '$R2';")" "paid_after_final_state"
+expect_value "the reconciliation report flags the wallet whose pending was moved without a record" \
+  "$(val "$(as "$ADMIN" "SELECT (cardinality(issues) > 0)::text FROM public.admin_earnings_reconciliation() WHERE organizer_id = '$ORG3';")")" "true"
+expect_error "only admins can list payout exceptions" "Admin access required" \
+  "$(as "$ORG" "SELECT * FROM public.admin_list_payout_exceptions();")"
+expect_error "clients cannot read or write the exceptions table" "permission denied" \
+  "$(as "$ADMIN" "SELECT count(*) FROM public.payout_exceptions;")"
+
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES PAYOUT ENGINE CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi

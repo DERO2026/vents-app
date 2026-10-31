@@ -96,6 +96,8 @@ else fail "restored bodies differ from production:$MISMATCH"; fi
 expect_value "grants on the 19 functions are unchanged by the restore" "$(val "$GRANTS_SQL")" "$GRANTS_BEFORE"
 expect_value "the restore leaves the migrations' tables in place (no financial rows dropped)" \
   "$(val "SELECT (to_regclass('public.earnings_holds') IS NOT NULL AND to_regclass('public.earn_audit_log') IS NOT NULL)::text;")" "true"
+expect_value "the restore keeps 0202's payout exception table and transfer guard (they only refuse unsafe changes)" \
+  "$(val "SELECT (to_regclass('public.payout_exceptions') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard' AND NOT tgisinternal))::text;")" "true"
 expect_value "a second confirmed restore is a no-op (idempotent)" "$(restore "restore-pre-0201-0203")" "ok"
 
 echo

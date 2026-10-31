@@ -53,7 +53,7 @@ BEGIN
     ('public.admin_mark_payout_processing(uuid,text,text)',    'bf84ac786144b3ea3796fbc09f4bbec6', 'fa6637f7cc5ed915834a7e385f0d01c1'),
     ('public.admin_release_payout_claim(uuid,text)',           '33dd4783b1bb7c4333b70bf32c671e02', 'f3f4b91c009ae18e065a4b80c16453ed'),
     ('public.admin_cancel_processing_payout(uuid,text)',       'cea18083231d281ba2fee58e7610a774', '6428a9bc9912b18ffebeca5f214251f8'),
-    ('public.complete_organizer_payout(text)',                 '563304a9394f6fb5148b2d458ce945f6', 'ca6b015abbe0c1a4cdb66470d5a4ad29')
+    ('public.complete_organizer_payout(text)',                 '563304a9394f6fb5148b2d458ce945f6', 'f6ca5addaff7bf329228693cfca2b7ec')
   ) AS v(fn, live_md5, own_md5) LOOP
     SELECT md5(p.prosrc) INTO v_md5 FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
     IF v_local THEN
@@ -91,6 +91,58 @@ CREATE UNIQUE INDEX IF NOT EXISTS organizer_transactions_payout_reversal_once
 -- A transfer reference names exactly one request.
 CREATE UNIQUE INDEX IF NOT EXISTS organizer_withdrawal_requests_reference_once
   ON public.organizer_withdrawal_requests (paystack_reference) WHERE paystack_reference IS NOT NULL;
+
+-- Payout exceptions: a Paystack outcome that cannot be applied safely
+-- from the records (a transfer that succeeded after its request was
+-- cancelled, failed or rejected). Recorded once per request and kind,
+-- never acted on automatically; resolved by people (resolution columns).
+CREATE TABLE IF NOT EXISTS public.payout_exceptions (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id    uuid NOT NULL REFERENCES public.organizer_withdrawal_requests(id) ON DELETE RESTRICT,
+  organizer_id  uuid NOT NULL,
+  amount_kobo   bigint NOT NULL,
+  kind          text NOT NULL CHECK (kind IN ('paid_after_cancel_unresolved', 'paid_after_final_state')),
+  lookup_key    text,
+  details       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  detected_at   timestamptz NOT NULL DEFAULT now(),
+  resolved_at   timestamptz,
+  resolved_by   uuid,
+  resolution    text,
+  UNIQUE (request_id, kind)
+);
+ALTER TABLE public.payout_exceptions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.payout_exceptions FROM PUBLIC, anon, authenticated;
+
+-- Once Paystack has issued a transfer code, the money may have left: the
+-- request can then only end as Paystack decides (completed, failed or
+-- reversed through the webhook / Reconcile functions). Nothing -- not an
+-- admin function, not a direct UPDATE like the 2026-07-12 "launch sweep"
+-- that cancelled four paid transfers -- may cancel, reject or re-open it,
+-- or change or clear its transfer code or reference.
+CREATE OR REPLACE FUNCTION public.organizer_withdrawal_transfer_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO ''
+AS $function$
+BEGIN
+  IF OLD.transfer_code IS NOT NULL AND NEW.transfer_code IS DISTINCT FROM OLD.transfer_code THEN
+    RAISE EXCEPTION 'Withdrawal %: its Paystack transfer code cannot be changed or cleared', OLD.id;
+  END IF;
+  IF OLD.paystack_reference IS NOT NULL AND NEW.paystack_reference IS DISTINCT FROM OLD.paystack_reference THEN
+    RAISE EXCEPTION 'Withdrawal %: its Paystack reference cannot be changed or cleared', OLD.id;
+  END IF;
+  IF OLD.transfer_code IS NOT NULL AND NEW.status IS DISTINCT FROM OLD.status
+     AND NEW.status IN ('cancelled', 'rejected', 'pending') THEN
+    RAISE EXCEPTION 'Withdrawal %: a Paystack transfer exists (%), so it cannot be set to %; only Paystack''s outcome (completed, failed, reversed) can end it',
+      OLD.id, OLD.transfer_code, NEW.status;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+DROP TRIGGER IF EXISTS organizer_withdrawal_transfer_guard ON public.organizer_withdrawal_requests;
+CREATE TRIGGER organizer_withdrawal_transfer_guard
+  BEFORE UPDATE ON public.organizer_withdrawal_requests
+  FOR EACH ROW EXECUTE FUNCTION public.organizer_withdrawal_transfer_guard();
 
 -- The fixed Paystack reference for a request.
 CREATE OR REPLACE FUNCTION public.payout_transfer_reference(p_request_id uuid)
@@ -272,6 +324,9 @@ DECLARE
   v_account_number text;
   v_account_name text;
   v_balance bigint;
+  v_pending bigint;
+  v_other_open bigint;
+  v_source text;
   v_debit bigint;
 BEGIN
   SELECT r.id, r.organizer_id, r.amount_kobo, r.status, b.bank_name, b.account_number, b.account_name
@@ -292,6 +347,10 @@ BEGIN
   END IF;
   IF v_status IN ('failed', 'rejected') THEN
     -- Not expected from Paystack; record it for an admin, change nothing.
+    INSERT INTO public.payout_exceptions (request_id, organizer_id, amount_kobo, kind, lookup_key, details)
+    VALUES (v_id, v_organizer_id, v_amount_kobo, 'paid_after_final_state', p_request_id,
+            jsonb_build_object('status', v_status))
+    ON CONFLICT (request_id, kind) DO NOTHING;
     INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
     VALUES (auth.uid(), 'payout_success_after_final_state', v_organizer_id,
             jsonb_build_object('request_id', v_id, 'status', v_status, 'lookup_key', p_request_id),
@@ -300,10 +359,42 @@ BEGIN
     RETURN;
   END IF;
 
-  SELECT w.balance_kobo INTO v_balance FROM public.organizer_wallets w
+  SELECT w.balance_kobo, w.pending_kobo INTO v_balance, v_pending FROM public.organizer_wallets w
    WHERE w.organizer_id = v_organizer_id FOR UPDATE;
 
   IF v_status = 'cancelled' THEN
+    -- Paid after it was cancelled. Where is the request's money now? Act
+    -- only on what the records prove (2026-07 incident: a status-only
+    -- "sweep" cancelled four paid transfers and left no trace in the wallet
+    -- or the ledger).
+    IF EXISTS (SELECT 1 FROM public.organizer_transactions t
+                WHERE t.withdrawal_request_id = v_id AND t.type = 'cancelled_payout_refund') THEN
+      v_source := 'balance';   -- a real cancel returned it to the balance
+    ELSE
+      SELECT COALESCE(sum(o.amount_kobo), 0) INTO v_other_open
+        FROM public.organizer_withdrawal_requests o
+       WHERE o.organizer_id = v_organizer_id AND o.id <> v_id AND o.status IN ('pending', 'processing');
+      IF COALESCE(v_pending, 0) - v_other_open >= v_amount_kobo THEN
+        v_source := 'pending'; -- a status-only cancel left it in pending
+      ELSE
+        -- Neither: something the records do not show moved the money. Move
+        -- nothing; keep a durable exception for two admins to resolve.
+        INSERT INTO public.payout_exceptions (request_id, organizer_id, amount_kobo, kind, lookup_key, details)
+        VALUES (v_id, v_organizer_id, v_amount_kobo, 'paid_after_cancel_unresolved', p_request_id,
+                jsonb_build_object('balance_kobo', v_balance, 'pending_kobo', v_pending, 'other_open_kobo', v_other_open))
+        ON CONFLICT (request_id, kind) DO NOTHING;
+        INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+        VALUES (auth.uid(), 'payout_success_after_cancel_unresolved', v_organizer_id,
+                jsonb_build_object('request_id', v_id, 'lookup_key', p_request_id, 'amount_kobo', v_amount_kobo,
+                                   'balance_kobo', v_balance, 'pending_kobo', v_pending, 'other_open_kobo', v_other_open),
+                COALESCE(public.actor_role(), 'system:project_admin'));
+        RETURN QUERY SELECT 'needs_review'::text, NULL::text, NULL::text, v_amount_kobo;
+        RETURN;
+      END IF;
+    END IF;
+  END IF;
+
+  IF v_status = 'cancelled' AND v_source = 'balance' THEN
     -- The cancel returned the money to the balance; the transfer went out anyway.
     v_debit := LEAST(COALESCE(v_balance, 0), v_amount_kobo);
     UPDATE public.organizer_wallets
@@ -410,6 +501,36 @@ $function$;
 -- ---------------------------------------------------------------------------
 -- Reconciliation report (P1-6): read-only, admins only.
 -- ---------------------------------------------------------------------------
+-- Read-only list of payout exceptions for admins: every recorded
+-- exception, plus every request that ended cancelled, failed or rejected
+-- while holding a Paystack transfer code and has no payout ledger row --
+-- money Paystack may have paid that VENTS does not show as paid. Nothing
+-- here changes a record; Reconcile asks Paystack about each one.
+CREATE OR REPLACE FUNCTION public.admin_list_payout_exceptions()
+ RETURNS TABLE(request_id uuid, organizer_id uuid, amount_kobo bigint, request_status text, transfer_code text,
+               paystack_reference text, exception_kind text, detected_at timestamptz, resolved_at timestamptz,
+               requested_at timestamptz, updated_at timestamptz)
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
+  RETURN QUERY
+  SELECT r.id, r.organizer_id, r.amount_kobo, r.status, r.transfer_code, r.paystack_reference,
+         COALESCE(e.kind, 'transfer_code_on_' || r.status || '_request'), e.detected_at, e.resolved_at,
+         r.created_at, r.updated_at
+  FROM public.organizer_withdrawal_requests r
+  LEFT JOIN public.payout_exceptions e ON e.request_id = r.id
+  WHERE e.id IS NOT NULL
+     OR (r.status IN ('cancelled', 'failed', 'rejected') AND r.transfer_code IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM public.organizer_transactions t
+                          WHERE t.withdrawal_request_id = r.id AND t.type = 'payout'))
+  ORDER BY r.created_at;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.admin_earnings_reconciliation()
  RETURNS TABLE(organizer_id uuid, balance_kobo bigint, pending_kobo bigint, ledger_net_kobo bigint,
                ledger_gap_kobo bigint, open_requests_kobo bigint, pending_gap_kobo bigint,
@@ -455,6 +576,9 @@ REVOKE ALL ON FUNCTION public.reverse_organizer_payout(text, text) FROM PUBLIC, 
 REVOKE ALL ON FUNCTION public.payout_transfer_reference(uuid) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.admin_earnings_reconciliation() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_earnings_reconciliation() TO authenticated;
+REVOKE ALL ON FUNCTION public.admin_list_payout_exceptions() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_list_payout_exceptions() TO authenticated;
+REVOKE ALL ON FUNCTION public.organizer_withdrawal_transfer_guard() FROM PUBLIC, anon, authenticated;
 DO $grants$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'project_admin') THEN

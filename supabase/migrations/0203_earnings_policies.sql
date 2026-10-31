@@ -1321,7 +1321,7 @@ SELECT pg_temp.vents_0203_patch('public.earn_ticket_refund_adjust_profit()', 'db
 ]);
 
 -- complete_organizer_payout (0201/0202 text in this repo)
-SELECT pg_temp.vents_0203_patch('public.complete_organizer_payout(text)', 'ca6b015abbe0c1a4cdb66470d5a4ad29', ARRAY[
+SELECT pg_temp.vents_0203_patch('public.complete_organizer_payout(text)', 'f6ca5addaff7bf329228693cfca2b7ec', ARRAY[
   $x0203$    IF v_debit < v_amount_kobo THEN
 $x0203$, $x0203$    IF v_debit < v_amount_kobo THEN
       -- Rule: never absorb it silently; recover it from future earnings.

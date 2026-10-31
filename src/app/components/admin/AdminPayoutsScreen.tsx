@@ -33,6 +33,8 @@ export function AdminPayoutsScreen() {
   const [activeSection, setActiveSection] = useState<'requests' | 'wallets' | 'member-wallets'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  const [checkingExceptions, setCheckingExceptions] = useState(false);
+  const [exceptionReport, setExceptionReport] = useState<any[] | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [rejectConfirmId, setRejectConfirmId] = useState<string | null>(null);
   // Audit finding: "Approve & Pay" — the one action here that actually
@@ -269,6 +271,24 @@ export function AdminPayoutsScreen() {
     } catch (e: any) { flash(false, e.message || 'Reconcile failed'); } finally { setReconciling(false); }
   };
 
+  // Report-only: transfers Paystack may have paid while VENTS shows the
+  // request as cancelled, failed or rejected (2026-07 incident). Changes
+  // nothing; resolving one is a two-admin decision.
+  const handleCheckExceptions = async () => {
+    setCheckingExceptions(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch(apiUrl('/api/v1/wallet/reconcile-payouts'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mode: 'exceptions' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Exception check failed');
+      setExceptionReport(Array.isArray(json.report) ? json.report : []);
+    } catch (e: any) { flash(false, e.message || 'Exception check failed'); } finally { setCheckingExceptions(false); }
+  };
+
   const handleCancelConfirmed = async (id: string, reason: string) => {
     setCancelConfirmId(null);
     if (!reason.trim()) return;
@@ -373,7 +393,37 @@ export function AdminPayoutsScreen() {
         <button onClick={handleReconcile} disabled={reconciling} title="Poll Paystack directly for any payout stuck in Processing and resolve it" style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,.3)', cursor: reconciling ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(96,165,250,.1)', color: adminTheme.blue, opacity: reconciling ? 0.6 : 1 }}>
           {reconciling ? 'Reconciling…' : '⟳ Reconcile Processing'}
         </button>
+        <button data-testid="payout-exceptions-check" onClick={handleCheckExceptions} disabled={checkingExceptions} title="Ask Paystack about requests that ended cancelled, failed or rejected while holding a transfer code. Changes nothing." style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(251,191,36,.3)', cursor: checkingExceptions ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(251,191,36,.1)', color: '#FBBF24', opacity: checkingExceptions ? 0.6 : 1 }}>
+          {checkingExceptions ? 'Checking…' : 'Check payout exceptions'}
+        </button>
       </div>
+
+      {exceptionReport && (
+        <div data-testid="payout-exceptions-report" style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#FBBF24' }}>
+            Payout exceptions ({exceptionReport.length}) · report only, nothing was changed
+          </p>
+          {exceptionReport.length === 0 && <p style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted }}>None: every transfer code matches its request.</p>}
+          {exceptionReport.map((r: any) => (
+            <div key={r.request_id} data-testid={`payout-exception-${r.request_id}`} style={{ fontSize: 12, color: adminTheme.textMuted }}>
+              <b style={{ color: r.finding === 'paid_not_recorded' ? adminTheme.red : adminTheme.text }}>
+                {r.finding === 'paid_not_recorded' ? 'Paid by Paystack, not recorded in VENTS'
+                  : r.finding === 'not_paid_consistent' ? 'Not paid (consistent)'
+                  : r.finding === 'still_pending_on_paystack' ? 'Still pending on Paystack'
+                  : r.finding === 'no_transfer_code' ? 'Recorded exception (no transfer code)'
+                  : 'Paystack lookup failed'}
+              </b>
+              {' · '}{fmt(Number(r.amount_kobo) || 0)}{' · request '}{String(r.request_id).slice(0, 8)}{' · VENTS status '}{r.request_status}
+              {r.paystack_status ? ` · Paystack ${r.paystack_status}` : ''}
+            </div>
+          ))}
+          {exceptionReport.some((r: any) => r.finding === 'paid_not_recorded') && (
+            <p style={{ margin: 0, fontSize: 11, color: adminTheme.textMuted }}>
+              Resolve with two admins per docs/production-readiness-batch-d.md (payout exceptions). Do not edit these records directly.
+            </p>
+          )}
+        </div>
+      )}
 
       {disputes.length > 0 && (
         <div data-testid="admin-booking-disputes" style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>

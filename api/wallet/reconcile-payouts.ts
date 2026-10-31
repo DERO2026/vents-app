@@ -56,6 +56,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // service API key/JWT isn't an option on this project).
   const adminHeaders = { 'Content-Type': 'application/json', Authorization: authHeader, apikey: anonKey };
 
+  // mode 'exceptions': report-only. Lists every payout exception -- a
+  // request that ended cancelled/failed/rejected while holding a Paystack
+  // transfer code, or a recorded paid-after-final-state exception (0202) --
+  // and asks Paystack for each transfer's real status. It calls no money
+  // function and changes no record: the 2026-07 incident (four NGN 100
+  // transfers paid by Paystack, then cancelled in VENTS) is resolved by two
+  // admins through the documented plan, never automatically.
+  if ((req.body as any)?.mode === 'exceptions') {
+    try {
+      const exRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_list_payout_exceptions`, {
+        method: 'POST',
+        headers: adminHeaders,
+        body: JSON.stringify({}),
+      });
+      if (!exRes.ok) {
+        const errJson = await exRes.json().catch(() => null);
+        return res.status(exRes.status).json({ error: errJson?.message || 'Admin access required' });
+      }
+      const exJson = await exRes.json();
+      const allEx: any[] = Array.isArray(exJson) ? exJson : exJson ? [exJson] : [];
+      const exRows = allEx.slice(0, 50);
+      const report: any[] = [];
+      for (const row of exRows) {
+        const base = { request_id: row.request_id, request_status: row.request_status, amount_kobo: row.amount_kobo, exception_kind: row.exception_kind };
+        if (!row.transfer_code) {
+          report.push({ ...base, paystack_status: null, finding: 'no_transfer_code' });
+          continue;
+        }
+        const tr = await fetch(`https://api.paystack.co/transfer/${encodeURIComponent(row.transfer_code)}`, {
+          headers: { Authorization: `Bearer ${secret}` },
+        }).catch(() => null);
+        const trJson = tr ? await tr.json().catch(() => null) : null;
+        if (!tr || !tr.ok || !trJson?.data) {
+          report.push({ ...base, paystack_status: null, finding: 'paystack_lookup_failed', detail: trJson?.message });
+          continue;
+        }
+        const final = finalTransferStatus(String(trJson.data.status || ''));
+        report.push({
+          ...base,
+          paystack_status: trJson.data.status,
+          paystack_reference: trJson.data.reference ?? null,
+          // 'paid_not_recorded': Paystack paid; VENTS shows no payout. Needs
+          // the documented two-admin resolution.
+          finding: final === 'success' ? 'paid_not_recorded'
+            : final === 'failed' || final === 'reversed' ? 'not_paid_consistent'
+            : 'still_pending_on_paystack',
+        });
+      }
+      return res.status(200).json({ mode: 'exceptions', checked: exRows.length, deferred_count: Math.max(0, allEx.length - exRows.length), changed: 0, report });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Exception check failed' });
+    }
+  }
+
   try {
     // is_admin() is enforced inside this RPC — a non-admin caller gets a
     // clean rejection here, before we ever touch Paystack.

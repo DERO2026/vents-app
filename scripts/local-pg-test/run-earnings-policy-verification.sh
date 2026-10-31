@@ -581,7 +581,9 @@ expect_value "a failed transfer returns the money once" \
 
 echo "== Rule 1: a payout paid after a legacy cancel =="
 WL=$(val "$(as "$ORG_ADMIN" "SELECT public.request_organizer_payout(400000, '$BANK_OA', 'legacy');")")
-"${PSQL[@]}" -q -c "UPDATE public.organizer_withdrawal_requests SET status = 'cancelled' WHERE id = '$WL'; UPDATE public.organizer_wallets SET balance_kobo = balance_kobo + 400000, pending_kobo = pending_kobo - 400000 WHERE organizer_id = '$ORG_ADMIN';"
+# What the pre-0202 admin_cancel_processing_payout did: status cancelled,
+# money back to available, and a cancelled_payout_refund ledger row.
+"${PSQL[@]}" -q -c "UPDATE public.organizer_withdrawal_requests SET status = 'cancelled' WHERE id = '$WL'; UPDATE public.organizer_wallets SET balance_kobo = balance_kobo + 400000, pending_kobo = pending_kobo - 400000 WHERE organizer_id = '$ORG_ADMIN'; INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, withdrawal_request_id) VALUES ('$ORG_ADMIN', 'cancelled_payout_refund', 400000, 'legacy cancel (test)', '$WL');"
 "${PSQL[@]}" -q -c "UPDATE public.organizer_wallets SET balance_kobo = 100000 WHERE organizer_id = '$ORG_ADMIN'; INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description) VALUES ('$ORG_ADMIN', 'debit', 300000, 'spent elsewhere (test)');"
 expect_value "the transfer that went out anyway takes what is there and records the rest as a receivable" \
   "$(val "SELECT status FROM public.complete_organizer_payout('$WL');")/$(wallet "$ORG_ADMIN")/$(val "SELECT source_kind || '/' || amount_kobo FROM public.earnings_recoveries WHERE source_key = '$WL';")" \
@@ -611,7 +613,13 @@ sleep 0.3
 "${PSQL[@]}" -tA -c "SET test.uid='$ORG'; SET ROLE authenticated; SELECT public.request_organizer_payout(3850000, '$BANK', 'race2');" >"$TMP/w2" 2>&1 || true; sleep 1
 expect_value "only one of two concurrent withdrawals of the full balance succeeds" \
   "$(grep -c 'Insufficient balance' "$TMP/w1" "$TMP/w2" | awk -F: '{s+=$2} END {print s}')/$(wallet "$ORG")" "1/0/3850000/0"
-expect_value "final state: every wallet reconciles" "$(reconciled)" "0"
+# ORG_ADMIN went through a pre-0202 cancel, which wrote a
+# cancelled_payout_refund credit with no matching debit (audit P1-6); the
+# report must keep showing that gap, and every other wallet reconciles.
+expect_value "final state: every wallet reconciles except the legacy-cancel one" \
+  "$(val "$(as "$ADMIN_A" "SELECT count(*) FILTER (WHERE cardinality(issues) > 0) FROM public.admin_earnings_reconciliation() WHERE organizer_id <> '$ORG_ADMIN';")")" "0"
+expect_value "the legacy-cancel wallet's gap is exactly the refund credit the old cancel wrote" \
+  "$(val "$(as "$ADMIN_A" "SELECT ledger_gap_kobo FROM public.admin_earnings_reconciliation() WHERE organizer_id = '$ORG_ADMIN';")")" "400000"
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES EARNINGS POLICY CHECKS PASSED"; else echo "$FAILS FAILED, $PASSES passed"; exit 1; fi
