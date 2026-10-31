@@ -68,7 +68,7 @@ expect_value "0203 is applied (confirm_ticket_payment carries its marker)" \
 
 # The 17 functions and their production md5s, read back out of the snapshot header lines.
 EXPECTED=$(grep -oE '^-- [a-z_0-9]+  \(production md5 [0-9a-f]{32}' "$SNAP" | sed -E 's/^-- ([a-z_0-9]+)  \(production md5 ([0-9a-f]{32})/\1 \2/' | sort)
-expect_value "the snapshot covers 17 functions" "$(echo "$EXPECTED" | grep -c .)" "17"
+expect_value "the snapshot covers all 19 replaced functions" "$(echo "$EXPECTED" | grep -c .)" "19"
 NAMES=$(echo "$EXPECTED" | awk '{printf "%s'\''%s'\''", (NR>1?",":""), $1}')
 GRANTS_SQL="SELECT string_agg(p.proname || ':' || has_function_privilege('anon', p.oid, 'EXECUTE')::text || '/' || has_function_privilege('authenticated', p.oid, 'EXECUTE')::text, ',' ORDER BY p.proname, p.oid) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ($NAMES);"
 GRANTS_BEFORE=$(val "$GRANTS_SQL")
@@ -91,9 +91,9 @@ while read -r fn md5; do
   got=$(val "SELECT md5(prosrc) FROM pg_proc WHERE proname = '$fn' AND pronamespace = 'public'::regnamespace;")
   [ "$got" = "$md5" ] || MISMATCH="$MISMATCH $fn($got)"
 done <<<"$EXPECTED"
-if [ -z "$MISMATCH" ]; then pass "all 17 restored bodies have exactly the md5 production reported"
+if [ -z "$MISMATCH" ]; then pass "all 19 restored bodies have exactly the expected md5 (18 production-reported, 1 by applied-migration provenance)"
 else fail "restored bodies differ from production:$MISMATCH"; fi
-expect_value "grants on the 17 functions are unchanged by the restore" "$(val "$GRANTS_SQL")" "$GRANTS_BEFORE"
+expect_value "grants on the 19 functions are unchanged by the restore" "$(val "$GRANTS_SQL")" "$GRANTS_BEFORE"
 expect_value "the restore leaves the migrations' tables in place (no financial rows dropped)" \
   "$(val "SELECT (to_regclass('public.earnings_holds') IS NOT NULL AND to_regclass('public.earn_audit_log') IS NOT NULL)::text;")" "true"
 expect_value "a second confirmed restore is a no-op (idempotent)" "$(restore "restore-pre-0201-0203")" "ok"

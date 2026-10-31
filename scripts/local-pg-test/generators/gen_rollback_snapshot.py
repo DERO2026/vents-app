@@ -36,12 +36,20 @@ SNAPSHOT = [
     ('admin_cancel_processing_payout', 'cea18083231d281ba2fee58e7610a774', 'supabase/migrations/0187_fix_payout_reject_cancel_toctou_race.sql'),
     ('approve_admin_action', '24d77efd072158b729009014f5c808e3', 'scripts/local-pg-test/schema-representative-rewards.sql'),
     ('request_admin_action', 'a07cbf3e5d1cd62741765a325c5813ae', 'scripts/local-pg-test/schema-representative-rewards.sql'),
+    # Production's own definition, captured read-only on 2026-10-30 while
+    # writing 0202 (its body is in no migration file).
+    ('complete_organizer_payout', '563304a9394f6fb5148b2d458ce945f6', 'supabase/rollback/sources/complete_organizer_payout.prod-2026-10-30.sql'),
+    # No live md5 was recorded. Provenance instead: production's migration
+    # history holds 0197's applied SQL with md5 c70b4763f640022084c5f5c509415a69,
+    # which is the md5 of the repository file byte for byte, and no later
+    # migration touches this function. A manual edit outside migrations
+    # would not show here: runbook step P2 compares the live body.
+    ('invite_recruiter_partnership', '32fbfa3f13d6f5ef6320c007b0f87896', 'supabase/migrations/0197_vents_earn_notifications_use_valid_type.sql'),
 ]
-# Replaced by 0201/0202 but with no verified copy in the repository.
-CAPTURE_AT_APPLY = [
-    ('complete_organizer_payout(text)', 'production md5 563304a9394f6fb5148b2d458ce945f6 matches no repository version (changed outside the repo files)'),
-    ('invite_recruiter_partnership(uuid,uuid,integer)', 'no production md5 was recorded; the repository suggests 0197\'s body (md5 32fbfa3f13d6f5ef6320c007b0f87896), unverified'),
-]
+# Every replaced function now has a source; P2's apply-time capture stays
+# the authoritative check (invite_recruiter_partnership is verified by
+# provenance, not by a live md5).
+CAPTURE_AT_APPLY: list = []
 
 STMT = re.compile(
     r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.([a-z_0-9]+)\s*\(.*?\bAS\s+(\$[a-zA-Z_0-9]*\$)(.*?)\2[^;]*;",
@@ -66,8 +74,10 @@ def main() -> None:
 -- scripts/local-pg-test/run-rollback-snapshot-verification.sh). CREATE OR
 -- REPLACE keeps each function's existing grants.
 --
--- NOT covered here (no verified copy in the repository) -- restore them from
--- the pg_get_functiondef snapshot taken in runbook step 2 instead:
+-- All 19 functions are covered. invite_recruiter_partnership is verified by
+-- provenance (0197's applied SQL md5 in production's migration history equals
+-- the repository file), not by a live md5: compare it with the runbook P2
+-- capture before relying on it.
 ''']
     for sig, why in CAPTURE_AT_APPLY:
         parts.append(f'--   * public.{sig}: {why}\n')
@@ -100,7 +110,7 @@ $rollback_guard$;
         parts.append(extract(fn, path, md5) + '\n\n')
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(''.join(parts), encoding='utf8')
-    print(f'wrote {OUT.relative_to(ROOT)}: {len(SNAPSHOT)} verified functions, {len(CAPTURE_AT_APPLY)} to capture at apply time')
+    print(f'wrote {OUT.relative_to(ROOT)}: {len(SNAPSHOT)} functions')
 
 
 if __name__ == '__main__':

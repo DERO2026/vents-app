@@ -7,10 +7,10 @@
 -- scripts/local-pg-test/run-rollback-snapshot-verification.sh). CREATE OR
 -- REPLACE keeps each function's existing grants.
 --
--- NOT covered here (no verified copy in the repository) -- restore them from
--- the pg_get_functiondef snapshot taken in runbook step 2 instead:
---   * public.complete_organizer_payout(text): production md5 563304a9394f6fb5148b2d458ce945f6 matches no repository version (changed outside the repo files)
---   * public.invite_recruiter_partnership(uuid,uuid,integer): no production md5 was recorded; the repository suggests 0197's body (md5 32fbfa3f13d6f5ef6320c007b0f87896), unverified
+-- All 19 functions are covered. invite_recruiter_partnership is verified by
+-- provenance (0197's applied SQL md5 in production's migration history equals
+-- the repository file), not by a live md5: compare it with the runbook P2
+-- capture before relying on it.
 --
 -- Use ONLY as the documented rollback (docs/deploy-runbook-0201-0203.md),
 -- in one transaction, after held earnings have been released:
@@ -1716,4 +1716,162 @@ BEGIN
 
   RETURN to_jsonb(v_row);
 END; $function$;
+
+-- complete_organizer_payout  (production md5 563304a9394f6fb5148b2d458ce945f6; source supabase/rollback/sources/complete_organizer_payout.prod-2026-10-30.sql)
+CREATE OR REPLACE FUNCTION public.complete_organizer_payout(p_request_id text)
+ RETURNS TABLE(status text, organizer_email text, organizer_name text, amount_kobo bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_id uuid;
+  v_organizer_id uuid;
+  v_amount_kobo bigint;
+  v_status text;
+  v_bank_name text;
+  v_account_number text;
+  v_account_name text;
+  v_rows int;
+BEGIN
+  SELECT r.id, r.organizer_id, r.amount_kobo, r.status, b.bank_name, b.account_number, b.account_name
+    INTO v_id, v_organizer_id, v_amount_kobo, v_status, v_bank_name, v_account_number, v_account_name
+  FROM public.organizer_withdrawal_requests r
+  JOIN public.organizer_bank_accounts b ON b.id = r.bank_account_id
+  WHERE r.id::text = p_request_id OR r.transfer_code = p_request_id OR r.paystack_reference = p_request_id
+  FOR UPDATE OF r;
+
+  IF v_organizer_id IS NULL THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::text, NULL::text, NULL::bigint;
+    RETURN;
+  END IF;
+
+  IF v_status = 'completed' THEN
+    RETURN QUERY
+    SELECT 'already_completed'::text, u.email, u.full_name, v_amount_kobo
+    FROM public.users u WHERE u.id = v_organizer_id;
+    RETURN;
+  END IF;
+
+  UPDATE public.organizer_withdrawal_requests
+  SET status = 'completed', updated_at = now()
+  WHERE id = v_id AND public.organizer_withdrawal_requests.status IN ('pending', 'processing');
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN QUERY
+    SELECT 'already_completed'::text, u.email, u.full_name, v_amount_kobo
+    FROM public.users u WHERE u.id = v_organizer_id;
+    RETURN;
+  END IF;
+
+  UPDATE public.organizer_wallets
+  SET pending_kobo = GREATEST(0, pending_kobo - v_amount_kobo),
+      total_withdrawn_kobo = COALESCE(total_withdrawn_kobo, 0) + v_amount_kobo,
+      updated_at = now()
+  WHERE organizer_id = v_organizer_id;
+
+  INSERT INTO public.organizer_transactions
+    (organizer_id, type, amount_kobo, description, withdrawal_request_id, metadata)
+  VALUES (
+    v_organizer_id, 'payout', v_amount_kobo,
+    'Withdrawal to ' || COALESCE(v_bank_name, 'bank account') || ' — completed',
+    v_id,
+    jsonb_build_object('bank_name', v_bank_name, 'account_number', v_account_number, 'account_name', v_account_name)
+  );
+
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (
+    auth.uid(),
+    'complete_payout',
+    v_organizer_id,
+    jsonb_build_object(
+      'request_id', v_id,
+      'lookup_key', p_request_id,
+      'previous_status', v_status,
+      'new_status', 'completed',
+      'amount_kobo', v_amount_kobo,
+      'bank_name', v_bank_name,
+      'account_number', v_account_number
+    ),
+    COALESCE(public.actor_role(), 'system:project_admin')
+  );
+
+  RETURN QUERY
+  SELECT 'completed'::text, u.email, u.full_name, v_amount_kobo
+  FROM public.users u WHERE u.id = v_organizer_id;
+END;
+$function$
+;
+
+-- invite_recruiter_partnership  (production md5 32fbfa3f13d6f5ef6320c007b0f87896; source supabase/migrations/0197_vents_earn_notifications_use_valid_type.sql)
+CREATE OR REPLACE FUNCTION public.invite_recruiter_partnership(
+  p_organizer_id uuid DEFAULT NULL,
+  p_provider_id  uuid DEFAULT NULL,
+  p_commission_split_bps integer DEFAULT 0
+)
+ RETURNS public.recruiter_partnerships
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_row public.recruiter_partnerships;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.recruiters r WHERE r.id = v_uid AND r.status = 'active') THEN
+    RAISE EXCEPTION 'Caller is not a registered, active recruiter';
+  END IF;
+
+  IF (p_organizer_id IS NULL) = (p_provider_id IS NULL) THEN
+    RAISE EXCEPTION 'Exactly one of p_organizer_id or p_provider_id must be provided';
+  END IF;
+
+  IF p_commission_split_bps IS NULL OR p_commission_split_bps < 0 OR p_commission_split_bps > 10000 THEN
+    RAISE EXCEPTION 'commission_split_bps must be between 0 and 10000';
+  END IF;
+
+  -- A recruiter cannot invite themselves as the organizer/provider side.
+  IF p_organizer_id = v_uid THEN
+    RAISE EXCEPTION 'Cannot form a partnership with yourself';
+  END IF;
+  IF p_provider_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.service_providers sp WHERE sp.id = p_provider_id AND sp.user_id = v_uid
+  ) THEN
+    RAISE EXCEPTION 'Cannot form a partnership with yourself';
+  END IF;
+
+  IF p_organizer_id IS NOT NULL AND NOT public.recruiter_target_is_organizer(p_organizer_id) THEN
+    RAISE EXCEPTION 'Target organizer not found';
+  END IF;
+  IF p_provider_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.service_providers sp WHERE sp.id = p_provider_id
+  ) THEN
+    RAISE EXCEPTION 'Target provider not found';
+  END IF;
+
+  PERFORM public.check_rate_limit('invite_recruiter_partnership:' || v_uid::text, 20, 3600);
+
+  INSERT INTO public.recruiter_partnerships (recruiter_id, organizer_id, provider_id, commission_split_bps, status)
+  VALUES (v_uid, p_organizer_id, p_provider_id, p_commission_split_bps, 'pending')
+  RETURNING * INTO v_row;
+
+  INSERT INTO public.notifications (user_id, type, title, body, read, icon, push_data)
+  VALUES (
+    COALESCE(p_organizer_id, (SELECT sp.user_id FROM public.service_providers sp WHERE sp.id = p_provider_id)),
+    'social',
+    'New VENTS Earn partnership invitation',
+    'A recruiter wants to partner with you and share part of their commission.',
+    false,
+    '🤝',
+    jsonb_build_object('partnershipId', v_row.id, 'recruiterId', v_uid, 'commissionSplitBps', p_commission_split_bps)
+  );
+
+  RETURN v_row;
+END;
+$function$;
 

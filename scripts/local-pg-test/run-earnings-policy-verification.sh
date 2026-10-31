@@ -171,9 +171,9 @@ expect_value "legacy sale credited the full face value, available at once" "$(va
 LEG_OPEN=$(buy "$BUYER2" "$EVENT" 1)
 "${PSQL[@]}" -q -c "SELECT public.finalize_pending_purchase('$LEG_OPEN');" >/dev/null   # tickets exist, unpaid, when 0203 lands
 
-# Mirrors production's 5 pending withdrawals (all requested before 0203):
-# one organizer, two identical ₦20,000 requests 10 seconds apart, money in
-# pending, no authorization columns yet.
+# Mirrors production's identical pending pair (requests 1abe8e53 and
+# a0e389c9, 2026-09-24, 10 seconds apart; docs/production-readiness-batch-d.md):
+# money in pending, no authorization columns yet.
 ORG_W="00000000-0000-0000-0000-0000000003aa"; BANK_W="00000000-0000-0000-0000-0000000003d3"
 LW1="00000000-0000-0000-0000-0000000003b8"; LW2="00000000-0000-0000-0000-0000000003b9"
 "${PSQL[@]}" -q <<SQL
@@ -183,8 +183,8 @@ INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_co
 INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, pending_kobo, total_earned_kobo) VALUES ('$ORG_W', 0, 4000000, 4000000);
 INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description) VALUES ('$ORG_W', 'credit', 4000000, 'ticket sales before 0203');
 INSERT INTO public.organizer_withdrawal_requests (id, organizer_id, amount_kobo, status, bank_account_id, created_at) VALUES
-  ('$LW1', '$ORG_W', 2000000, 'pending', '$BANK_W', '2026-09-02 21:27:10+00'),
-  ('$LW2', '$ORG_W', 2000000, 'pending', '$BANK_W', '2026-09-02 21:27:20+00');
+  ('$LW1', '$ORG_W', 2000000, 'pending', '$BANK_W', '2026-09-24 02:34:48+00'),
+  ('$LW2', '$ORG_W', 2000000, 'pending', '$BANK_W', '2026-09-24 02:34:58+00');
 SQL
 
 echo "== Applying 0203 =="
