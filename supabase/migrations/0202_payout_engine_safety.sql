@@ -30,6 +30,45 @@
 -- second-admin approval of payouts.
 
 -- ---------------------------------------------------------------------------
+-- Drift guard (added 2026-10-31, Batch C). 0202 replaces five existing
+-- payout functions outright, so it must only run on the definitions it was
+-- written against: each must still have the md5(prosrc) production reported
+-- on 2026-10-30 (read-only), or already be 0202's own body (a re-run is a
+-- no-op). Anything else -- including the 0203-patched bodies, so 0202 can
+-- never be re-run over 0203 -- refuses before any change, and the whole
+-- file rolls back. The only relaxation is for the local test databases
+-- (scripts/local-pg-test), which hold stubs instead of production bodies:
+-- it needs BOTH the session setting vents.migration_local_test = 'on' AND a
+-- database named vents_local_pg_*; production's database is 'postgres'.
+-- ---------------------------------------------------------------------------
+DO $guard0202$
+DECLARE
+  r record;
+  v_md5 text;
+  v_local boolean := current_setting('vents.migration_local_test', true) = 'on'
+                     AND current_database() LIKE 'vents\_local\_pg\_%';
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+    ('public.admin_claim_payout_for_processing(uuid)',        '89675182b62750b8631eb2de1d71211e', 'f39bf3baa40ed70f5826f6ce5196ff54'),
+    ('public.admin_mark_payout_processing(uuid,text,text)',    'bf84ac786144b3ea3796fbc09f4bbec6', 'fa6637f7cc5ed915834a7e385f0d01c1'),
+    ('public.admin_release_payout_claim(uuid,text)',           '33dd4783b1bb7c4333b70bf32c671e02', 'f3f4b91c009ae18e065a4b80c16453ed'),
+    ('public.admin_cancel_processing_payout(uuid,text)',       'cea18083231d281ba2fee58e7610a774', '6428a9bc9912b18ffebeca5f214251f8'),
+    ('public.complete_organizer_payout(text)',                 '563304a9394f6fb5148b2d458ce945f6', 'ca6b015abbe0c1a4cdb66470d5a4ad29')
+  ) AS v(fn, live_md5, own_md5) LOOP
+    SELECT md5(p.prosrc) INTO v_md5 FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
+    IF v_local THEN
+      CONTINUE;
+    ELSIF v_md5 IS NULL THEN
+      RAISE EXCEPTION '0202: % does not exist; this is not the database 0202 was written against. Refusing', r.fn;
+    ELSIF v_md5 <> r.live_md5 AND v_md5 <> r.own_md5 THEN
+      RAISE EXCEPTION '0202: % differs from the definition this migration was written against (md5 %, expected % or 0202''s own %). Refusing; re-read the live function and regenerate 0202',
+        r.fn, v_md5, r.live_md5, r.own_md5;
+    END IF;
+  END LOOP;
+END
+$guard0202$;
+
+-- ---------------------------------------------------------------------------
 -- Statuses and ledger types
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.organizer_withdrawal_requests DROP CONSTRAINT IF EXISTS organizer_withdrawal_requests_status_check;
@@ -134,7 +173,9 @@ $function$;
 -- Release back to pending: only when no transfer code exists. The reference
 -- is kept, so a later approval reuses it and Paystack refuses a duplicate.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.admin_release_payout_claim(p_request_id uuid, p_reason text)
+-- p_reason keeps its DEFAULT NULL: production's definition (0004) has it,
+-- and CREATE OR REPLACE cannot remove a parameter default.
+CREATE OR REPLACE FUNCTION public.admin_release_payout_claim(p_request_id uuid, p_reason text DEFAULT NULL::text)
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER

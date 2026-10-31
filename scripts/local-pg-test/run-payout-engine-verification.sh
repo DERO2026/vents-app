@@ -103,7 +103,9 @@ done
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-live-payout-extras.sql" >/dev/null
 
 echo "== Applying 0202 =="
-"${PSQL[@]}" -q -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
+# Local stubs, not production bodies: 0202's drift guard is relaxed only
+# with this setting on a vents_local_pg_* database.
+"${PSQL[@]}" -q -c "SET vents.migration_local_test = 'on';" -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
 pass "0202 applies on top of 0201 and the live payout functions"
 # 0203 (earnings policies) on top, so the engine is tested as it ships.
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-earnings-policies.sql" >/dev/null 2>&1

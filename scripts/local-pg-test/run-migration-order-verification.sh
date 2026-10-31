@@ -41,12 +41,14 @@ fail() { echo "FAIL: $1" >&2; FAILS=$((FAILS+1)); }
 val() { "${PSQL[@]}" -tA -c "$1" 2>/dev/null | tail -n1; }
 expect_value() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (got '$2', expected '$3')"; fi; }
 
-file_of() { ls "$MIG"/"$1"_*.sql; }
+file_of() { ls "$MIG"/"$1"_*.sql "$MIG"/_superseded/"$1"_*.sql 2>/dev/null | head -1; }
 # Applies one migration file in a single transaction; prints ok or the error.
 apply() {
   local f; f=$(file_of "$1")
   # Read here and piped in, so the postgres user never needs file access.
-  if "${PSQL[@]}" -q -1 -f - <"${2:-$f}" >"$TMP/out" 2>"$TMP/err"; then echo ok
+  # The local baseline holds stubs, so 0202's drift guard runs in its local
+  # mode here (LOCAL0202=off exercises the production mode).
+  if "${PSQL[@]}" -q -1 -c "SET vents.migration_local_test = '${LOCAL0202:-on}';" -f - <"${2:-$f}" >"$TMP/out" 2>"$TMP/err"; then echo ok
   else grep -m1 -E "ERROR" "$TMP/err" | sed 's/^.*ERROR: *//' | cut -c1-160; fi
 }
 
@@ -122,6 +124,60 @@ sed 's/  ADD COLUMN completed_at timestamptz NULL,/  ADD COLUMN IF NOT EXISTS co
 expect_value "a naive IF NOT EXISTS edit makes 0192 apply after 0203" "$(apply 0192 "$TMP/0192_naive.sql")" "ok"
 expect_value "HAZARD: ...and it silently removes 0203's patch from confirm_ticket_payment (fee model)" "$(marker 'public.confirm_ticket_payment(text,bigint)')" "false"
 expect_value "HAZARD: ...and from credit_organizer_wallet (48-hour settlement hold)" "$(marker 'public.credit_organizer_wallet(uuid,bigint,text,uuid,jsonb)')" "false"
+
+echo "== 0202 drift guard =="
+baseline
+R=$(LOCAL0202=off apply 0202)
+if [[ "$R" == *"does not exist; this is not the database 0202 was written against"* ]]; then
+  pass "without the local-test setting, 0202 refuses a database missing the payout functions it replaces"
+else fail "0202 production-mode guard on the stub baseline: got '$R'"; fi
+expect_value "the refused 0202 left nothing behind (transactional)" "$(has_fn 'public.reverse_organizer_payout(text)')" "false"
+# Production-shaped payout functions: verbatim copies of the four whose live
+# bodies are in the repository, plus the stub complete_organizer_payout
+# (production's body is not in the repository).
+python3 - "$MIG" > "$TMP/live_payout.sql" <<'PY'
+import re, sys
+mig = sys.argv[1]
+want = {'admin_claim_payout_for_processing': '0124_emergency_kill_switches.sql',
+        'admin_mark_payout_processing': '0004_functions.sql',
+        'admin_release_payout_claim': '0004_functions.sql',
+        'admin_cancel_processing_payout': '0187_fix_payout_reject_cancel_toctou_race.sql'}
+pat = re.compile(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.([a-z_0-9]+)\s*\(.*?\bAS\s+(\$[a-zA-Z_0-9]*\$).*?\2[^;]*;", re.S)
+print("SET check_function_bodies = off;")
+for fn, f in want.items():
+    s = open(f"{mig}/{f}", encoding="utf8").read()
+    last = [m.group(0) for m in pat.finditer(s) if m.group(1) == fn][-1]
+    print(last)
+PY
+"${PSQL[@]}" -q -f - <"$TMP/live_payout.sql" >/dev/null 2>&1
+expect_value "the four repository copies carry production's recorded bodies" \
+  "$(val "SELECT string_agg(md5(prosrc), ',' ORDER BY proname) FROM pg_proc WHERE proname IN ('admin_cancel_processing_payout','admin_claim_payout_for_processing','admin_mark_payout_processing','admin_release_payout_claim') AND pronamespace = 'public'::regnamespace;")" \
+  "cea18083231d281ba2fee58e7610a774,89675182b62750b8631eb2de1d71211e,bf84ac786144b3ea3796fbc09f4bbec6,33dd4783b1bb7c4333b70bf32c671e02"
+R=$(LOCAL0202=off apply 0202)
+if [[ "$R" == *"complete_organizer_payout(text) differs from the definition"* ]]; then
+  pass "0202 refuses when complete_organizer_payout is not the recorded production body (drift detected, names the function)"
+else fail "0202 drift on complete_organizer_payout: got '$R'"; fi
+# Simulate production exactly for the guard: pin the stub's own md5 as the
+# "live" value in a copy of 0202, so the guard passes on matching bodies.
+STUB=$(val "SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.complete_organizer_payout(text)'::regprocedure;")
+sed "s/563304a9394f6fb5148b2d458ce945f6/$STUB/" "$(file_of 0202)" > "$TMP/0202_pinned.sql"
+expect_value "with every body matching its pin, 0202 applies in production mode" "$(LOCAL0202=off apply 0202 "$TMP/0202_pinned.sql")" "ok"
+expect_value "a re-run of 0202 over its own bodies is accepted (idempotent)" "$(LOCAL0202=off apply 0202 "$TMP/0202_pinned.sql")" "ok"
+apply 0201 >/dev/null
+expect_value "0203 applies after the guarded 0202" "$(apply 0203)" "ok"
+R=$(LOCAL0202=off apply 0202 "$TMP/0202_pinned.sql")
+if [[ "$R" == *"differs from the definition"* ]]; then
+  pass "re-running 0202 after 0203 is refused, so it can never undo 0203's payout changes"
+else fail "0202 re-run after 0203: got '$R'"; fi
+expect_value "...and 0203's patch is still in place" "$(marker 'public.confirm_ticket_payment(text,bigint)')" "true"
+# The local relaxation cannot apply outside a vents_local_pg_* database.
+pg -d postgres -q -c "DROP DATABASE IF EXISTS vents_guardcheck_prodname;" -c "CREATE DATABASE vents_guardcheck_prodname;" >/dev/null
+R=$(sudo -u postgres env -i PATH="/usr/bin:/bin" psql -h "$SOCKET_DIR" -p 5432 -v ON_ERROR_STOP=1 -d vents_guardcheck_prodname -q -1 \
+     -c "SET vents.migration_local_test = 'on';" -f - <"$(file_of 0202)" 2>&1 >/dev/null | grep -m1 ERROR)
+pg -d postgres -q -c "DROP DATABASE IF EXISTS vents_guardcheck_prodname;" >/dev/null
+if [[ "$R" == *"does not exist; this is not the database 0202 was written against"* ]]; then
+  pass "the local-test setting is ignored on a database not named vents_local_pg_* (production is 'postgres')"
+else fail "local relaxation outside a local database: got '$R'"; fi
 
 echo "== What 0192 adds that nothing else uses =="
 baseline; apply 0192 >/dev/null
