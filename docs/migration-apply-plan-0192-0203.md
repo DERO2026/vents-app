@@ -9,6 +9,14 @@ to a production-shaped local database.
 
 Applying any of this to production needs the owner's explicit approval.
 
+**Batch C update (2026-10-31, code only):**
+- 0192 is retired to `supabase/migrations/_superseded/` (byte-identical);
+- 0202 now has the md5 drift guard recommended in §5.2;
+- 0202's `admin_release_payout_claim` keeps production's `DEFAULT NULL` (it would otherwise have failed in production);
+- a verified rollback snapshot of 17 of the 19 functions is in `supabase/rollback/`.
+
+The step-by-step deploy and rollback is `docs/deploy-runbook-0201-0203.md`.
+
 ## 1. Recommendation
 
 1. **Do not apply 0192.** Retire it: keep the file for history, but mark it superseded so no one applies it by filename order (section 4).
@@ -92,13 +100,13 @@ This is an owner decision, not a launch blocker.
 |---|---|---|
 | 0203's 11 pins on functions that exist today (`create_pending_purchase`, `confirm_ticket_payment`, `confirm_ticket_payment_via_wallet`, `refund_ticket`, `finalize_ticket_refund`, `cancel_service_booking`, `finalize_service_booking_refund`, `get_event_analytics`, `credit_organizer_wallet`, `credit_provider_wallet_for_booking`, `request_organizer_payout`) | all match | **11/11 match** |
 | 0203's 3 remaining pins (`earn_event_eligibility`, `earn_ticket_refund_adjust_profit`, `complete_organizer_payout`) | match only after 0201/0202 | absent / pre-0202 (expected) |
-| 0202 has **no drift guard**. It replaces these from the 2026-10-30 live bodies, which must still have these md5s: `admin_claim_payout_for_processing` `89675182b62750b8631eb2de1d71211e`, `admin_mark_payout_processing` `bf84ac786144b3ea3796fbc09f4bbec6`, `admin_release_payout_claim` `33dd4783b1bb7c4333b70bf32c671e02`, `admin_cancel_processing_payout` `cea18083231d281ba2fee58e7610a774`, `complete_organizer_payout` `563304a9394f6fb5148b2d458ce945f6` | unchanged | recorded 2026-10-30 |
+| 0202 replaces these from the 2026-10-30 live bodies (its drift guard, added in Batch C, enforces these md5s): `admin_claim_payout_for_processing` `89675182b62750b8631eb2de1d71211e`, `admin_mark_payout_processing` `bf84ac786144b3ea3796fbc09f4bbec6`, `admin_release_payout_claim` `33dd4783b1bb7c4333b70bf32c671e02`, `admin_cancel_processing_payout` `cea18083231d281ba2fee58e7610a774`, `complete_organizer_payout` `563304a9394f6fb5148b2d458ce945f6` | unchanged | recorded 2026-10-30 |
 | 0201's anchors in `approve_admin_action` (md5 `24d77efd072158b729009014f5c808e3`) and `request_admin_action` (`a07cbf3e5d1cd62741765a325c5813ae`) | unchanged | recorded 2026-10-30 |
 | Migrations 0192/0201/0202/0203 | absent | `get_my_representative_rewards`, `admin_earnings_reconciliation`, `earnings_release_delay`, `tickets.qualifying_status` all absent |
 
 If any function changed since: stop, re-read it, and regenerate the
 affected migration (`scripts/local-pg-test/generators/gen0203.py` for 0203).
-Recommended hardening: give 0202 the same md5 guard as 0203 before applying.
+0202 now carries this md5 guard (Batch C); it refuses on any other body.
 
 ### 5.3 Data that new constraints and indexes must accept
 

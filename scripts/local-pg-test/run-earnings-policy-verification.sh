@@ -131,7 +131,9 @@ done
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-representative-rewards.sql" >/dev/null
 "${PSQL[@]}" -q -f "$MIG/0201_vents_earn_representative_rewards.sql" >/dev/null
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-live-payout-extras.sql" >/dev/null
-"${PSQL[@]}" -q -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
+# Local stubs, not production bodies: 0202's drift guard is relaxed only
+# with this setting on a vents_local_pg_* database.
+"${PSQL[@]}" -q -c "SET vents.migration_local_test = 'on';" -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-earnings-policies.sql" >/dev/null
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/live-money-functions.sql" >/dev/null
 "${PSQL[@]}" -q <<SQL
@@ -168,6 +170,22 @@ expect_value "legacy sale confirmed" "$(confirm "$LEG_PAID" 1050000)" "confirmed
 expect_value "legacy sale credited the full face value, available at once" "$(val "SELECT balance_kobo FROM public.organizer_wallets WHERE organizer_id = '$ORG';")" "1000000"
 LEG_OPEN=$(buy "$BUYER2" "$EVENT" 1)
 "${PSQL[@]}" -q -c "SELECT public.finalize_pending_purchase('$LEG_OPEN');" >/dev/null   # tickets exist, unpaid, when 0203 lands
+
+# Mirrors production's 5 pending withdrawals (all requested before 0203):
+# one organizer, two identical ₦20,000 requests 10 seconds apart, money in
+# pending, no authorization columns yet.
+ORG_W="00000000-0000-0000-0000-0000000003aa"; BANK_W="00000000-0000-0000-0000-0000000003d3"
+LW1="00000000-0000-0000-0000-0000000003b8"; LW2="00000000-0000-0000-0000-0000000003b9"
+"${PSQL[@]}" -q <<SQL
+INSERT INTO public.users (id, role, is_organizer, full_name, email) VALUES ('$ORG_W', 'user', true, 'Org W', 'ow@example.test');
+INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_code, account_number, account_name, recipient_code, is_active)
+  VALUES ('$BANK_W', '$ORG_W', 'Bank', '000', '0000000003', 'ORG W', 'RCP_w', true);
+INSERT INTO public.organizer_wallets (organizer_id, balance_kobo, pending_kobo, total_earned_kobo) VALUES ('$ORG_W', 0, 4000000, 4000000);
+INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description) VALUES ('$ORG_W', 'credit', 4000000, 'ticket sales before 0203');
+INSERT INTO public.organizer_withdrawal_requests (id, organizer_id, amount_kobo, status, bank_account_id, created_at) VALUES
+  ('$LW1', '$ORG_W', 2000000, 'pending', '$BANK_W', '2026-09-02 21:27:10+00'),
+  ('$LW2', '$ORG_W', 2000000, 'pending', '$BANK_W', '2026-09-02 21:27:20+00');
+SQL
 
 echo "== Applying 0203 =="
 expect_ok "0203 applies on top of 0201, 0202 and the live functions" "$(cat "$MIG/0203_earnings_policies.sql")"
@@ -568,6 +586,23 @@ WL=$(val "$(as "$ORG_ADMIN" "SELECT public.request_organizer_payout(400000, '$BA
 expect_value "the transfer that went out anyway takes what is there and records the rest as a receivable" \
   "$(val "SELECT status FROM public.complete_organizer_payout('$WL');")/$(wallet "$ORG_ADMIN")/$(val "SELECT source_kind || '/' || amount_kobo FROM public.earnings_recoveries WHERE source_key = '$WL';")" \
   "completed/0/0/0/payout_after_cancel/300000"
+
+echo "== Withdrawals requested before 0203 (production has 5 pending) =="
+"${PSQL[@]}" -q -c "UPDATE public.app_config SET disable_payouts = false;"
+expect_value "a pre-0203 request survives 0203 unchanged: pending, unauthorized, money still pending" \
+  "$(val "SELECT status || '/' || (approved_by IS NULL)::text FROM public.organizer_withdrawal_requests WHERE id = '$LW1';")/$(wallet "$ORG_W")" "pending/true/0/4000000/0"
+expect_error "after 0203 it cannot be paid until two admins authorize it" "needs a second admin" \
+  "$(as "$ADMIN_A" "SELECT * FROM public.admin_claim_payout_for_processing('$LW1');")"
+ARW=$(request_admin "$ADMIN_A" authorize_withdrawal "$LW1" "{\"request_id\":\"$LW1\",\"amount_kobo\":2000000}")
+expect_ok "a second, different super admin authorizes it" "$(approve "$ADMIN_B" "$ARW")"
+expect_value "it is then claimed once, under the fixed 0202 transfer reference" \
+  "$(claim "$LW1")/$(claim "$LW1")/$(val "SELECT (paystack_reference = public.payout_transfer_reference(id))::text FROM public.organizer_withdrawal_requests WHERE id = '$LW1';")" "true/false/true"
+expect_error "authorizing one of the identical pair does not authorize the other" "needs a second admin" \
+  "$(as "$ADMIN_A" "SELECT * FROM public.admin_claim_payout_for_processing('$LW2');")"
+expect_ok "a suspected duplicate can be rejected by one admin (money goes back to the organizer, none leaves VENTS)" \
+  "$(as "$ADMIN_A" "SELECT public.admin_reject_organizer_payout('$LW2', 'duplicate of an identical request 10 s earlier');")"
+expect_value "the rejected duplicate returns its ₦20,000 to the available balance" \
+  "$(val "SELECT status FROM public.organizer_withdrawal_requests WHERE id = '$LW2';")/$(wallet "$ORG_W")" "rejected/2000000/2000000/0"
 
 echo "== Concurrency: two withdrawals for the same money =="
 "${PSQL[@]}" -q -c "UPDATE public.app_config SET disable_payouts = false;"
