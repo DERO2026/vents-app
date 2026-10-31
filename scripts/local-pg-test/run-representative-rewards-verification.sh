@@ -469,6 +469,9 @@ NEXT=$(val "SELECT (date_trunc('month', now() AT TIME ZONE 'Africa/Lagos') + int
 THIS=$(val "SELECT date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;")
 RM=$(request "$ADMIN_A" earn_set_monthly_rate "'$REP'" "{\"month\":\"$NEXT\",\"reward_kobo\":7500000,\"reason\":\"strong month\"}")
 expect_error "no higher rate below 9 qualifying organizers" "are required" "$(approve "$ADMIN_B" "$RM")"
+# Claims from earlier sections may already fall in this month (their events
+# ended "30 days ago", which is this month on a 31st), so count relative.
+QBASE=$(val "SELECT public.representative_qualifying_count('$REP', '$THIS');")
 "${PSQL[@]}" -q <<SQL
 DO \$\$
 DECLARE i int; v_org uuid; v_ev uuid; v_att uuid;
@@ -487,7 +490,7 @@ BEGIN
   END LOOP;
 END \$\$;
 SQL
-expect_value "count is by calendar month" "$(val "SELECT public.representative_qualifying_count('$REP', '$THIS');")" "9"
+expect_value "count is by calendar month (9 added this month)" "$(val "SELECT public.representative_qualifying_count('$REP', '$THIS') - $QBASE;")" "9"
 expect_value "nothing increases automatically" "$(val "SELECT public.representative_reward_rate_kobo('$REP', '$NEXT');")" "5000000"
 RM=$(request "$ADMIN_A" earn_set_monthly_rate "'$REP'" "{\"month\":\"$THIS\",\"reward_kobo\":7500000,\"reason\":\"x\"}")
 expect_error "the higher rate is for the FOLLOWING month only" "are required" "$(approve "$ADMIN_B" "$RM")"

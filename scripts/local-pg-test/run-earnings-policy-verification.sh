@@ -411,7 +411,7 @@ BKF="00000000-0000-0000-0000-0000000003f5"; BKN="00000000-0000-0000-0000-0000000
 INSERT INTO public.service_bookings (id, customer_id, provider_id, payment_status, payment_method, payment_ref, subtotal_kobo, fee_kobo, total_kobo, scheduled_date, scheduled_time) VALUES
   ('$BKF', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BKF', 100000, 5000, 105000, (now() AT TIME ZONE 'Africa/Lagos')::date + 3, '18:00'),
   ('$BKN', '$BUYER', '$SP_ID', 'paid', 'paystack', 'BKN', 100000, 5000, 105000, NULL, NULL),
-  ('$BKD', '$BUYER2', '$SP_ID', 'paid', 'paystack', 'BKD', 100000, 5000, 105000, (now() AT TIME ZONE 'Africa/Lagos')::date - 2, '09:00');
+  ('$BKD', '$BUYER2', '$SP_ID', 'paid', 'paystack', 'BKD', 100000, 5000, 105000, (now() AT TIME ZONE 'Africa/Lagos')::date - 3, '09:00');
 SQL
 for b in "$BKF" "$BKN" "$BKD"; do "${PSQL[@]}" -q -o /dev/null -c "SELECT public.credit_provider_wallet_for_booking('$PROV', 100000, '$b', 'Service booking payment');"; done
 expect_value "the scheduled start is read as Lagos time (18:00 WAT = 17:00 UTC)" \
