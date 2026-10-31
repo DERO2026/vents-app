@@ -25,7 +25,30 @@ let loadPromise: Promise<void> | null = null;
 // loadGoogleMaps() has been called.
 let rejectOnAuthFailure: ((err: Error) => void) | null = null;
 const authFailure = new Promise<never>((_, reject) => { rejectOnAuthFailure = reject; });
+authFailure.catch(() => {}); // observed through loadGoogleMaps / onGoogleMapsAuthFailure
+// The race in loadGoogleMaps() only catches a key rejection that arrives
+// BEFORE the libraries resolve. In practice Google usually reports it
+// after (the bootstrap resolves, then the first Maps/Places request is
+// refused), when every map already shows "ready" and Google's grey error
+// box. Components subscribe here so a late rejection still switches them
+// to their "type the address manually" fallback.
+let authFailed = false;
+const authFailureListeners = new Set<() => void>();
+export function isGoogleMapsAuthFailed(): boolean {
+  return authFailed;
+}
+/** Calls `listener` when the API key is rejected (immediately if it already was). Returns an unsubscribe. */
+export function onGoogleMapsAuthFailure(listener: () => void): () => void {
+  if (authFailed) { listener(); return () => {}; }
+  authFailureListeners.add(listener);
+  return () => { authFailureListeners.delete(listener); };
+}
 (window as any).gm_authFailure = () => {
+  authFailed = true;
+  for (const l of Array.from(authFailureListeners)) {
+    try { l(); } catch { /* a listener must not stop the others */ }
+  }
+  authFailureListeners.clear();
   // This is the one piece of diagnostic infrastructure that actually
   // matters here: this failure only reproduces on a real device we don't
   // have physical/DevTools access to. Reporting it to Sentry (already
@@ -44,8 +67,17 @@ const authFailure = new Promise<never>((_, reject) => { rejectOnAuthFailure = re
   rejectOnAuthFailure?.(new Error('Google Maps authentication failed — this app\'s origin is not allowed by the API key\'s referrer restrictions.'));
 };
 
+// A script that never loads and never errors (a captive portal, a stalled
+// connection, a blocked request in some WebViews) used to leave
+// LocationPicker's input disabled on 'loading' forever, so the address
+// could not even be typed by hand.
+export const GOOGLE_MAPS_LOAD_TIMEOUT_MS = 20000;
+
 export function loadGoogleMaps(): Promise<void> {
   if (loadPromise) return loadPromise;
+  if (authFailed) {
+    return Promise.reject(new Error('Google Maps authentication failed — this app\'s origin is not allowed by the API key\'s referrer restrictions.'));
+  }
 
   const apiKey = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
@@ -97,6 +129,9 @@ export function loadGoogleMaps(): Promise<void> {
       ]);
     })(),
     authFailure,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Google Maps took too long to load.')), GOOGLE_MAPS_LOAD_TIMEOUT_MS);
+    }),
   ]);
 
   // A failure (flaky network, ad-blocker, transient CORS hiccup) must not

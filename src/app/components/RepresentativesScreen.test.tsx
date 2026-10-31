@@ -131,6 +131,12 @@ vi.mock('../../lib/supabase', () => ({
     }),
     rpc: (name: string, args: any) => {
       rpcCalls.push({ name, args });
+      // 0204 is not applied in production yet: by default answer the way
+      // PostgREST does for a missing function, so these tests exercise the
+      // search_users_for_request fallback (searchUsers mock below).
+      if (name === 'search_recruiter_invite_targets' && !rpcResponses[name] && !rpcDelayed[name]) {
+        return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.search_recruiter_invite_targets(p_query) in the schema cache' } });
+      }
       if (name === 'get_recruiter_invite_target' && !rpcResponses[name] && !rpcDelayed[name]) {
         if (targetRoleThrows) return Promise.reject(new Error('network unreachable'));
         if (deferTargetIds.includes(args.p_user_id)) {
@@ -210,7 +216,7 @@ async function flush() {
 async function mount() {
   root = createRoot(container);
   act(() => {
-    root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+    root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} searchDebounceMs={0} />);
   });
   await flush();
 }
@@ -676,7 +682,7 @@ describe('RepresentativesScreen', () => {
       // that's still true.
       root = createRoot(container);
       act(() => {
-        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} searchDebounceMs={0} />);
       });
       const loading = container.querySelector('[data-testid="representatives-loading"] p');
       notBlack(loading);
@@ -889,7 +895,7 @@ describe('RepresentativesScreen: receiving an invitation', () => {
   async function mountWith(focusPartnership?: { partnershipId: string; nonce: number } | null) {
     root = createRoot(container);
     act(() => {
-      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} />);
+      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} searchDebounceMs={0} />);
     });
     await flush();
     await flush();

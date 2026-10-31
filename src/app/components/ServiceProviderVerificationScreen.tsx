@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ChevronLeft, Clock, Upload, MessageSquare } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase } from '../../lib/supabase';
+import { uploadAllowanceError } from '../../lib/uploadAllowance';
 import { PREVIEW_READ_ONLY_MESSAGE } from '../../lib/previewReadOnly';
 import { COUNTRY_CODES, DEFAULT_COUNTRY } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
@@ -200,7 +201,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
       // checked before the XHR fires.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
       if (limitError) {
-        setError('Too many uploads. Please wait a bit before uploading more.');
+        setError(uploadAllowanceError(limitError).message);
         return;
       }
 

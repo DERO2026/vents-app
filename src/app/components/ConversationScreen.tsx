@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { uploadAllowanceError } from '../../lib/uploadAllowance';
 import { PRIVATE_CHANNEL_OPTIONS, dmTopic, userTopic } from '../../lib/realtimeTopics';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
@@ -315,14 +316,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     try {
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
       if (limitError) {
-        flash('Too many uploads. Please wait a bit before sending more images.');
+        flash(uploadAllowanceError(limitError).message);
         return;
       }
-    } catch {
+    } catch (thrown) {
       // Financial-hardening: fails CLOSED now -- same policy as
       // mediaPipeline.ts's enforceUploadRateLimit. An unexpected error
       // (thrown, not just an RPC error field) must still block the send.
-      flash('Too many uploads. Please wait a bit before sending more images.');
+      flash(uploadAllowanceError(thrown).message);
       return;
     }
     setUploadingImg(true);
