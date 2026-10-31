@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeft, UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
+import { UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { searchUsers, UserSearchResult } from '../../lib/userSearch';
 import { ventsColors, ventsTypography, ventsSpacing, ventsRadii, ventsStatusColors } from '../../lib/ventsDesignTokens';
+import { WorkBar, Pill, Tiles, Tile, NoteBand, MCard, Row, Ico, Chev } from './work/workUi';
 
 interface RepresentativesScreenProps {
   onBack: () => void;
@@ -15,6 +16,8 @@ interface RepresentativesScreenProps {
   // the same notification is tapped again (same pattern as MyTicketsScreen's
   // focusTicket).
   focusPartnership?: { partnershipId: string; nonce: number } | null;
+  // Opens Representative rewards (₦50,000 per qualifying organizer).
+  onOpenRewards?: () => void;
 }
 
 type SubTab = 'find' | 'invitations' | 'team';
@@ -25,7 +28,6 @@ interface Partnership {
   organizer_id: string | null;
   provider_id: string | null;
   status: string;
-  commission_split_bps: number;
   invited_at: string;
   // select('*') already returns this column live; it just wasn't part of
   // this interface's declared shape before. Used only for an optional
@@ -107,16 +109,17 @@ function SkeletonLine({ width, height = 12, radius = 6 }: { width: string; heigh
 
 // VENTS Representatives -- frontend for the recruiter/organizer-provider
 // partnership system (migration 0193). This UI calls the backend RPCs
-// directly; it does NOT compute, display, or imply any commission amount
-// or payout, since that logic is intentionally not built/approved yet.
-// Reached from Settings (not the bottom nav, which is already at 5 items)
-// since this is a secondary, opt-in role rather than a primary destination.
-export function RepresentativesScreen({ onBack, currentUser, focusPartnership }: RepresentativesScreenProps) {
+// directly; it computes no money. Rewards (₦50,000 per qualifying
+// organizer, migration 0201) live on RepresentativeRewardsScreen.
+// Reached from VENTS Work and from Settings.
+export function RepresentativesScreen({ onBack, currentUser, focusPartnership, onOpenRewards }: RepresentativesScreenProps) {
   // Opened from a partnership notification: start on Invitations (the
   // common case -- the focus effect below switches to My Team if the
   // current user turns out to be the recruiter) instead of flashing Find.
   const [tab, setTab] = useState<SubTab>(focusPartnership ? 'invitations' : 'find');
   const [isRecruiter, setIsRecruiter] = useState<boolean | null>(null);
+  const [recruiterInfo, setRecruiterInfo] = useState<{ status?: string; created_at?: string } | null>(null);
+  const [teamCounts, setTeamCounts] = useState<{ team: number; invites: number } | null>(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
 
@@ -263,13 +266,14 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
   async function checkRecruiterStatus() {
     setStatusError(null);
     try {
-      const { data, error } = await supabase.from('recruiters').select('id').eq('id', currentUser.id).maybeSingle();
+      const { data, error } = await supabase.from('recruiters').select('id, status, created_at').eq('id', currentUser.id).maybeSingle();
       if (error) {
         setStatusError(error.message);
         setIsRecruiter(null);
         return;
       }
       setIsRecruiter(!!data);
+      setRecruiterInfo(data ? { status: (data as any).status, created_at: (data as any).created_at } : null);
     } catch (err) {
       // This is the one check that runs unconditionally on mount, before
       // the user has done anything. A thrown exception here (not a
@@ -285,6 +289,23 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
       setIsRecruiter(null);
     }
   }
+
+  // Status header counts (mockup D): accepted partners and invitations
+  // still waiting for a reply. Filtered here rather than with .in() so it
+  // reads the same rows the My Team tab lists.
+  useEffect(() => {
+    if (!isRecruiter) { setTeamCounts(null); return; }
+    let cancelled = false;
+    Promise.resolve(supabase.from('recruiter_partnerships').select('status').eq('recruiter_id', currentUser.id))
+      .then(({ data }: any) => {
+        if (cancelled || !Array.isArray(data)) return;
+        setTeamCounts({
+          team: data.filter((r: { status: string }) => r.status === 'accepted').length,
+          invites: data.filter((r: { status: string }) => r.status === 'pending').length,
+        });
+      }, () => { /* the header falls back to dashes */ });
+    return () => { cancelled = true; };
+  }, [isRecruiter, currentUser.id, reloadSignal]);
 
   async function handleRegister() {
     setRegistering(true);
@@ -316,18 +337,6 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
     }
   }
 
-  // Commission is not negotiated through this screen: a Representative
-  // always earns the full, fixed VENTS commission (10000 bps = 100% of
-  // the recruiter's own designated commission share) on revenue from the
-  // organizer/provider they recruit -- there is no 0-10% slider, no
-  // partial split, and no "5%" default. FULL_COMMISSION_BPS is passed
-  // unconditionally; nothing in this component ever reads or sets a
-  // different value. (The underlying recruiter_partnerships.commission_split_bps
-  // column and its 0-10000 CHECK constraint are unchanged -- this is a
-  // UI/default-value correction, not a schema change: the column simply
-  // never receives anything other than the maximum value from this UI.)
-  const FULL_COMMISSION_BPS = 10000;
-
   async function handleSendInvite() {
     if (!inviteTarget) return;
     if (targetRole === 'neither' || targetRole === null) {
@@ -344,7 +353,6 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
     const { error } = await supabase.rpc('invite_recruiter_partnership', {
       p_organizer_id: wantsProvider ? null : inviteTarget.id,
       p_provider_id: wantsProvider ? targetProviderId : null,
-      p_commission_split_bps: FULL_COMMISSION_BPS,
     });
     setInviteBusy(false);
     if (error) {
@@ -778,7 +786,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
             color: ventsColors.ink2,
           }}
         >
-          {p.provider_id ? 'Service provider partnership' : 'Organizer partnership'} · <span style={{ color: ventsColors.accentSoft }}>full VENTS commission</span>
+          {p.provider_id ? 'Service provider partnership' : 'Organizer partnership'}
         </div>
         {isPending && (
           <div style={{ display: 'flex', gap: ventsSpacing.unit[2] }}>
@@ -833,37 +841,16 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
       }}
     >
       <ShimmerKeyframes />
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: ventsSpacing.unit[2],
-          padding: `${ventsSpacing.unit[3]}px ${ventsSpacing.pageMarginMobile}px`,
-          flexShrink: 0,
-        }}
-      >
-        <button
-          onClick={onBack}
-          aria-label="Back"
-          style={{
-            width: ventsSpacing.minTouchTarget,
-            height: ventsSpacing.minTouchTarget,
-            minWidth: ventsSpacing.minTouchTarget,
-            borderRadius: ventsRadii.pill,
-            background: ventsColors.glassBg,
-            border: `1px solid ${ventsColors.glassBorder}`,
-            color: ventsColors.ink1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <h1 style={{ ...ventsTypography.heading, color: ventsColors.ink1, margin: 0 }}>Representatives</h1>
-      </header>
+      <WorkBar
+        title="Representative"
+        sub={isRecruiter && recruiterInfo?.created_at
+          ? `Active since ${new Date(recruiterInfo.created_at).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
+          : 'VENTS Earn'}
+        onBack={onBack}
+        right={isRecruiter
+          ? <Pill tone={recruiterInfo?.status === 'suspended' ? 'wait' : 'on'}>{recruiterInfo?.status === 'suspended' ? 'Paused' : 'Active'}</Pill>
+          : undefined}
+      />
 
       <div
         style={{
@@ -938,7 +925,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
               Become a VENTS Representative
             </h2>
             <p style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink2, margin: `0 0 ${ventsSpacing.unit[4]}px`, lineHeight: 1.55 }}>
-              Become a VENTS Representative to invite organizers and service providers into a partnership. You earn VENTS&apos; full commission on revenue from events belonging to the organizer you recruit — fixed, not negotiated.
+              Become a VENTS Representative to invite organizers and service providers into a partnership. Keep your other VENTS roles: this adds to your account.
             </p>
             <div
               style={{
@@ -960,10 +947,10 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                   color: ventsColors.accentSoft,
                 }}
               >
-                10%
+                ₦50k
               </span>
               <span style={{ ...ventsTypography.caption, color: ventsColors.ink2, lineHeight: 1.4 }}>
-                You earn VENTS&apos; full <strong style={{ color: ventsColors.ink1 }}>10% commission</strong> on revenue from events belonging to the organizer you recruit.
+                A fixed <strong style={{ color: ventsColors.ink1 }}>₦50,000 reward</strong> for each organizer you bring who hosts a qualifying event, once they confirm and VENTS approves it.
               </span>
             </div>
             <button
@@ -978,21 +965,41 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
           </div>
         )}
 
+        {isRecruiter && (
+          <div style={{ display: 'grid', gap: 10, marginBottom: ventsSpacing.unit[3] }} data-testid="representative-status-header">
+            <Tiles>
+              <Tile k="My team" v={teamCounts ? teamCounts.team : '—'} s="Accepted partners" />
+              <Tile k="Invites" v={teamCounts ? teamCounts.invites : '—'} s="Waiting for a reply" />
+            </Tiles>
+            <NoteBand>
+              Earn a fixed ₦50,000 for each organizer you bring who hosts a qualifying event: it has ended, isn&apos;t
+              cancelled and has finished settling. The organizer confirms, VENTS approves, and the reward is paid once
+              VENTS ticket profit covers it.
+            </NoteBand>
+            {onOpenRewards && (
+              <MCard testId="representative-rewards-entry">
+                <Row icon={<Ico tone="g">₦</Ico>} title="Rewards & expenses" sub="Track each organizer's reward" right={<Chev />} onClick={onOpenRewards} />
+              </MCard>
+            )}
+          </div>
+        )}
+
+        {/* Tabs styled as approved mockup D (.tabs): compact, no icons. */}
         <nav
+          role="tablist"
           style={{
             display: 'flex',
-            gap: ventsSpacing.unit[1],
+            gap: 6,
             background: ventsColors.surface,
-            border: `1px solid ${ventsColors.border}`,
-            borderRadius: ventsRadii.md,
+            borderRadius: 12,
             padding: 4,
             marginBottom: ventsSpacing.unit[3],
           }}
         >
           {([
-            { id: 'find' as const, label: 'Find', icon: <Search size={16} /> },
-            { id: 'invitations' as const, label: 'Invitations', icon: <UserPlus size={16} /> },
-            { id: 'team' as const, label: 'My Team', icon: <Users size={16} /> },
+            { id: 'find' as const, label: 'Find' },
+            { id: 'invitations' as const, label: 'Invitations' },
+            { id: 'team' as const, label: 'My Team' },
           ]).map((t) => (
             <button
               key={t.id}
@@ -1001,24 +1008,20 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
               onClick={() => setTab(t.id)}
               style={{
                 flex: 1,
-                minHeight: ventsSpacing.minTouchTarget,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
+                minHeight: 36,
+                padding: '6px 4px',
                 border: 'none',
-                borderRadius: ventsRadii.sm,
+                borderRadius: 9,
                 background: tab === t.id ? ventsColors.accentStrong : 'transparent',
                 color: tab === t.id ? ventsColors.white : ventsColors.ink2,
                 fontFamily: ventsTypography.fontBody,
-                ...ventsTypography.caption,
-                fontWeight: tab === t.id ? 800 : 600,
+                fontSize: 11,
+                fontWeight: 700,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
-                boxShadow: tab === t.id ? '0 6px 16px -6px rgba(142,92,247,0.7)' : 'none',
               }}
             >
-              {t.icon} {t.label}
+              {t.label}
             </button>
           ))}
         </nav>
@@ -1146,7 +1149,9 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                     >
                       <Sparkles size={14} color={ventsColors.accentSoft} style={{ flexShrink: 0, marginTop: 2 }} />
                       <p style={{ ...ventsTypography.label, color: ventsColors.ink2, margin: 0, textTransform: 'none', letterSpacing: 'normal', lineHeight: 1.5 }}>
-                        You will earn VENTS&apos; full commission on revenue from this organizer&apos;s events. This is fixed and not negotiable.
+                        {targetRole === 'provider'
+                          ? 'Rewards are for organizers you bring to VENTS. Service provider partnerships are tracked on your team.'
+                          : 'When this organizer hosts a qualifying event, confirms you referred them and VENTS approves it, you earn a fixed ₦50,000 reward.'}
                       </p>
                     </div>
                     <button
@@ -1276,7 +1281,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership }:
                       color: ventsColors.ink2,
                     }}
                   >
-                    <span style={{ color: ventsColors.accentSoft }}>Full VENTS commission</span>
+                    <span style={{ color: ventsColors.accentSoft }}>{p.organizer_id ? '₦50,000 reward when they qualify' : 'Service provider partner'}</span>
                   </div>
                   {p.status === 'pending' && (
                     <button

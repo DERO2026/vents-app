@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
 import { SecureStorage } from '@aparajita/capacitor-secure-storage';
+import { installPreviewReadOnlyGuard } from './previewReadOnly';
 
 // Same platform split as insforge.ts's SESSION_KEY storage: the Supabase
 // JS client already handles token refresh/rotation internally, so this
@@ -28,6 +29,10 @@ export const supabase = createClient(
     },
   }
 );
+
+// Vercel Preview builds that share production data run read-only. The
+// constant is `false` in production builds, so this is compiled out there.
+if (__VENTS_PREVIEW_READ_ONLY__) installPreviewReadOnlyGuard(supabase);
 
 /**
  * Returns the current authenticated access token, refreshing if necessary.

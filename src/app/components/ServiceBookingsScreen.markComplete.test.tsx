@@ -26,8 +26,9 @@ const CONFIRMED_BOOKING: ServiceBookingRow = {
   customerName: 'Jane Doe',
   status: 'confirmed',
   paymentStatus: 'paid',
-  scheduledDate: null,
-  scheduledTime: null,
+  // 0203: a provider can only complete a booking whose scheduled time has passed.
+  scheduledDate: '2026-01-02',
+  scheduledTime: '10:00:00',
   location: null,
   customerNotes: null,
   currency: 'NGN',
@@ -50,8 +51,8 @@ afterEach(() => {
   completeServiceBooking.mockReset();
 });
 
-async function renderScreen() {
-  fetchProviderServiceBookings.mockResolvedValueOnce([CONFIRMED_BOOKING]);
+async function renderScreen(booking: ServiceBookingRow = CONFIRMED_BOOKING) {
+  fetchProviderServiceBookings.mockResolvedValueOnce([booking]);
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -88,6 +89,25 @@ describe('ServiceBookingsScreen: Mark Complete', () => {
 
     expect(completeServiceBooking).toHaveBeenCalledWith('booking-1');
     expect(container!.textContent).toContain('COMPLETED');
+    expect(Array.from(container!.querySelectorAll('button')).some((b) => b.textContent === 'Mark Complete')).toBe(false);
+  });
+
+  it('a booking scheduled in the future cannot be completed yet (the database refuses it too)', async () => {
+    await renderScreen({ ...CONFIRMED_BOOKING, scheduledDate: '2999-01-01' });
+    const btn = Array.from(container!.querySelectorAll('button')).find((b) => (b.textContent || '').startsWith('Complete after'));
+    expect(btn).toBeTruthy();
+    expect(btn!.disabled).toBe(true);
+    expect(Array.from(container!.querySelectorAll('button')).some((b) => b.textContent === 'Mark Complete')).toBe(false);
+  });
+
+  it('a booking with no scheduled date is left to VENTS to complete', async () => {
+    await renderScreen({ ...CONFIRMED_BOOKING, scheduledDate: null, scheduledTime: null });
+    const btn = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Completion by VENTS');
+    expect(btn?.disabled).toBe(true);
+  });
+
+  it('a start floor later than the schedule (the booking was postponed) wins', async () => {
+    await renderScreen({ ...CONFIRMED_BOOKING, serviceStartFloorAt: '2999-01-01T00:00:00Z' });
     expect(Array.from(container!.querySelectorAll('button')).some((b) => b.textContent === 'Mark Complete')).toBe(false);
   });
 

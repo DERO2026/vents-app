@@ -109,9 +109,23 @@ const FIXTURES: Record<string, Row[]> = {
     { provider_id: 'sp-2', category: 'Beauty' },
   ],
   service_provider_ratings: [],
+  // VENTS Work / Representative dashboard: rep-1 is an active
+  // Representative with 3 accepted partners and 2 open invitations.
+  recruiters: [
+    { id: 'rep-1', display_name: 'Adaeze Okonkwo', bio: null, status: 'active', created_at: '2026-10-03T09:00:00Z' },
+  ],
   // RepresentativesScreen Invitations tab (recipient side): org-1 has one
   // pending invitation from user-3 and one it already accepted from user-4.
   recruiter_partnerships: [
+    ...['user-2', 'user-3', 'user-4'].map((org, i) => ({
+      id: `rp-rep-${i}`, recruiter_id: 'rep-1', organizer_id: `rep-org-${i}`, provider_id: null, status: 'accepted',
+      commission_split_bps: 10000, invited_at: new Date(Date.now() - (20 - i) * 86400000).toISOString(),
+      responded_at: new Date(Date.now() - (18 - i) * 86400000).toISOString(),
+    })),
+    ...[0, 1].map((i) => ({
+      id: `rp-rep-pending-${i}`, recruiter_id: 'rep-1', organizer_id: `rep-invitee-${i}`, provider_id: null, status: 'pending',
+      commission_split_bps: 10000, invited_at: new Date(Date.now() - i * 3600000).toISOString(), responded_at: null,
+    })),
     {
       id: 'rp-pending', recruiter_id: 'user-3', organizer_id: 'org-1', provider_id: null, status: 'pending',
       commission_split_bps: 10000, invited_at: new Date(Date.now() - 2 * 3600000).toISOString(), responded_at: null,
@@ -440,6 +454,56 @@ const RPC_FIXTURES: Record<string, any> = {
   ],
   // ── Admin Console dashboard/event-detail RPCs ───────────────────────────
   admin_get_vc_aggregates: [{ circulation: 128400 }],
+  // VENTS Work / VENTS Earn (QA fixture values, mockup-sized).
+  get_my_vc_balance: { spendable: 1250, expired_this_call: 0 },
+  vc_tier_and_multiplier_for_user: [{ tier: 'Silver', lifetime_earned: 4900, multiplier: 1.1 }],
+  get_my_wallet: [{ balance_kobo: 320000 }],
+  get_my_referral_confirmations: [
+    { id: 'claim-confirm-1', status: 'pending_organizer', created_at: new Date().toISOString(), representative_name: 'Adaeze Okonkwo', event_title: 'Lagos Music Festival' },
+  ],
+  // Consistent with REP_HISTORY below (25 claims: one approved, 24 awaiting
+  // approval -- more than one page; 3 attributed organizers; 1 expense).
+  get_my_representative_performance: {
+    representative: { status: 'active', created_at: '2026-10-03T09:00:00Z' },
+    programme_open: false, payouts_enabled: false, current_month: '2026-10-01',
+    rate_review_threshold: 9, base_reward_kobo: 5000000, settlement_hold_days: 7,
+    funnel: { invitations_sent: 5, invitations_pending: 2, invitations_accepted: 3, invitations_declined: 0, invitations_withdrawn: 0,
+      partnerships_active: 3, partnerships_ended: 0, organizers_attributed: 3, organizers_hosting: 2, organizers_qualified: 1, organizers_paid: 0 },
+    lifecycle: {
+      pending_organizer: { count: 0, amount_kobo: 0 }, pending_review: { count: 24, amount_kobo: 120000000 },
+      approved: { count: 1, amount_kobo: 5000000 }, funded: { count: 0, amount_kobo: 0 }, credited: { count: 0, amount_kobo: 0 },
+      rejected: { count: 0, amount_kobo: 0 }, reversed: { count: 0, amount_kobo: 0 },
+    },
+    months: ['2026-10-01', '2026-09-01', '2026-08-01', '2026-07-01', '2026-06-01', '2026-05-01'].map((m, i) => ({
+      month: m, qualifying: i === 0 ? 1 : 0, rate_kobo: 5000000, submitted: i === 0 ? 2 : 0, paid_kobo: 0,
+    })),
+    expenses: { submitted: { count: 1, amount_kobo: 250000 }, approved: { count: 0, amount_kobo: 0 }, rejected: { count: 0, amount_kobo: 0 } },
+    wallet: { balance_kobo: 0, pending_kobo: 0, on_hold_kobo: 0 },
+  },
+  get_my_representative_rewards: {
+    representative: { id: 'rep-1', status: 'active', created_at: '2026-10-03T09:00:00Z', display_name: 'Adaeze Okonkwo' },
+    payouts_enabled: false, programme_open: false, current_month: '2026-10-01', current_rate_kobo: 5000000,
+    base_reward_kobo: 5000000, rate_review_threshold: 9, qualifying_this_month: 2, qualifying_last_month: 0,
+    funding_available: false,
+  },
+  admin_get_vents_earn_overview: {
+    settings: { payouts_enabled: false, legacy_commission_reconciled: false, settlement_hold_days: 7, base_reward_kobo: 5000000 },
+    pool: { available_kobo: 0, reserved_kobo: 0, credited_kobo: 0 },
+    claims: [
+      { id: 'cl-2', status: 'pending_review', amount_kobo: 5000000, reward_month: '2026-10-01', is_free_event: false, free_event_verified: false, representative_id: 'rep-1', representative_name: 'Adaeze Okonkwo', organizer_id: 'user-8', organizer_name: 'Femi Bello', event_id: 'evt-y2', event_title: 'Yaba Tech Fair', created_at: '2026-10-24T09:00:00Z', decision_reason: null },
+    ],
+    attributions: [
+      { id: 'at-1', representative_id: 'rep-1', representative_name: 'Adaeze Okonkwo', organizer_id: 'user-3', organizer_name: 'Tobi Oyelaran', attributed_at: '2026-10-05T09:00:00Z', organizer_had_events_before: false },
+    ],
+    expenses: [
+      { id: 'ex-1', representative_id: 'rep-1', representative_name: 'Adaeze Okonkwo', category: 'transport', amount_kobo: 250000, description: 'Bus to Ikeja meeting', incurred_on: '2026-10-21', status: 'submitted', created_at: '2026-10-21T09:00:00Z' },
+    ],
+    monthly_counts: [{ representative_id: 'rep-1', month: '2026-10-01', count: 2 }],
+    recognitions: [],
+    audit: [
+      { id: 'au-1', entity_type: 'settings', entity_id: null, action: 'legacy_commission_snapshot', actor_id: null, subject_user_id: null, details: {}, created_at: '2026-10-30T09:00:00Z' },
+    ],
+  },
   // Real shape: a bare scalar (Number(data)), not an array/object.
   admin_pending_request_count: 3,
   admin_get_verification_stats: [{ pending_count: 2 }],
@@ -463,6 +527,42 @@ const RPC_FIXTURES: Record<string, any> = {
 // signup, code-sent password reset, correct-code verify), just enough to
 // drive the screen's own state machine into each visual state for
 // comparison against the export. Never used by the real app build.
+
+// Representative history served a page at a time, like
+// get_my_representative_history (newest first, status filter, keyset).
+const REP_HISTORY: Record<string, any[]> = {
+  claims: [
+    { id: 'cl-1', organizer_id: 'user-9', organizer_name: 'Kemi Adeyemi', event_id: 'evt-y1', event_title: 'Ikoyi Jazz Brunch', status: 'approved', amount_kobo: 5000000, reward_month: '2026-10-01', created_at: '2026-10-26T09:00:00Z', decision_reason: null, credited_at: null },
+    ...Array.from({ length: 24 }, (_, i) => ({
+      id: `cl-r${i}`, organizer_id: `user-r${i}`, organizer_name: ['Femi Bello', 'Ngozi Eze', 'Musa Danjuma', 'Bisi Alade'][i % 4], event_id: `evt-r${i}`,
+      event_title: ['Yaba Tech Fair', 'Surulere Food Fest', 'Kano Poetry Night', 'Ibadan Book Fair'][i % 4], status: 'pending_review', amount_kobo: 5000000,
+      reward_month: '2026-10-01', created_at: new Date(Date.UTC(2026, 9, 25) - i * 3600000).toISOString(), decision_reason: null, credited_at: null,
+    })),
+  ].map((r) => ({ ...r, at: r.created_at })),
+  attributions: [
+    { id: 'at-1', at: '2026-10-09T09:00:00Z', organizer_id: 'user-4', organizer_name: 'Ada Chukwu', attributed_at: '2026-10-09T09:00:00Z', claimed: false, events: [] },
+    { id: 'at-2', at: '2026-10-08T09:00:00Z', organizer_id: 'user-2', organizer_name: 'Priya Nair', attributed_at: '2026-10-08T09:00:00Z', claimed: false,
+      events: [{ event_id: 'evt-x2', title: 'Lekki Art Walk', eligibility: { eligible: false, reasons: ['settlement_hold'] } }] },
+    { id: 'at-3', at: '2026-10-05T09:00:00Z', organizer_id: 'user-3', organizer_name: 'Tobi Oyelaran', attributed_at: '2026-10-05T09:00:00Z', claimed: false,
+      events: [{ event_id: 'evt-x1', title: 'Abuja Comedy Night', eligibility: { eligible: true, reasons: [], is_free_event: false } }] },
+  ],
+  expenses: [
+    { id: 'ex-1', at: '2026-10-21T09:00:00Z', category: 'transport', amount_kobo: 250000, description: 'Bus to Ikeja meeting', incurred_on: '2026-10-21', status: 'submitted', decision_reason: null, created_at: '2026-10-21T09:00:00Z' },
+  ],
+};
+function repHistoryPage(args: any) {
+  let rows = (REP_HISTORY[args?.p_kind] ?? []).filter((r) => !args?.p_status || r.status === args.p_status);
+  if (args?.p_before_id) rows = rows.slice(rows.findIndex((r) => r.id === args.p_before_id) + 1);
+  const lim = Math.min(Math.max(args?.p_limit ?? 20, 1), 50);
+  const page = rows.slice(0, lim);
+  const last = page[page.length - 1];
+  return { items: page, next: rows.length > lim ? { at: last.at, id: last.id } : null };
+}
+// ?repMode=missing: the 0201 functions are not deployed (PGRST202), the
+// state the read-only Preview shows today. ?repMode=noperf: only the
+// dashboard function is missing.
+const REP_0201 = ['get_my_representative_rewards', 'get_my_representative_performance', 'get_my_representative_history'];
+
 export const supabase = {
   from: (table: string) => chainable(table),
   auth: {
@@ -494,6 +594,12 @@ export const supabase = {
     signOut: async () => ({ error: null }),
   },
   rpc: async (fn: string, args?: any) => {
+    if (typeof window !== 'undefined') ((window as any).__rpc ??= []).push({ fn, args });
+    const repMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('repMode') : null;
+    if ((repMode === 'missing' && REP_0201.includes(fn)) || (repMode === 'noperf' && fn === 'get_my_representative_performance')) {
+      return { data: null, error: { code: 'PGRST202', message: `Could not find the function public.${fn}` } };
+    }
+    if (fn === 'get_my_representative_history') return { data: repHistoryPage(args), error: null };
     // QA-only: verify_entry_pass keyed off a magic p_ticket_id prefix so
     // the real scanner UI's own dev simulator input can drive every real
     // ScanOutcome branch (ticketValidation.ts) without a live backend.

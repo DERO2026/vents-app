@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { computePreviewFlags } from './src/lib/previewMode'
 
 export default defineConfig(({ mode }) => {
   // Every native (iOS/Android) build is produced locally via `npm run build`
@@ -114,7 +115,18 @@ export default defineConfig(({ mode }) => {
       );
     }
   }
+  // Vercel Preview builds share the production database, so they compile in
+  // read-only mode and without analytics. Production and native builds get
+  // `false` for both constants (see src/lib/previewMode.ts).
+  const previewFlags = computePreviewFlags({
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || loadEnv(mode, process.cwd(), '').VITE_SUPABASE_URL,
+  });
   return {
+  define: {
+    __VENTS_VERCEL_PREVIEW__: JSON.stringify(previewFlags.vercelPreview),
+    __VENTS_PREVIEW_READ_ONLY__: JSON.stringify(previewFlags.readOnly),
+  },
   plugins: [
     react(),
     tailwindcss(),

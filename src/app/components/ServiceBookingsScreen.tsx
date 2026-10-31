@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
 import { servicesColors, servicesFills, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
-import { fetchMyServiceBookings, fetchProviderServiceBookings, completeServiceBooking, submitProviderReview, ServiceBookingRow } from '../../lib/serviceBookings';
+import { fetchMyServiceBookings, fetchProviderServiceBookings, completeServiceBooking, submitProviderReview, ServiceBookingRow, disputeServiceBooking } from '../../lib/serviceBookings';
+import { bookingScheduledStart, bookingDisputeDeadline } from '../../lib/bookingSettlement';
 import { getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { formatServiceAmount } from '../../lib/currencies';
@@ -53,6 +54,20 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
   const [completeTarget, setCompleteTarget] = useState<ServiceBookingRow | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [disputeNotice, setDisputeNotice] = useState<string | null>(null);
+
+  // Customer: report a problem with a completed booking inside the 48-hour
+  // window (dispute_service_booking re-checks everything server-side).
+  const openDispute = async (booking: ServiceBookingRow) => {
+    const reason = window.prompt('What went wrong with this booking? VENTS will review it before the provider is paid.');
+    if (!reason || reason.trim().length < 5) return;
+    try {
+      await disputeServiceBooking(booking.id, reason.trim());
+      setDisputeNotice('Thanks — we have paused the provider\'s payment for this booking while VENTS reviews it.');
+    } catch (err: any) {
+      setDisputeNotice(err?.message || 'Could not open a dispute for this booking.');
+    }
+  };
   const [reviewTarget, setReviewTarget] = useState<ServiceBookingRow | null>(null);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewBody, setReviewBody] = useState('');
@@ -197,6 +212,9 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>
+        {disputeNotice && (
+          <p data-testid="booking-dispute-notice" style={{ color: servicesColors.textSecondary, fontSize: '12.5px', margin: '0 0 12px' }}>{disputeNotice}</p>
+        )}
         {/* Only show the banner-style error once bookings has loaded at least
             once -- a failed REFRESH keeps the existing list visible with this
             banner on top. A failed INITIAL load falls through to the
@@ -300,14 +318,24 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
 
                   {mode === 'provider' && b.paymentStatus === 'paid' && (
                     <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                      {b.status === 'confirmed' && (
-                        <button
-                          onClick={() => { setCompleteTarget(b); setCompleteError(null); }}
-                          style={{ flex: 1, background: 'rgba(168,85,247,0.10)', border: `1px solid ${servicesColors.accentPurple}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.accentPurple, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
-                        >
-                          Mark Complete
-                        </button>
-                      )}
+                      {b.status === 'confirmed' && (() => {
+                        // A provider cannot complete a booking before its
+                        // scheduled time, or one with no date (0203 trigger).
+                        const start = bookingScheduledStart(b.scheduledDate, b.scheduledTime);
+                        const floor = b.serviceStartFloorAt ? new Date(b.serviceStartFloorAt) : null;
+                        const earliest = floor && start ? new Date(Math.max(floor.getTime(), start.getTime())) : (floor || start);
+                        const tooEarly = !earliest || earliest.getTime() > Date.now();
+                        return (
+                          <button
+                            onClick={() => { setCompleteTarget(b); setCompleteError(null); }}
+                            disabled={tooEarly}
+                            title={!earliest ? 'This booking has no scheduled date — VENTS will mark it complete' : tooEarly ? `Available from ${earliest.toLocaleString('en-NG')}` : undefined}
+                            style={{ flex: 1, background: 'rgba(168,85,247,0.10)', border: `1px solid ${servicesColors.accentPurple}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.accentPurple, fontSize: '12.5px', fontWeight: 700, cursor: tooEarly ? 'not-allowed' : 'pointer', opacity: tooEarly ? 0.5 : 1 }}
+                          >
+                            {!earliest ? 'Completion by VENTS' : tooEarly ? `Complete after ${earliest.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}` : 'Mark Complete'}
+                          </button>
+                        );
+                      })()}
                       <button
                         onClick={() => openCancelDialog(b)}
                         style={{ flex: 1, background: 'rgba(239,68,68,0.10)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.error, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
@@ -317,6 +345,18 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                     </div>
                   )}
 
+                  {mode === 'customer' && b.status === 'completed' && (() => {
+                    const deadline = bookingDisputeDeadline(b);
+                    return deadline && deadline.getTime() > Date.now() ? (
+                      <button
+                        data-testid="booking-dispute"
+                        onClick={() => openDispute(b)}
+                        style={{ marginTop: '10px', width: '100%', background: 'rgba(239,68,68,0.08)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.error, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Report a problem (until {deadline.toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })})
+                      </button>
+                    ) : null;
+                  })()}
                   {mode === 'customer' && b.status === 'completed' && (
                     b.myReview ? (
                       <div style={{ marginTop: '10px', padding: '10px', borderRadius: servicesRadii.md, background: 'rgba(168,85,247,0.08)', border: `1px solid ${servicesColors.border}` }}>

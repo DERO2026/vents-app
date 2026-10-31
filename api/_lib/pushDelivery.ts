@@ -14,6 +14,7 @@
 // whatever it sends, so a retry naturally finds nothing left to do.
 import crypto from 'node:crypto';
 import { callProjectAdminRpc, callProjectAdminTableRpc } from './projectAdminDb.js';
+import { previewBlockReason } from './previewGuard.js';
 
 function b64url(input: Buffer | string): string {
   const buf = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
@@ -64,6 +65,8 @@ export interface DeliveryResult { sent: number; total: number }
  * exception; the daily cron sweep still catches whatever this misses. */
 export async function deliverPendingPushesForUser(userId: string, limit = 20): Promise<DeliveryResult> {
   try {
+    // A Preview sharing production data never pushes to real devices.
+    if (previewBlockReason()) return { sent: 0, total: 0 };
     const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
     if (!saJson) return { sent: 0, total: 0 };
     let sa: { project_id: string; client_email: string; private_key: string };

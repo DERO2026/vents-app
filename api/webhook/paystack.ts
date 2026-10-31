@@ -42,6 +42,7 @@ import { verifyInsforgeSession, enforceRateLimit } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 import crypto from 'crypto';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // After confirm_transfer_fee_payment confirms/no-ops a transfer-fee payment,
 // trigger immediate push delivery for the notification it just inserted
@@ -138,6 +139,16 @@ async function readRawBody(req): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+const DISPUTE_EVENTS = new Set(['charge.dispute.create', 'charge.dispute.remind', 'charge.dispute.resolve']);
+
+// Every place a dispute payload might carry the disputed payment's
+// reference (see the dispute block in the webhook handler), de-duplicated,
+// strings only, in order of confidence.
+export function disputeReferenceCandidates(data: any): string[] {
+  const raw = [data?.transaction?.reference, data?.transaction_reference, data?.reference];
+  return [...new Set(raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim()))];
+}
+
 export default async function handler(req, res) {
   // F17 follow-up: a request stream that errors mid-read (client
   // disconnect, proxy reset, etc.) must not escape as an uncaught
@@ -170,6 +181,7 @@ async function handleClientVerifyDeposit(req, res, rawBody: Buffer) {
   applyCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'payment verification')) return;
 
   try {
     req.body = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
@@ -253,6 +265,7 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'payment verification')) return;
 
   try {
     req.body = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
@@ -523,6 +536,7 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
 // ── Paystack's own signed webhook ─────────────────────────────────────────
 async function handleWebhook(req, res, rawBody: Buffer) {
   if (req.method !== 'POST') return res.status(405).end();
+  if (refuseInPreview(res, 'Paystack webhook')) return;
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
@@ -735,6 +749,35 @@ async function handleWebhook(req, res, rawBody: Buffer) {
     }
   }
 
+  // ── Payment disputes (chargebacks) ─────────────────────────────────────
+  // 0203: a dispute on a ticket or booking payment freezes that sale's held
+  // earnings (an admin hold, never lifted automatically) so they cannot be
+  // withdrawn while Paystack decides; charge.dispute.resolve only records
+  // Paystack's outcome for the admin who lifts the hold.
+  //
+  // The payload shape is NOT verified against Paystack's own documentation
+  // here (paystack.com is unreachable from where this was written). A
+  // third-party SDK types data.transaction as the full charge (with
+  // .reference) and also has a top-level data.reference; Paystack's dispute
+  // API object is commonly shown with data.transaction_reference. So every
+  // candidate is passed and the database uses the first that names a held
+  // sale or booking; an event naming none is logged for admins, not lost.
+  if (DISPUTE_EVENTS.has(event?.event)) {
+    const candidates = disputeReferenceCandidates(event.data);
+    const disputeId = event.data?.id != null ? String(event.data.id) : null;
+    if (candidates.length === 0) {
+      console.error('[Paystack webhook] dispute event has no usable reference', event.data?.id);
+      return res.status(200).json({ received: true });
+    }
+    try {
+      const status = await callProjectAdminRpc<string>('place_payment_dispute_hold', [candidates, disputeId, event.event]);
+      console.log(`[Paystack webhook] ${event.event} -> place_payment_dispute_hold:`, status, 'for', candidates.join(','));
+    } catch (err: any) {
+      console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
+      hadTransientFailure = true;
+    }
+  }
+
   // ── Organizer payout transfer status ──────────────────────────────────
   // This is the authoritative completion signal for a payout -- the
   // synchronous /transfer response only means "accepted for processing",
@@ -756,23 +799,29 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       // service_role EXECUTE grant) -- called via the direct project_admin
       // Postgres connection, same as the ticket-confirmation block above
       // (see api/_lib/projectAdminDb.ts).
-      const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
+      // transfer.reversed can arrive after transfer.success: the money came
+      // back, so it returns to the available balance (0202). Before success
+      // it is handled like a failure.
+      const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout'
+        : event.event === 'transfer.reversed' ? 'reverse_organizer_payout' : 'fail_organizer_payout';
       const rows = event.event === 'transfer.success'
         ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [lookupKey])
-        : await callProjectAdminTableRpc<any>('fail_organizer_payout', [lookupKey, event.data?.reason || event.event]);
+        : await callProjectAdminTableRpc<any>(rpcName, [lookupKey, event.data?.reason || event.event]);
       const row = rows[0];
       console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
 
       // Fire the payout email only on a genuine, first-time state change --
       // never on 'not_found'/'already_completed'/'already_finalized', which
       // would otherwise re-send on Paystack's webhook retries.
-      if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed')) {
+      if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed' || row.status === 'reversed')) {
         sendPayoutDecisionEmail({
           to: row.organizer_email,
           name: row.organizer_name || 'there',
           amountNaira: fmtNaira(Number(row.amount_kobo) || 0),
-          decision: row.status,
-          reason: row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
+          decision: row.status === 'completed' ? 'completed' : 'failed',
+          reason: row.status === 'reversed'
+            ? 'Your bank reversed this transfer. The amount is back in your available balance.'
+            : row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
         }).catch((e) => console.error('[Paystack webhook] payout email failed:', e?.message || e));
       }
     } catch (err: any) {

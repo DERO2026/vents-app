@@ -21,6 +21,7 @@ import {
   type EventPromotionPlan,
   type EventPromotionDuration,
 } from '../../src/lib/eventPromotionPricing.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // Paystack financial-exposure audit finding: this endpoint's Paystack
 // verification call had no rate limit at all -- an authenticated user
@@ -75,6 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'promotion activation')) return;
 
   const authHeader = req.headers.authorization;
   const session = await verifyInsforgeSession(authHeader);

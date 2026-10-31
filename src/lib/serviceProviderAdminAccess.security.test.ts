@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { providerRole } from './workRoles';
 import { join } from 'node:path';
 
 // Static-analysis tests (same approach as the other *.security.test.ts files
@@ -54,14 +55,16 @@ describe('Profile screen: single, non-duplicated Service Provider entry point', 
     expect(profileScreenSrc).not.toMatch(/submitSpRequest/);
   });
 
-  it('"Become a Service Provider" navigates to the KYC screen, not a raw insert', () => {
-    expect(profileScreenSrc).toMatch(/onNavigate\('service-provider-verify'\)/);
-    expect(profileScreenSrc).not.toMatch(/\.from\('service_provider_requests'\)\s*\n\s*\.insert/);
+  it('"Become a Service Provider" (now in VENTS Work) navigates to the KYC screen, not a raw insert', () => {
+    const hubSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'work', 'VentsWorkScreen.tsx'), 'utf8');
+    expect(hubSrc).toMatch(/onNavigate\('service-provider-verify'\)/);
+    for (const src of [hubSrc, profileScreenSrc]) {
+      expect(src).not.toMatch(/\.from\('service_provider_requests'\)\s*\n?\s*\.insert/);
+    }
   });
 
   it('Admin/Sub-Admin can reach provider setup without the capability flag', () => {
-    expect(profileScreenSrc).toMatch(/canAccessProviderSetup/);
-    expect(profileScreenSrc).toMatch(/currentUser\?\.role === 'admin' \|\| currentUser\?\.role === 'sub-admin'/);
+    expect(providerRole({ isProvider: false, isStaff: true, request: 'none', profileStatus: null }).action).toBe('provider-setup');
   });
 });
 

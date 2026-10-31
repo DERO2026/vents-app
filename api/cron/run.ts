@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // ─── Daily notification safety-net sweep (Vercel Cron) ────────────────────
 // PREVIOUS root cause of hours-late push delivery: this daily sweep used to
@@ -102,6 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  if (refuseInPreview(res, 'cron run')) return;
 
   // Vercel injects this header automatically for cron-triggered invocations
   // when CRON_SECRET is set — see https://vercel.com/docs/cron-jobs/manage-cron-jobs.
@@ -124,6 +126,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     archiveResult = { error: `archive sweep failed: ${err?.message || err}` };
   }
 
+  // ── 0b) Earnings settlement (0203) ─────────────────────────────────────
+  // Moves organizer/provider earnings whose 7-day hold has passed to the
+  // withdrawable balance, deducting any refund still owed. Idempotent; the
+  // owner's own withdrawal request and wallet screen settle too, so a missed
+  // run only delays the balance, never the money. Fails soft (and harmlessly)
+  // on a database without 0203.
+  let settlementResult: any = null;
+  try {
+    settlementResult = await callProjectAdminRpc<any>('release_matured_earnings', [500]);
+  } catch (err: any) {
+    settlementResult = { error: `earnings release failed: ${err?.message || err}` };
+  }
+
   // ── 1) Reminder sweep ──────────────────────────────────────────────────
   let reminderResult: any = null;
   try {
@@ -136,31 +151,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── 2) Push delivery ────────────────────────────────────────────────────
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
   if (!saJson) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
   }
 
   let sa: { project_id: string; client_email: string; private_key: string };
   try {
     sa = JSON.parse(saJson);
   } catch {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
   }
 
   let rows: PendingRow[];
   try {
     rows = await callProjectAdminTableRpc<PendingRow>('get_pending_push_notifications', [200]);
   } catch (err: any) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
   }
   if (!rows.length) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
   }
 
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sa);
   } catch (err: any) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
   }
 
   const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
@@ -246,6 +261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   return res.status(200).json({
     archived: archiveResult,
+    settlement: settlementResult,
     reminders: reminderResult,
     push: { sent, pruned: pruned.size, marked: toMark.size, total: rows.length },
   });

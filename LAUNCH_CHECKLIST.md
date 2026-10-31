@@ -9,6 +9,13 @@ For the full iOS-specific walkthrough (Xcode, Info.plist, signing,
 capabilities), see **[IOS_LAUNCH_CHECKLIST.md](IOS_LAUNCH_CHECKLIST.md)** —
 this file only summarizes iOS status, that one has the step-by-step.
 
+**Top-level status and priorities (2026-10-30):** see
+**[docs/LAUNCH_READINESS_MASTER.md](docs/LAUNCH_READINESS_MASTER.md)**. It
+reconciles this file with the iOS checklist, `MASTER_AUDIT.md`, the design
+checklists, the money-flow audit and open PRs. It also separates launch
+blockers from future work and gives the execution order. This file keeps
+the store, build, infrastructure and on-device detail.
+
 ---
 
 ## 1. Google Play Store Policy & Compliance
@@ -142,103 +149,80 @@ against this codebase.*
 
 ## 9. Backend / Infrastructure
 
-**Superseded — rewritten to reflect the current Supabase backend.** The
-previous version of this section described fixing bugs in an
-InsForge-backed `api/webhook/paystack.ts` and cited `INSFORGE_API_KEY`
-being set in Vercel as evidence of launch-readiness. That was accurate for
-the pre-migration backend at the time it was written; it is **not**
-accurate for the current codebase, which has since been fully migrated to
-Supabase (`claude/jolly-moser-bee77b`, PR #3, not yet merged to `main`).
-Anyone using the old wording to judge launch-readiness would be checking
-the wrong backend entirely. See `supabase/CUTOVER_PLAN.md` for the full
-migration history and audit trail this section summarizes.
+*Rewritten 2026-10-30 (PR #82, Batch A). It replaces the earlier version,
+which said the Supabase variables were missing from Production and PR #3
+was unmerged. Both statements were out of date: production has served the
+Supabase app from `main` for weeks.*
 
-*Status below reflects what has actually been checked directly this
-migration (real Vercel API calls, a real Preview deployment, a real
-Postgres connection) — not assumed. `[x]` = verified directly. `[ ]` =
-still missing or genuinely unverified, stated explicitly either way.*
+**How each line was checked:**
 
-- [x] **All backend Vercel functions and all frontend files converted to
-  Supabase** — confirmed by a repo-wide grep for any import from
-  `lib/insforge` (not just usage of `.database`/`.auth`/`.realtime`);
-  zero matches remain anywhere in `src/` or `api/`. The two files that
-  made up that module (`src/lib/insforge.ts`, `src/test-insforge.ts`) have
-  been deleted outright — they were dead code with zero importers.
-- [x] **Full regression pass run against a real Vercel Preview deployment**
-  of this branch (not just local typecheck): sign up, browse, purchase
-  (free-ticket path), organizer event creation, check-in (including a
-  **live** realtime confirmation — the Door Manager UI updated with zero
-  manual refresh off a real check-in), messaging, and admin moderation all
-  verified with real data against the live Supabase project. Full
-  step-by-step results in `supabase/CUTOVER_PLAN.md` §1.
-- [x] **RLS confirmed enabled** on every critical table (`users`,
-  `tickets`, `events`, `direct_messages`, `organizer_bank_accounts`,
-  `organizer_wallets`, `vents_wallets`, `vc_transactions`,
-  `blocked_users`, `saved_events`) — checked directly against
-  `supabase/migrations/0008_rls_and_policies.sql`, not assumed.
-- [ ] **`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are NOT set in
-  Vercel's Production environment.** Confirmed by directly pulling
-  Production's actual env vars (`vercel env pull --environment=production`)
-  twice, in two separate sessions — both times these came back completely
-  absent, not masked or encrypted-but-present. **The Supabase client
-  cannot even initialize without these.** Deploying `main` (or merging
-  PR #3 and deploying it) to Production today would break the app
-  immediately on load. This is the single biggest concrete blocker to
-  cutover.
-- [ ] **`PROJECT_ADMIN_DATABASE_URL` is NOT set anywhere** — not in
-  Production, Preview, or `.env.local`. This is the direct-Postgres
-  connection the webhook uses to finalize ticket payments, organizer
-  payouts, and refunds (`api/_lib/projectAdminDb.ts`). Its password was
-  deliberately set out-of-band per
-  `supabase/migrations/0021_project_admin_login.sql` and isn't recorded
-  anywhere in this repo. Without it, **the entire
-  purchase → Paystack webhook → ticket-confirmation flow has never been
-  tested against this backend** — not once, in any session. This is not
-  "probably fine" — it is genuinely unverified and must not be treated as
-  working until someone with that credential runs it for real.
-- [ ] **`SUPABASE_JWT_SECRET` is NOT set** — confirmed absent alongside the
-  above. Only relevant if anything ends up needing to verify Supabase JWTs
-  outside Supabase's own client libraries; flagged for completeness since
-  it was part of the original planned env-var set.
-- [ ] **`PAYSTACK_SECRET_KEY` / `VITE_PAYSTACK_PUBLIC_KEY` live-vs-test mode
-  cannot be verified from a development environment.** Both are marked
-  `Sensitive` in Vercel — write-only by design, unreadable by any method
-  (CLI, API, or `vercel env pull`) even with full project access. Whoever
-  originally set these needs to confirm the mode directly, or they need to
-  be rotated and re-entered with the mode recorded at set-time.
-- [ ] **`CRON_SECRET` and `FCM_SERVICE_ACCOUNT_JSON` are present in Vercel**
-  (confirmed via `vercel env ls` — both exist) but are also `Sensitive`,
-  so their actual values can't be confirmed correct from here, only that
-  something is set under those names.
-- [ ] **Vercel plan**: still on Hobby — push/reminder crons run once daily
-  (not near-real-time) and serverless functions are capped at 12 (already
-  consolidated to exactly 12, confirmed this migration; adding one more
-  endpoint without removing another will break every deployment). Upgrade
-  to Pro if faster notification delivery or more functions are needed
-  post-launch.
-- [ ] Set up basic uptime/error monitoring alerting (Sentry is integrated —
-  confirm alert rules are actually configured, not just SDK-installed).
-- [ ] Bank account management (add/remove/set-default) — was fixed and
-  verified against the InsForge backend in an earlier session; **not
-  re-verified against Supabase** in this migration's regression pass.
-  Should be included in the next full regression run.
-- [ ] **SPF record missing on `getvents.com`** — confirmed via live DNS
-  check, no `v=spf1` TXT record exists at all. Needed value (covers both
-  Resend, which relays through AWS SES, and Google Workspace, which the
-  domain's MX already points to — confirmed via DNS):
-  `v=spf1 include:amazonses.com include:_spf.google.com ~all` as a TXT
-  record at host `@`.
-- [ ] **DMARC record missing on `getvents.com`** — confirmed via live DNS
-  check, `_dmarc.getvents.com` doesn't resolve at all. Start monitor-only,
-  not enforcing, as a TXT record at host `_dmarc`:
-  `v=DMARC1; p=none; rua=mailto:support@getvents.com; fo=1`. After a
-  couple weeks of clean SPF/DKIM reports, tighten to `p=quarantine` then
-  `p=reject`.
-- [ ] **BIMI (sender logo in Gmail/Yahoo inbox) blocked on the above** —
-  requires DMARC at `p=quarantine`/`p=reject` (not just present) before a
-  BIMI record does anything. Gmail additionally requires a paid VMC
-  certificate; Yahoo does not. Do this after DMARC is enforcing, not
-  before.
+- **Code:** read from the repository (`main` at `5612ee0`, PR #82 at its head).
+- **Prod:** read-only queries on Supabase project `slrtjxtzhowhwhebjprv`, or a read of the Vercel deployment list, on 2026-10-30. Nothing was written.
+- **Owner:** cannot be checked from a development session. Only the owner's dashboards can show it, so it stays unchecked until the owner confirms.
+
+No secret value was read or recorded. Listing Vercel environment
+variables, even by name, is refused (403) for the development account. So
+variables are shown as working only where production behaviour proves it.
+
+### 9.1 Code status (repository)
+
+- [x] **Backend is Supabase only.** The app uses `@supabase/supabase-js` (`src/lib/supabase.ts`); server functions use `PROJECT_ADMIN_DATABASE_URL` through `api/_lib/projectAdminDb.ts`. No InsForge code remains (`AGENTS.md`).
+- [x] **Exactly 12 serverless functions** (`api/**/*.ts` outside `api/_lib`), the Vercel Hobby cap. One more breaks every deploy. Tests live in `api/_lib`.
+- [x] **One cron:** `vercel.json` runs `/api/cron/run` daily at 08:00 UTC. The endpoint refuses any call without `Authorization: Bearer $CRON_SECRET` (`api/cron/run.ts`).
+- [x] **Server environment variables the code reads** (names only):
+  - `PROJECT_ADMIN_DATABASE_URL`, `PAYSTACK_SECRET_KEY`, `CRON_SECRET`, `FCM_SERVICE_ACCOUNT_JSON`, `PUSH_WEBHOOK_SECRET`;
+  - `RESEND_API_KEY`, `SENDCHAMP_API_KEY`, `SENDCHAMP_BASE_URL`, `ANTHROPIC_API_KEY`, `AI_CONFIRMATION_SECRET`;
+  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VERCEL_ENV`.
+  - `SUPABASE_JWT_SECRET` is **not read anywhere** in `api/` or `src/`.
+- [x] **Client build variables:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_API_BASE`, `VITE_GOOGLE_PLACES_API_KEY`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST`, `VITE_POSTHOG_UI_HOST`.
+- [x] **Paystack webhook signature** is checked against the raw request bytes (body parser off, F17), with a timing-safe compare.
+  - Tests: `api/_lib/paystack.rawBodySignature.security.test.ts`, `src/lib/aiSubscriptionPaystackVerify.test.ts` (forged, altered, re-serialised, appended, wrong-secret, missing-signature and malformed-JSON cases).
+- [x] **Preview deployments are read-only** against production data (`docs/preview-read-only.md`, PR #82). Cron, webhook, payouts and writes refuse in Preview.
+- [x] **Sentry** is wired in `src/lib/sentry.ts` (the DSN is a public client key by design).
+- [x] **Test baseline (PR #82, Batch A):** `vitest` 0 failures; `tsc --noEmit` 0 errors; production build passes; local Postgres suites pass.
+
+### 9.2 Production status (checked read-only, 2026-10-30)
+
+- [x] **Production runs `main`.** The current production deployment is `5612ee0` (merge of PR #80). PR #82 is not in production.
+- [x] **Supabase client works in production:** 57 users, 108 active tickets, data served live. The build-time variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` must be present, or the app could not load.
+- [x] **Server-side payment path works in production.**
+  - 102 `VNT-` Paystack-referenced tickets, 19 of them in the last 30 days (latest 2026-10-25), and 5 completed withdrawals (latest 2026-10-27).
+  - Both paths need `PAYSTACK_SECRET_KEY` and `PROJECT_ADMIN_DATABASE_URL`, so both are set in Production.
+- [x] **Daily cron runs in production.** Events were archived on 2026-10-30 at 08:21 UTC, minutes after the 08:00 schedule. That needs `CRON_SECRET` and the project-admin connection.
+- [x] **`project_admin` role exists.** It is the role behind `PROJECT_ADMIN_DATABASE_URL`.
+- [x] **Kill switches (`app_config`):**
+  - `disable_signups = true` (sign-up is closed; see AUTH-1);
+  - purchases, payouts, bookings, deposits, scanning and AI are enabled;
+  - `maintenance_mode = false`; `min_client_version = 1.1.0`.
+- [x] **Migrations:** 0198–0200 are applied. **0192, 0201, 0202 and 0203 are not:**
+  - no `tickets.qualifying_status`;
+  - no `get_my_representative_rewards`, `admin_earnings_reconciliation` or `earnings_release_delay`.
+- [x] **Extensions:** `pg_net`, `pg_trgm`, `pgcrypto`, `supabase_vault`, `dblink`, `unaccent`, `uuid-ossp`, `pg_stat_statements`. **No `pg_cron`**, so all scheduled work depends on the single daily Vercel cron.
+- [ ] **RLS: 86 of 88 public tables have row-level security on.** The two without it, `_ddl_probe_tmp` (empty) and `vc_lifetime_final_reconciliation_log`:
+  - have no SELECT/INSERT/UPDATE/DELETE grant to `anon` or `authenticated`, so they are not reachable through the API;
+  - should still have RLS turned on, or be dropped (the probe table). → SEC-3.
+- [ ] **Residual default grants.** `anon` and `authenticated` hold `TRUNCATE`, `TRIGGER` and `REFERENCES` on 37 public tables.
+  - The REST API exposes none of these, so this is defence in depth, not an open hole.
+  - Revoke them in a reviewed migration. → SEC-3.
+- [ ] **Payout backlog:**
+  - 5 withdrawal requests pending since 2026-09-02;
+  - 4 cancelled;
+  - 2 failed;
+  - 2 rejected. → PAY-2 / PAY-6.
+
+### 9.3 Owner to confirm (cannot be verified from a development session)
+
+- [ ] **Paystack key mode.** Production uses **live** keys, and Preview/Development use **test** keys. The Paystack dashboard live webhook URL is `https://getvents.com/api/webhook/paystack`. → PAY-4
+- [ ] **Vercel variable inventory.** Every name in 9.1 is set in Production. `SUPABASE_JWT_SECRET` can be removed if set, since nothing reads it. Sensitive values stay write-only.
+- [ ] **`FCM_SERVICE_ACCOUNT_JSON` is valid:** one real push arrives on a device (`§7`, `§10`).
+- [ ] **Sentry alert rules** route webhook failures, payout errors and 5xx responses to a person. Send a test alert. → OPS-1
+- [ ] **Vercel plan decision:** stay on Hobby (12 functions, daily cron) or move to Pro. → INF-2
+- [ ] **Bank-account setup** (add, remove, set default) checked with a real account on the Supabase backend; a repeated save creates no duplicate Paystack recipient. → PAY-10
+- [ ] **Email DNS on `getvents.com`.** It could not be checked from this session: public DNS resolvers are blocked by its network policy.
+  - The last recorded check found **no SPF and no DMARC**. Re-check, then add:
+    - SPF (TXT at `@`): `v=spf1 include:amazonses.com include:_spf.google.com ~all` (Resend via Amazon SES, plus Google Workspace MX);
+    - DMARC (TXT at `_dmarc`), monitor-only first: `v=DMARC1; p=none; rua=mailto:support@getvents.com; fo=1`. Tighten to `p=quarantine`, then `p=reject`, after clean reports.
+  - BIMI only after DMARC enforces. → OPS-2
 
 ## 10. On-Device Testing (do this on a real device, not just emulator — camera/push/Paystack popups are unreliable in emulators)
 
@@ -254,6 +238,25 @@ still missing or genuinely unverified, stated explicitly either way.*
 - [ ] Android hardware back button and edge-swipe-back both navigate correctly through the app's screen stack
 - [ ] Account deletion flow works end to end (in-app)
 - [ ] Report/Flag and Block User controls are reachable and functional (see §1)
+
+## 11. VENTS Work / VENTS Earn
+
+*Built on branch `claude/vents-work-earn`. Verified locally only: real Postgres execution, the vitest suite, and screenshots against the approved mockups. Full detail: [docs/vents-work-earn.md](docs/vents-work-earn.md).*
+
+- [x] VENTS Work hub in Profile (one card replaces the VENTS Cents card, the duplicate VENTS Cents row and both "Become…" buttons). Each role row shows its live onboarding status. Work Opportunities show "Coming soon".
+- [x] VENTS Earn screen with separately labelled balances. Service providers now reach the earnings wallet.
+- [x] Retired 10% commission copy replaced with the ₦50,000 qualifying-organizer reward.
+- [x] Representative dashboard header (mockup D), Rewards screen (claims, eligible events, expenses), and Admin Console → VENTS Earn (all decisions dual-control).
+- [x] Migration 0201 (attribution, claims, realized-profit pool with locked reservations, idempotent credit to the withdrawable earnings wallet through the existing ledger and payout flow, expenses, monthly rate review, append-only audit), verified by 203 local checks.
+- [ ] **Apply 0201 to production** (needs approval).
+- [x] Payout engine safety fixes (no double payouts, reversals returned, fixed transfer reference, reconciliation report) in migration 0202 and the payout API, verified by 49 local checks and 15 mocked API tests. See `docs/money-flow-audit.md`.
+- [ ] **Apply 0202 to production** (needs approval; before enabling reward credit).
+- [x] **Reward credits go to the withdrawable earnings wallet** (decided 2026-10-30, implemented in 0201).
+- [x] Retired 10% commission wiring removed (0201): invitations no longer promise commission sharing or store a split; legacy values, the snapshot and the reconciliation gate are kept.
+- [ ] Management records the legacy 10% reconciliation through dual control. Reward approvals stay blocked until then.
+- [x] **7-day settlement hold and the policy choices confirmed** (2026-10-30): first-accepted permanent attribution, event created after attribution, month counted by the event's end date, rate set per representative. Already how 0201 behaves; no code change.
+- [ ] Turn on reward credit to the earnings wallet (`earn_settings.payouts_enabled`) through dual control, only after the items above. Withdrawals themselves already run on the existing payout switch.
+- [ ] Define VENTS Unlock, VENTS Split and VENTS Circle. No definition exists anywhere in the repo, design source or approved mockups, so nothing was built.
 
 ---
 

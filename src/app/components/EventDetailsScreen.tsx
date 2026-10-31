@@ -863,7 +863,7 @@ export function EventDetailsScreen({
               color: ventsColors.white,
               fontSize: '24px',
               fontWeight: 700,
-              fontFamily: 'Outfit, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               letterSpacing: '-0.5px',
               lineHeight: 1.25,
               marginBottom: '8px',

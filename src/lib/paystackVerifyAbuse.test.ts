@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Readable } from 'node:stream';
 
 // Phase 2 cost-hardening: dynamic proof (not just static-analysis, see
 // paystackVerifyRateLimit.security.test.ts) that repeatedly calling the
@@ -31,6 +32,16 @@ vi.mock('../../api/_lib/pushDelivery.js', () => ({ deliverPendingPushesForUser: 
 
 import handler from '../../api/webhook/paystack';
 
+// The handler reads the raw request bytes (body parser off, F17), so each
+// request is a real Node Readable carrying JSON bytes, as in production.
+function verifyReq(body: unknown): any {
+  const req: any = Readable.from([Buffer.from(JSON.stringify(body))]);
+  req.method = 'POST';
+  req.query = { action: 'verify' };
+  req.headers = { authorization: 'Bearer tok' };
+  return req;
+}
+
 function makeRes() {
   const res: any = {};
   res.status = vi.fn(() => res);
@@ -60,12 +71,7 @@ describe('Paystack ?action=verify under repeated calls (real-world: a client ret
 
     const statuses: number[] = [];
     for (let i = 0; i < 100; i++) {
-      const req: any = {
-        method: 'POST',
-        query: { action: 'verify' },
-        headers: { authorization: 'Bearer tok' },
-        body: { reference: `VNT-${i}` },
-      };
+      const req = verifyReq({ reference: `VNT-${i}` });
       const res = makeRes();
       await handler(req, res);
       statuses.push(res.status.mock.calls[0][0]);
@@ -86,7 +92,7 @@ describe('Paystack ?action=verify under repeated calls (real-world: a client ret
     mockEnforceRateLimit.mockResolvedValue(false);
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    const req: any = { method: 'POST', query: { action: 'verify' }, headers: { authorization: 'Bearer tok' }, body: { reference: 'VNT-x' } };
+    const req = verifyReq({ reference: 'VNT-x' });
     const res = makeRes();
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(429);

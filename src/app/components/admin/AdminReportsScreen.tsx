@@ -80,6 +80,23 @@ export function AdminReportsScreen() {
     } finally { setBusyId(null); }
   };
 
+  // 0203: a report never holds earnings by itself. An admin who has reviewed
+  // it can hold the reported event's (or user's) unreleased earnings; each
+  // hold is linked to the report and audited, and is lifted from Payouts.
+  const holdEarnings = async (id: string) => {
+    const reason = window.prompt('Why should these earnings be held while this report is reviewed?');
+    if (!reason?.trim()) return;
+    setBusyId(id);
+    try {
+      const { data, error } = await supabase.rpc('admin_hold_earnings_for_report' as any, { p_report_id: id, p_reason: reason.trim() });
+      if (error) throw error;
+      const n = Number((data as any)?.holds_placed ?? 0);
+      flash(true, n > 0 ? `Held ${n} unreleased earning${n === 1 ? '' : 's'} for review.` : 'Nothing unreleased to hold for this report.');
+    } catch (e: any) {
+      flash(false, e?.message || 'Failed to hold earnings.');
+    } finally { setBusyId(null); }
+  };
+
   return (
     <div data-testid="admin-reports">
       {msg && <div style={{ fontSize: 12.5, color: adminTheme.text, marginBottom: 10 }}>{msg}</div>}
@@ -137,6 +154,11 @@ export function AdminReportsScreen() {
                     <button disabled={isBusy} onClick={() => setConfirm({ id: r.id, status: 'actioned' })} style={{ flex: 1, background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: 8, color: adminTheme.red, fontSize: 12, fontWeight: 600, cursor: isBusy ? 'not-allowed' : 'pointer' }}>Action</button>
                     <button disabled={isBusy} onClick={() => setConfirm({ id: r.id, status: 'dismissed' })} style={{ flex: 1, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: 8, color: adminTheme.textMuted, fontSize: 12, fontWeight: 600, cursor: isBusy ? 'not-allowed' : 'pointer' }}>Dismiss</button>
                   </div>
+                )}
+                {r.status !== 'dismissed' && (
+                  <button data-testid="report-hold-earnings" disabled={isBusy} onClick={() => holdEarnings(r.id)} style={{ marginTop: 8, width: '100%', background: 'rgba(96,165,250,.1)', border: '1px solid rgba(96,165,250,.3)', borderRadius: 10, padding: 8, color: adminTheme.blue, fontSize: 12, fontWeight: 600, cursor: isBusy ? 'not-allowed' : 'pointer' }}>
+                    Hold related earnings
+                  </button>
                 )}
               </div>
             );

@@ -15,6 +15,7 @@ import { AdminOrganizersList } from './AdminOrganizersList';
 import { AdminOrganizerDetail } from './AdminOrganizerDetail';
 import { AdminPayoutsScreen } from './AdminPayoutsScreen';
 import { AdminVCScreen } from './AdminVCScreen';
+import { AdminEarnScreen } from './AdminEarnScreen';
 import { AdminReportsScreen } from './AdminReportsScreen';
 import { AdminAuditLogScreen } from './AdminAuditLogScreen';
 import { AdminAnalyticsScreen } from './AdminAnalyticsScreen';
@@ -145,6 +146,8 @@ export function AdminConsoleShell({ currentUser, onBack }: AdminConsoleShellProp
       <AdminPayoutsScreen />
     ) : view === 'vcents' ? (
       <AdminVCScreen />
+    ) : view === 'ventsEarn' ? (
+      <AdminEarnScreen />
     ) : view === 'reports' ? (
       <AdminReportsScreen />
     ) : view === 'auditLogs' ? (
