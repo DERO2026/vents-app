@@ -34,7 +34,7 @@ let migration: string;
 
 beforeAll(() => {
   const dir = join(__dirname, '..', '..', 'supabase', 'migrations');
-  migration = readFileSync(join(dir, '0192_platform_fee_accounting_foundation.sql'), 'utf8');
+  migration = readFileSync(join(dir, '_superseded', '0192_platform_fee_accounting_foundation.sql'), 'utf8');
 });
 
 function allocateFn(): string {
