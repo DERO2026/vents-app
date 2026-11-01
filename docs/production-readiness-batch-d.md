@@ -1,10 +1,16 @@
 # Batch D: production readiness and approval preparation
 
-2026-10-31, PR #82. **Prepared only.** No production access was used:
-- no SQL, read-only or otherwise;
-- no migrations;
-- no money moved;
-- no authorizations or pauses.
+2026-10-31, PR #82. Updated 2026-11-01 (payout incident, §2a), on the
+branch `claude/payout-incident-batch-d`.
+
+**Batch D is not complete.** The payout incident has a fix (0205), but it
+is not applied. The wallet discrepancies in §2 need owner decisions.
+
+What the 2026-11-01 update did and did not do:
+- **Read-only SELECTs only** against production (2026-10-31, listed in §2a). No production write of any kind.
+- **No migrations applied.**
+- **No money moved, no ledger or balance changed.**
+- **No payout approved, rejected, initiated or reversed; no authorizations or pauses.**
 
 Production facts below come from evidence already captured read-only
 during this work (2026-10-27 to 2026-10-30). Each is labelled with its
@@ -36,6 +42,116 @@ has its expected md5, and grants are unchanged.
 
 Nothing was removed unintentionally.
 
+## 2a. Payout incident: four paid transfers recorded as cancelled
+
+### Evidence
+
+Owner-confirmed (Paystack dashboard, LIVE):
+- the four transfers below were **paid**: ₦100 each, ₦400 in total, plus ₦40 in transfer fees;
+- their Paystack references match the VENTS rows exactly.
+
+Read-only from production (2026-10-31):
+
+| Request | Created (UTC) | Transfer code | Reference (legacy, per attempt) |
+|---|---|---|---|
+| `3aa0f8ff` | 2026-07-09 08:31 | `TRF_5x4kfsos12pysbiz` | `payout_3aa0f8ff-…_1783681361539` |
+| `f9fda363` | 2026-07-09 09:29 | `TRF_tg95h5eis3j3evvp` | `payout_f9fda363-…_1783681476919` |
+| `6ad1272d` | 2026-07-09 12:26 | `TRF_wzotcvdwiv7ola7t` | `payout_6ad1272d-…_1783681779407` |
+| `56b084bb` | 2026-07-10 11:33 | `TRF_fdjyi7dct57sf5j4` | `payout_56b084bb-…_1783683296950` |
+
+All four rows share these facts:
+- organizer `91b0afb4` (the `testerboy` test account);
+- status `cancelled`;
+- `updated_at` = **2026-07-12 23:41:28.542**, identical to the millisecond;
+- `resolved_by` NULL;
+- `admin_note` = "Test payout request cleared during platform launch sweep".
+
+What is missing for all four:
+- **no** `organizer_transactions` row (no `payout`, no `cancelled_payout_refund`);
+- **no** `admin_logs` entry;
+- they are **not** counted in `total_withdrawn_kobo` (₦600 = the ₦400 and ₦200 completed payouts).
+
+Production-wide, these are the **only** `cancelled` withdrawal requests:
+- 4 rows, all with a transfer code;
+- none with a refund ledger row.
+
+### Root cause (exact)
+
+`migrations/20260713100000_admin-stats-and-payout-cleanup.sql`, section 3 (the "platform launch sweep", InsForge era):
+
+```sql
+UPDATE public.organizer_withdrawal_requests w
+SET status = 'cancelled', admin_note = 'Test payout request cleared during platform launch sweep', updated_at = now()
+FROM public.users u
+WHERE w.organizer_id = u.id AND u.username = 'testerboy' AND w.status IN ('pending', 'processing');
+```
+
+1. **2026-07-09/10.** The July engine's request function moved ₦100 each from balance to pending (`20260709074912_paystack-manual-payout-engine.sql`). An admin sent each to Paystack, and the rows became `processing` with transfer codes. Paystack paid them.
+2. **No completion was recorded.** Either the `transfer.success` webhooks never reached `complete_organizer_payout`, or they failed there. The July version would have written a ledger row, and none exists. So the rows stayed `processing`.
+3. **2026-07-12 23:41.** The sweep re-labelled them `cancelled` with a raw UPDATE. It bypassed every payout function:
+   - it did not ask Paystack;
+   - it did not release pending;
+   - it did not return money;
+   - it wrote no ledger row and no audit log.
+
+   Its own comment says it "mirrors what `admin_cancel_processing_payout` does", but that function also returned the money and wrote a `cancelled_payout_refund` row. Cancelling a `processing` transfer was the mistake. Only Paystack's outcome may end a request with a transfer.
+4. **After the sweep, nothing could complete them.** `complete_organizer_payout` only completes `pending`/`processing` rows, and Reconcile only lists `processing` rows.
+5. **Later, the ₦400 left `pending` through an unrecorded step.** Today pending = ₦44,100 = exactly the four September requests. There is no function, migration or admin log that explains it, and wallets have no change history. Two possibilities:
+   - **(a)** pending was reduced by ₦400. The money left with the transfers, and only the books are wrong.
+   - **(b)** the ₦400 was moved back to available balance. Then the account holds ₦400 it already received.
+
+   **The evidence cannot tell (a) from (b).** §2 shows the effect either way.
+
+### Why 0202/0203 alone would make it worse
+
+0202's `complete_organizer_payout` was written for exactly these rows. It assumes a `cancelled` row's money "was returned to the balance" and takes it back on a late success; 0203 turns any shortfall into an `earnings_recoveries` receivable. For the swept rows nothing was returned. So a replayed `transfer.success` would charge the organizer ₦100 per request a second time, out of the balance that funds the four live pending withdrawals. A replay can come from the Paystack dashboard's "resend" or a delayed delivery. The local reproduction proves it: "DEFECT reproduced (0202 + 0203 alone)".
+
+### Fix (repository only; not applied)
+
+**`supabase/migrations/0205_payout_cancelled_transfer_safety.sql`**: apply right after 0203 in the same window (runbook W6a). Its drift guard pins 0203's exact `complete_organizer_payout` body (md5 `dbcccdb9…`).
+
+1. **Late success on a cancelled request.**
+   - Money is taken back only with positive evidence that the cancel returned it: a `cancelled_payout_refund` ledger row, or 0202's `cancel_processing_payout` log.
+   - Otherwise it moves no money and creates no receivable. It leaves the request as it is, logs `payout_success_on_unrefunded_cancel` once per request, and returns `needs_review`.
+   - `fail`/`reverse` already leave cancelled rows alone.
+2. **The payout state machine, enforced by trigger on every UPDATE**, raw SQL included:
+   - a request with a transfer (or `processing` with a reference) can never be cancelled, rejected or sent back to pending;
+   - `failed`/`rejected`/`reversed` are final; `completed` can only become `reversed`; `cancelled` can only become `completed`;
+   - the reference, transfer code, amount and owner cannot be rewritten;
+   - a request with payout history cannot be deleted.
+
+   **The July sweep statement now fails.**
+3. **`admin_payout_integrity_report()`** (read-only, admins only). It lists:
+   - cancelled/rejected requests with a transfer, and whether their money was returned;
+   - completed requests without a ledger payout;
+   - payouts stuck over a day;
+   - late Paystack successes after a cancel;
+   - ledger payouts linked to no request.
+
+   On production after 0205 it will list the four requests above, and the two orphan ₦100 ledger debits (`56bd6ede`, `328cb300`).
+
+**Webhook (`api/webhook/paystack.ts`).**
+- A `needs_review` result is logged as `PAYOUT NEEDS REVIEW`, answered 200 (a retry cannot change it) and never emailed.
+- A transfer event whose code matches no row is retried by its reference. Before, a request whose "mark sent" step failed after Paystack accepted the transfer lost its success or failure: the request stayed `processing` until someone ran Reconcile.
+
+**Tests**
+- `scripts/local-pg-test/run-payout-cancelled-transfer-verification.sh`: **47/47**. It reproduces the incident with the sweep's SQL verbatim, the real request ids, codes and references. It shows the 0202/0203 defect, then proves:
+  - replays (by code, reference and id; repeated) move no money;
+  - failed/reversed replays change nothing;
+  - the live pending request is untouched;
+  - the report, the guard rules and a genuine legacy cancel still settle;
+  - every 0203 path still works: authorize, claim once, mark sent, complete once, reverse once, fail once, release, reject.
+- `api/_lib/payoutCancelledTransferIncident.security.test.ts`: 13 tests. 3 of the webhook tests fail against the previous handler.
+- **Effect on the existing earnings-policy suite** (163 checks), run with 0205 applied after 0203: exactly **one** check changes. Its legacy-cancel fixture fakes "money returned" with a raw balance edit and no refund evidence, and now gets `needs_review` instead of a take-back. That is the intended behaviour. The suite itself is unchanged and still passes 163/163 without 0205.
+
+### What 0205 does not do
+
+It does not correct the books. **Recording the four paid transfers is an owner decision (D10).** The truthful entry is:
+- a ₦400 `payout` debit and ₦400 `total_withdrawn`, with no balance change if (a) above;
+- or the same plus a ₦400 balance reduction if (b).
+
+It needs the audited dual-control adjustment (D3), not a raw UPDATE, which is the very thing that caused this incident. The ₦40 in fees is a VENTS platform cost, recorded outside the organizer ledger.
+
 ## 2. Wallet reconciliation gaps
 
 Evidence: per-wallet reconciliation captured 2026-10-30 11:42 UTC (all 5 earnings wallets).
@@ -47,6 +163,8 @@ Evidence: per-wallet reconciliation captured 2026-10-30 11:42 UTC (all 5 earning
 | `7af13434`, `c9eb5eb6`, `d7899317` | — | — | reconcile | — | `d7899317` has 2 credits with no source but reconciles |
 
 ### `91b0afb4`: the ₦32,150, decomposed exactly
+
+> **Superseded 2026-11-01** by "rebuilt from source rows" below (₦32,350). This decomposition assumed the cancelled payouts had returned their money and the orphan debits had paid out; both assumptions were wrong.
 
 wallet − ledger = (earned − withdrawn − X) − (credits − debits), where X is
 balance that left the wallet without moving the earned/withdrawn counters:
@@ -61,12 +179,45 @@ balance that left the wallet without moving the earned/withdrawn counters:
 What this does and does not say:
 - **Most of it is unledgered earnings.** It is likely credits made before every wallet credit wrote a ledger row, or credits written directly to the wallet. The evidence shows the totals, not the rows.
 - **₦4,500 left the balance without any counter or ledger row.** Candidates are direct wallet edits or a refund path that skipped the ledger. It is unexplained until the rows are read.
-- **The 4 cancelled ₦100 test payouts** (`3aa0f8ff`, `f9fda363`, `6ad1272d`, `56b084bb`, 2026-07-09/10) had Paystack transfer codes when cancelled, and cancelling returned their money to the wallet. **If Paystack actually paid any of them, the wallet is over by up to ₦400** (PAY-6, Paystack dashboard).
+- **Corrected 2026-11-01:** this line previously said cancelling "returned their money to the wallet". It did not. The 4 cancelled ₦100 payouts were **paid** by Paystack, and the raw-UPDATE cancel returned nothing (§2a). See the source-row reconciliation below.
 - **This wallet owns 4 of the 5 pending withdrawals** (section 4).
 
 **Key bound:** the 4 pending requests total ₦44,100, well inside the ₦312,750 the ledger *does* explain. Paying them cannot pay out unexplained money. The risk sits in the last ₦32,150 of balance, which no pending request touches.
 
+### `91b0afb4` rebuilt from source rows (2026-10-31, read-only)
+
+Every ledger row of the wallet, matched to the sale, booking or transfer behind it:
+
+| Source | Ledger | Real money | Notes |
+|---|---|---|---|
+| "Admin test credit" (`77769e0a`, 2026-06-22) | +₦10,000 | **none** | no sale; a test credit |
+| 4 paid tickets (`68905e91`, `463bcf68`, `1ef3c6c5`, `05018f4c`) | +₦3,550 | ₦3,500 face | `05018f4c` is a ₦2,000 ticket credited ₦2,100 ("demo") |
+| Service booking `3d3af0ad` (`BKG-65aefaef…`, paid 2026-09-25) | +₦300,000 | ₦300,000 subtotal | **verify it is a real LIVE payment** in Paystack |
+| Pre-engine requests `4ee9fb31`, `a27e3434` (2026-07-03/09) | −₦200 | none paid | admin note says the amount was returned; no transfer code. The ledger debits stand without a matching return |
+| Completed payouts `34e8a1cd` ₦400, `b0f222ba` ₦200 | −₦600 | ₦600 paid | linked, correct |
+| **Swept payouts (§2a)** | **₦0** | **₦400 paid** | missing from the ledger and from `total_withdrawn` |
+
+- **Paid out to banks in total: ₦1,000** (₦600 + ₦400).
+- What the documented sources support holding: ₦313,550 − ₦1,000 = **₦312,550**.
+- The wallet holds ₦300,800 + ₦44,100 = **₦344,900**.
+- **Unexplained surplus: ₦32,350** (previously reported as ₦32,150, before the swept ₦400 and the returned ₦200 were known).
+
+The counters agree with neither:
+- `total_earned` ₦350,000 is ₦36,450 above every credit with a source;
+- with the true ₦1,000 withdrawn, the counters imply ₦349,000 held, i.e. ₦4,100 more than the wallet.
+
+The likely history is a direct balance + earned edit of about ₦36,450 with no ledger row, of which ₦4,100 later left the balance without a trace. That includes the swept ₦400 if it went back to available, case (b) in §2a. It cannot be proven without change history, which the database does not keep.
+
+**What this means for the pending withdrawals.** The four live pending requests (₦44,100) are covered by the ₦312,550 the sources explain, so paying them does not pay out unexplained money. But they are only covered **if the ₦300,000 booking is real money**. If it is test money, the source-backed position is ₦12,550, and ₦44,100 of pending would be unbacked. **Check the booking's Paystack reference before authorizing any of the four.**
+
 ### `dfca505f`: the ₦1,000
+
+**Resolved 2026-11-01 (read-only): the wallet is right; the ledger is wrong.**
+- 20 paid tickets on this organizer's events, face value **₦36,400** = `total_earned` ₦36,400.
+- Balance ₦35,800 = ₦36,400 − ₦600 withdrawn (two completed payouts with linked ledger rows), pending ₦0.
+- The extra ₦1,000 is ledger credit `64e7e2e8`: 2026-07-12 12:13, "Ticket sale: Regular x1", no `ticket_sale_id`. **No ticket of any amount exists** between 11:00 and 13:30 that day, on any event.
+
+So the "shortage" is a ledger over-statement. **No money is owed and the wallet should not change.** The correction is a single explanatory reversing ledger entry, made through D3. The rest of this subsection is the earlier analysis, kept for the record.
 
 A single entry explains it: one ₦1,000 ledger credit whose wallet credit never happened. It matches the one "credit with no source".
 
@@ -78,7 +229,9 @@ The decision is whether the organizer is owed ₦1,000:
 
 Either way it must be an audited, two-person entry.
 
-### Prepared queries (owner, read-only; not run)
+### Prepared queries (owner, read-only)
+
+G1 and the equivalent of G2 were run read-only on 2026-10-31; their results are the source-row reconciliations above. G3 (both accounts) found no earnings-wallet adjustment; no admin action that adjusts an earnings wallet exists. Their entries are VENTS Cents, verification, featuring, payout completion and dual-control approvals. **`dfca505f` approved 17 dual-control actions (2026-07-23 to 2026-09-05), so it is a staff account.** Account for it in §3 when naming requesters and approvers.
 
 ```sql
 -- G1: every ledger row of the two gap wallets, oldest first
@@ -200,16 +353,31 @@ Record the answers in the runbook's A6 row before approving the window.
 | # | Decision | Needed before | Options |
 |---|---|---|---|
 | D1 | Apply 0201 → 0202 → 0203 and merge PR #82 in one window (runbook A1–A3) | the window | approve / defer |
-| D2 | `91b0afb4` ₦32,150 and `dfca505f` ₦1,000: run G1–G3, then decide (explanatory entries / reduce / increase) | paying wallet `91b0afb4` beyond ₦312,750; closing PAY-5 | per gap |
+| D2 | `91b0afb4`: ₦32,350 held with no source (§2, rebuilt from rows). `dfca505f`: the wallet is right and ledger credit `64e7e2e8` (₦1,000) has no ticket | paying wallet `91b0afb4` beyond ₦312,550; closing PAY-5 | `91b0afb4`: reduce the balance / keep it with explanatory entries (it is the owner's test account) / other. `dfca505f`: reversing ledger entry only (recommended by the evidence) |
 | D3 | Build the dual-control `earnings_adjustment` action (section 2) | any correction in D2 | approve the design / another mechanism |
 | D4 | The identical ₦20,000 pair: one intended or both | the window (a rejection can happen before it) | reject #4 / keep both |
 | D5 | Root's own ₦5,000 (`e7ca4751`) in case A | paying it | appoint a second super admin / root rejects its own request (no money leaves) / leave pending |
 | D6 | Name the requester and approver for each withdrawal (section 3) | after the window | — |
 | D7 | Supabase GitHub integration settings (section 5) | merging PR #82 | confirm off |
 | D8 | Backup plan and drill (section 6) | the window | — |
-| D9 | The 4 cancelled ₦100 test transfers: check each in the Paystack dashboard (PAY-6) | closing the `91b0afb4` gap | paid / not paid |
+| D9 | ~~The 4 cancelled ₦100 test transfers: paid or not~~ | — | **Answered by the owner: all four paid** (₦400 + ₦40 fees). See §2a |
+| D10 | Record the four paid transfers: a ₦400 `payout` debit and ₦400 `total_withdrawn` for `91b0afb4`. Also choose whether the balance drops by ₦400 (case (b) in §2a) | closing §2a; needs D3 | (a) books only / (b) books + balance |
+| D11 | Apply 0205 in the same window as 0202 (runbook W6a) | the window. **Blocker:** 0202 without 0205 can charge the organizer again on a replayed success | approve (recommended) / defer 0202 too |
+| D12 | Is the ₦300,000 service booking `3d3af0ad` (`BKG-65aefaefda314d09adc522065dcc3c09`) a real LIVE payment? | authorizing any of `91b0afb4`'s four pending requests (₦44,100) | real / test |
+| D13 | The ₦40 Paystack fees of the swept transfers | closing §2a | record as a platform expense / other |
 
 ## 8. What changed in the repository (Batch D)
+
+2026-11-01 update (branch `claude/payout-incident-batch-d`):
+- `supabase/migrations/0205_payout_cancelled_transfer_safety.sql` (new, **not applied**).
+- `api/webhook/paystack.ts`: `needs_review` handling; transfer events fall back from the transfer code to the reference.
+- `scripts/local-pg-test/run-payout-cancelled-transfer-verification.sh` (new, 47 checks).
+- `api/_lib/payoutCancelledTransferIncident.security.test.ts` (new, 13 tests); `api/_lib/payoutEngine.security.test.ts` (one assertion follows the new lookup).
+- `src/app/components/admin/AdminPayoutsScreen.doubleSubmit.test.tsx`: the Supabase mock's `.in()` returns a chainable query. Its 3 unhandled rejections came from the 0203 disputes list calling `.in().order().limit()` on a mock whose `.in()` returned a bare Promise. That made every full `vitest run` exit 1. Test-only; the screen's code is unchanged.
+- `docs/deploy-runbook-0201-0203.md`: step W6a.
+- This document: §2a, the §2 rebuild from source rows, D2 and D9–D13.
+
+Earlier Batch D changes:
 
 - `supabase/rollback/sources/complete_organizer_payout.prod-2026-10-30.sql`: production's captured definition.
 - `scripts/local-pg-test/generators/gen_rollback_snapshot.py`: all 19 functions with sources; `supabase/rollback/pre_0201_0203_functions.sql` regenerated.

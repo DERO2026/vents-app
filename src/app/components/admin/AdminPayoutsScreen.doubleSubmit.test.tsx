@@ -52,7 +52,9 @@ vi.mock('../../../lib/supabase', () => {
       eq: () => q,
       limit: () => q,
       maybeSingle: () => Promise.resolve({ data: null, error: null }),
-      in: () => Promise.resolve({ data: [], error: null }),
+      // Chainable like the real builder (the 0203 disputes list calls
+      // .in().order().limit()); awaited directly it still resolves to [].
+      in: () => makeQuery([]),
       then: (resolve: any) => resolve({ data: resolveData, error: null }),
     };
     return q;

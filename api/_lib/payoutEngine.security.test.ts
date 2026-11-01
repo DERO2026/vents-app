@@ -224,7 +224,10 @@ describe('webhook source', () => {
   it('routes transfer.reversed to the reversal, success to completion, failure to failure', async () => {
     const src = readFileSync(join(__dirname, '..', 'webhook', 'paystack.ts'), 'utf8');
     expect(src).toMatch(/event\.event === 'transfer\.reversed' \? 'reverse_organizer_payout' : 'fail_organizer_payout'/);
-    expect(src).toMatch(/await callProjectAdminTableRpc<any>\('complete_organizer_payout', \[lookupKey\]\)/);
+    // Looked up by transfer code first, then by the fixed reference (behaviour
+    // in payoutCancelledTransferIncident.security.test.ts).
+    expect(src).toMatch(/callProjectAdminTableRpc<any>\('complete_organizer_payout', \[key\]\)/);
+    expect(src).toMatch(/let rows = await callFor\(lookupKey\);/);
   });
 
   it('Paystack dispute events reach the dispute hold (0203; behaviour in paystackDispute.security.test.ts)', () => {
