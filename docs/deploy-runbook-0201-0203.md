@@ -17,8 +17,8 @@ re-check them in step P3.
 | A3 | Pause purchases and payouts for the window (`disable_purchases`, `disable_payouts`) | Owner | Stops checkouts and payouts while the database and frontend disagree |
 | A4 | The two admins for withdrawal authorization: one may request; a **different super admin** approves; **neither** may own a withdrawal they act on | Owner names them | 0203 enforces this; with fewer than two eligible admins, no withdrawal can be paid |
 | A5 | What to do with the 5 pending withdrawals (section 6) | Owner | Each is real money leaving VENTS |
-| A6 | Confirm the Supabase dashboard GitHub integration / branching does **not** auto-apply migrations on merge | Owner (dashboard) | The repo has no CI or `config.toml`, so it cannot apply migrations, but a dashboard integration could |
-| A7 | Backup method: Supabase backup / PITR restore point available on the current plan | Owner (dashboard) | Last-resort recovery (section 8) |
+| A6 | Confirm the Supabase dashboard GitHub integration / branching does **not** auto-apply migrations on merge | Owner (dashboard) | **Branching is enabled on the production project** (default branch created 2026-09-13). The repo has no CI or `config.toml`, but "Deploy to production" would apply `supabase/migrations` on merge. Turn it off (Batch D §10.13 O3) |
+| A7 | Backup method | Owner (dashboard) | **The organization is on the Free plan: no daily backups, no PITR.** Pro upgrade, or a verified manual dump in W2 (D8) |
 
 ## 1. What is ready in the repository (Batch C)
 
@@ -117,7 +117,7 @@ SELECT
 | Step | Action | Verify (read-only) | Stop if |
 |---|---|---|---|
 | W1 | Admin → System: set `disable_purchases` and `disable_payouts` (A3) | `SELECT disable_purchases, disable_payouts FROM public.app_config;` = true/true | not both true |
-| W2 | Take the backup / restore point (A7). Store the P2 output | backup listed in the dashboard | no backup |
+| W2 | Take the backup (A7/D8). **On the Free plan there is no dashboard backup or PITR:** take `pg_dump -Fc` (or `supabase db dump` for schema and data) through the Session pooler URL, run `scripts/ops/verify-backup-restore.sh <dump>` locally, and store the dump encrypted outside the repository. On Pro: also record the latest daily backup time. Store the P2 output next to it | drill prints `Functions matching: 19/19`, plus money-table counts that match P4 | no verified dump → stop |
 | W3 | P1–P4 | as above | any mismatch |
 | W4 | In a session with `SET lock_timeout = '5s';`, apply **0201** (one transaction; SQL editor or `psql -1 -v ON_ERROR_STOP=1 -f`; **never `supabase db push`**) | `get_my_representative_rewards()` exists; `SELECT count(*) FROM public.representative_attributions;` = 2; `SELECT payouts_enabled, legacy_commission_reconciled FROM public.earn_settings;` = false/false | error → section 7 row R1 |
 | W5 | Apply **0202** (do **not** set `vents.migration_local_test`) | `SELECT * FROM public.admin_earnings_reconciliation();` lists only the 2 known gaps; `SELECT count(*) FROM public.organizer_withdrawal_requests r WHERE r.status IN ('cancelled','failed','rejected') AND r.transfer_code IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.organizer_transactions t WHERE t.withdrawal_request_id = r.id AND t.type = 'payout');` = **4** (the four paid-but-cancelled ₦100 transfers; any other number: stop); `SELECT count(*) FROM public.payout_exceptions;` = 0; `SELECT count(*) FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard';` = 1; `SELECT pg_get_constraintdef(oid) LIKE '%payout_reversal%' FROM pg_constraint WHERE conname = 'organizer_transactions_type_check';` = true | error (including the drift guard) → R1 |
@@ -164,16 +164,18 @@ been decided on the owner's behalf.
 
 | # | Decision | Needed before | Owner's answer |
 |---|---|---|---|
-| D4 | The two ₦20,000 requests (`1abe8e53`, `a0e389c9`, 10 s apart): were both intended (₦40,000), or is one a double-tap to reject? Ask the organizer | the window (a rejection can happen before it) | _pending_ |
-| D5 | Root admin's own ₦5,000 (`e7ca4751`) under the two-admin rule. Root cannot approve its own withdrawal. Options: appoint a second super admin; root rejects its own request (no money leaves); or leave it pending | paying it | _pending_ |
-| D6 | Who acts as **requester** and who as **approver** for each pending withdrawal. The approver must be a different super admin, and neither may own the withdrawal (Batch D §3; first identify case A or B) | after the window, before any payout | _pending_ |
-| D3 | Build a dual-control `earnings_adjustment` mechanism (one admin requests, a different super admin approves, mandatory reason and evidence, new ledger type)? It is also needed to resolve the four paid-but-cancelled payouts (D10) | any wallet or ledger correction | _pending_ |
-| D7 | Confirm the Supabase GitHub integration / branching **cannot** apply migrations on merge (Batch D §5; A6) | merging PR #82 | _pending_ |
-| D8 | Confirm backup and restore: plan, last backup, PITR, a window backup and a passing restore drill (B1–B8; A7) | the window | _pending_ |
-| D10 | How the four paid-but-cancelled ₦100 transfers are recorded (Batch D §9.5) | closing PAY-6 | _pending_ |
-| D11 | Paystack LIVE webhook URL configured and delivering transfer events | W9 | _pending_ |
-| D12 | Where the four requests' ₦400 went when it left `pending_kobo` | D10 (c), D2 | _pending_ |
-| D13 | Is the account behind `91b0afb4` internal/test? | D2, D10 | _pending_ |
+| D4 | The two ₦20,000 requests (`1abe8e53`, `a0e389c9`) | — | **Decided 2026-11-01: both intended (₦40,000); keep both; normal verification and two-admin approval** |
+| D4a | All four `91b0afb4` pending requests point at **deactivated** bank accounts, so the claim refuses them. Choose: re-activate the account / build a dual-control "re-point to active account" action / (only if D4 is revised) reject and re-request. Also confirm the ₦40,000 payee ("C.J.N.") with the organizer (Batch D §10.1) | paying any of them | _pending_ |
+| D5 | Root admin's own ₦5,000 (`e7ca4751`) | — | **Decided 2026-11-01: reject later through an authorized process; not now; no bypass of two-admin approval** |
+| D5a | Who rejects it: today only root can (the single super admin), which is a self-action. Second super admin (recommended) / written owner exception (Batch D §10.2) | executing D5 | _pending_ |
+| D6 | Requester and approver per withdrawal. **Case A confirmed:** root is the only super admin; two sub-admins. For `91b0afb4`: a sub-admin requests, root approves, a sub-admin claims. A second super admin is needed for D5 and for any future root withdrawal (Batch D §10.3) | after the window, before any payout | _names pending_ |
+| D3 | `earnings_adjustment`: **design final** (Batch D §10.4). Build approval | any wallet or ledger correction; D10 | _pending_ |
+| D7 | **Branching is enabled on the production project.** Confirm "Deploy to production" and "Automatic branching" are **off** (owner action O3, Batch D §10.5) | **merging PR #82 (blocker)** | _pending_ |
+| D8 | **The organization is on the Free plan: no daily backups, no PITR.** Choose O4 (a) Pro before the window, or (b) a manual dump plus restore drill in W2 (Batch D §10.6) | **the window (blocker)** | _pending_ |
+| D10 | The four paid-but-cancelled transfers: process designed (Batch D §10.7). Choose option a/b/c and an approver who is not the payee's account holder | closing PAY-6 | _pending_ |
+| D11 | Webhook delivery **evidenced** (two payouts completed by webhook 1.4–1.5 s after initiation, 2026-10-17 and 10-27). Record the Live Webhook URL (O5) | W9 | _URL pending_ |
+| D12 | The ₦400 that left `pending_kobo`: **not attributable from available records**; needs the InsForge cutover export (O8) | D10 (c), D2 | _evidence pending_ |
+| D13 | `91b0afb4`: **strong evidence of an internal QA/test account**, but with a ₦300,000 real-payment credit and third-party payees. Owner confirms (O7) | D2, D10, D4a | _pending_ |
 
 ## 7. Rollback and recovery
 
@@ -183,7 +185,7 @@ been decided on the owner's behalf.
 | R2 | 0203 applied, frontend deploy fails | Keep purchases and payouts paused. Fix and redeploy. Do **not** reopen purchases on the old frontend (it shows 5% while 0203 charges 4%) |
 | R3 | Defect found after deploy | **Prefer rolling forward** with a new migration. If a full rollback is unavoidable, do the steps in order: (1) pause purchases and payouts; (2) release every held amount to `balance_kobo` with a ledger and audit row per hold (`release_matured_earnings()` only releases matured holds, so anything not yet matured needs an approved, audited one-off); (3) restore the functions in one transaction: `SET vents.rollback_confirm = 'restore-pre-0201-0203';` then `supabase/rollback/pre_0201_0203_functions.sql`, plus `complete_organizer_payout` and `invite_recruiter_partnership` from the P2 output (the file refuses while anything is held, and without the setting); (4) Vercel instant rollback to deployment `dpl_8L1sqPf1u2FSggsC7DYYUzUqjAwa` (`5612ee0`), **only together with** step 3; (5) reconcile; (6) reopen |
 | R3a | Note on R3 | The restore keeps 0202's `payout_exceptions` table and the `organizer_withdrawal_transfer_guard` trigger (verified by `run-rollback-snapshot-verification.sh`). Leave them: the trigger only refuses unsafe changes (cancelling, rejecting or re-queueing a request whose transfer exists; changing its code or reference). With it in place, the pre-0202 `admin_cancel_processing_payout` is refused for such a request, which is the safe outcome. The restored pre-0202 `complete_organizer_payout` again **swallows a late success on a cancelled request**: after any rollback, run the exceptions check daily until rolled forward |
-| R4 | Data damage | Point-in-time restore to W2. Loses every purchase, payout and booking since; reconcile each against the Paystack dashboard before reopening |
+| R4 | Data damage | **Free plan:** restore the W2 dump into the project (or a new project), since no PITR exists. **Pro with PITR:** point-in-time restore to W2. Loses every purchase, payout and booking since; reconcile each against the Paystack dashboard before reopening |
 
 Never drop `earnings_holds`, `earnings_recoveries`, `earn_profit_ledger`
 or `earn_audit_log`. They are the record of what happened.
@@ -202,4 +204,8 @@ or `earn_audit_log`. They are the record of what happened.
 | 8 | Backups | **Open, owner.** Requirements B1–B8; restore drill script ready |
 | 9 | Paid-but-cancelled payouts (2026-07 incident) | **Root cause found, fixed in 0202, records unresolved.** Four ₦100 transfers paid by Paystack, recorded cancelled by a status-only sweep (Batch D §9.2). 0202 stops it recurring (trigger, evidence-based late-success handling, exceptions list). The four records await D10/D12 and a dual-control resolution action that does not exist yet |
 | 10 | Production payout code before the window | **Open until W5/W7.** On today's code an ambiguous Paystack response re-queues the request and a retry uses a new reference (possible double transfer); `admin_cancel_processing_payout` returns money to the balance even when a transfer exists. Do not pay any withdrawal before the window |
-| 11 | Webhook delivery | **Open, owner (D11).** Unconfigured delivery is how the incident began |
+| 11 | Webhook delivery | **Mostly closed (D11).** Two payouts completed by webhook in 1.4–1.5 s (2026-10-17, 10-27). The URL record is still pending (O5) |
+| 12 | No managed backups | **Open, blocker (D8).** Free plan: no daily backups, no PITR. A manual dump plus restore drill is the minimum before the window |
+| 13 | Automatic migrations on merge | **Open, blocker (D7).** Branching is enabled on the production project; confirm "Deploy to production" is off |
+| 14 | Pending withdrawals unpayable | **Open (D4a).** All four `91b0afb4` requests point at deactivated bank accounts. 0203 now refuses to authorize them rather than leaving an unpayable approval |
+| 15 | Single super admin | **Open (D5a/D6).** Root is the only approver of every withdrawal and adjustment; a second super admin is advised |

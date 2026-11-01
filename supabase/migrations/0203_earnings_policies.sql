@@ -1387,8 +1387,13 @@ BEGIN
     RAISE EXCEPTION 'The amount reviewed (%) does not match the request (%)', r.payload->>'amount_kobo', w.amount_kobo;
   END IF;
 
-  SELECT b.recipient_code INTO v_recipient FROM public.organizer_bank_accounts b WHERE b.id = w.bank_account_id;
-  IF v_recipient IS NULL THEN RAISE EXCEPTION 'The withdrawal has no verified bank recipient'; END IF;
+  -- Only an account the organizer still has active: the claim refuses an
+  -- inactive one, so authorizing it would leave an approval nobody can pay.
+  SELECT b.recipient_code INTO v_recipient FROM public.organizer_bank_accounts b
+   WHERE b.id = w.bank_account_id AND b.is_active;
+  IF v_recipient IS NULL THEN
+    RAISE EXCEPTION 'The withdrawal''s bank account is inactive or has no verified recipient; the organizer must withdraw to an active account';
+  END IF;
 
   UPDATE public.organizer_withdrawal_requests
      SET approval_request_id = r.id, approval_requested_by = r.requested_by,

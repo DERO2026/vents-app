@@ -544,6 +544,15 @@ BAD=$(request_admin "$ADMIN_A" authorize_withdrawal "$WD" "{\"request_id\":\"$WD
 expect_error "an approval for a different amount than requested is refused" "does not match the request" "$(approve "$ADMIN_B" "$BAD")"
 BAD=$(request_admin "$ADMIN_A" authorize_withdrawal "$WD" "{\"request_id\":\"$WD\"}")
 expect_error "an approval without the reviewed amount is refused" "amount_kobo" "$(approve "$ADMIN_B" "$BAD")"
+# Production 2026-10-31: all four of 91b0afb4's pending requests point at
+# deactivated bank accounts. Authorizing one must fail up front, not leave
+# an approval the claim can never pay.
+"${PSQL[@]}" -q -c "UPDATE public.organizer_bank_accounts SET is_active = false WHERE id = '$BANK';"
+BAD=$(request_admin "$ADMIN_A" authorize_withdrawal "$WD" "{\"request_id\":\"$WD\",\"amount_kobo\":3850000}")
+expect_error "a withdrawal to a deactivated bank account cannot be authorized" "inactive" "$(approve "$ADMIN_B" "$BAD")"
+expect_value "...and nothing was recorded on the request" \
+  "$(val "SELECT (approved_by IS NULL)::text FROM public.organizer_withdrawal_requests WHERE id = '$WD';")" "true"
+"${PSQL[@]}" -q -c "UPDATE public.organizer_bank_accounts SET is_active = true WHERE id = '$BANK';"
 expect_error "nobody can write the authorization columns directly" "permission denied" \
   "$(as "$ADMIN_B" "UPDATE public.organizer_withdrawal_requests SET approved_by = '$ADMIN_B' WHERE id = '$WD';")"
 expect_error "the executor is not callable directly" "permission denied" \

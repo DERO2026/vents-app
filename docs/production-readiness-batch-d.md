@@ -70,7 +70,7 @@ What this does and does not say:
 - **The 4 cancelled ₦100 payouts** (`3aa0f8ff`, `f9fda363`, `6ad1272d`, `56b084bb`) **were paid by Paystack** (owner, Paystack LIVE, 2026-10-31). The cancel that hit them was status-only and returned nothing to the balance (section 9). They are **a separate item, not an explanation of this gap** (section 9.4).
 - **This wallet owns 4 of the 5 pending withdrawals** (section 4).
 
-**Key bound:** the 4 pending requests total ₦44,100, well inside the ₦312,750 the ledger *does* explain. Paying them cannot pay out unexplained money. The risk sits in the last ₦32,150 of balance, which no pending request touches.
+**Key bound (weakened, see section 10.9):** the 4 pending requests total ₦44,100, well inside the ₦312,750 the ledger *does* explain. But ₦310,000 of that is one ₦300,000 booking credit (service not completed) and a ₦10,000 test credit. Paying them cannot pay out unexplained money. The risk sits in the last ₦32,150 of balance, which no pending request touches.
 
 ### `dfca505f`: the ₦1,000
 
@@ -157,9 +157,9 @@ recorded ₦49,100.
 |---|---|---|---|---|---|---|---|
 | 1 | `42fda9ea` | `91b0afb4` | ₦100 | 2026-09-02 21:27:10 | none | requested 2 min after a ₦400 payout (`34e8a1cd`) completed | Confirm with the organizer; probably a test. Reject (one admin, no money leaves) or authorize after the window |
 | 2 | `6348714b` | `91b0afb4` | ₦4,000 | 2026-09-16 02:01:48 | none | — | Confirm the bank account (6 weeks old), then authorize after the window |
-| 3 | `1abe8e53` | `91b0afb4` | ₦20,000 | 2026-09-24 02:34:48 | none | **identical pair with #4, 10 s apart** | Ask the organizer whether they meant ₦20,000 or ₦40,000 |
-| 4 | `a0e389c9` | `91b0afb4` | ₦20,000 | 2026-09-24 02:34:58 | none | **identical pair with #3** | If a double-tap, **reject #4** before the window (one admin; ₦20,000 returns to their balance) |
-| 5 | `e7ca4751` | `c9eb5eb6` (**root admin's own**) | ₦5,000 | 2026-10-23 17:35:28 | none | claimed for processing, then released (no transfer was created) | Needs a super admin other than root (section 3). Case A: decide D5 |
+| 3 | `1abe8e53` | `91b0afb4` | ₦20,000 | 2026-09-24 02:34:48 | none | **identical pair with #4, 10 s apart** | **D4 decided: intended (₦40,000 total), keep.** Bank account inactive: D4a (section 10.1) |
+| 4 | `a0e389c9` | `91b0afb4` | ₦20,000 | 2026-09-24 02:34:58 | none | **identical pair with #3** | **D4 decided: intended, keep; do not reject.** Bank account inactive: D4a |
+| 5 | `e7ca4751` | `c9eb5eb6` (**root admin's own**) | ₦5,000 | 2026-10-23 17:34:48 (claimed and released 17:35:15 and 17:35:27: "balance is not enough" at Paystack) | none | claimed for processing, then released (no transfer was created) | **D5 decided: reject later through an authorized process.** Case A confirmed: see D5a (section 10.2) |
 
 Notes:
 - **The duplicate is not a double payment of the same money.** Each request moved ₦20,000 from balance to pending (₦44,100 pending = #1–#4), so paying both pays the organizer ₦40,000 of their own balance. The question is only intent.
@@ -205,19 +205,21 @@ Record the answers in the runbook's A6 row before approving the window.
 
 | # | Decision | Needed before | Options |
 |---|---|---|---|
-| D1 | Apply 0201 → 0202 → 0203 and merge PR #82 in one window (runbook A1–A3) | the window | approve / defer |
-| D2 | `91b0afb4` ₦32,150 and `dfca505f` ₦1,000: G1–G3 have been read (section 9.7); decide per gap (explanatory entries / reduce / increase) | paying wallet `91b0afb4` beyond ₦312,750; closing PAY-5 | `dfca505f`: source exact, decide owed or spurious. `91b0afb4`: ₦36,450 and ₦4,300 still need evidence (section 9.7) |
-| D3 | Build the dual-control `earnings_adjustment` action (section 2) | any correction in D2 | approve the design / another mechanism |
-| D4 | The identical ₦20,000 pair: one intended or both | the window (a rejection can happen before it) | reject #4 / keep both |
-| D5 | Root's own ₦5,000 (`e7ca4751`) in case A | paying it | appoint a second super admin / root rejects its own request (no money leaves) / leave pending |
-| D6 | Name the requester and approver for each withdrawal (section 3) | after the window | — |
-| D7 | Supabase GitHub integration settings (section 5) | merging PR #82 | confirm off |
-| D8 | Backup plan and drill (section 6) | the window | — |
-| D9 | ~~The 4 cancelled ₦100 transfers: paid or not~~ | — | **Answered 2026-10-31: all four paid** (owner, Paystack LIVE). Their resolution is D10 |
-| D10 | How the four paid-but-cancelled ₦100 transfers are recorded (section 9.5) | closing PAY-6; after the window | (a) a new dual-control "late-recorded payout" action that writes a linked, clearly dated-today payout row and records the Paystack evidence; (b) evidence recorded on the exception only, no ledger row, ₦400 + ₦40 written off as a test expense; (c) as (a) plus recovering ₦400 from the organizer's balance, only if it is shown to still be there |
-| D11 | Is the Paystack LIVE webhook URL set to `https://<production domain>/api/webhook/paystack`, with transfer events delivered? (section 9.6) | clearing `disable_payouts` (W9) | confirm / fix |
-| D12 | Where the four requests' ₦400 went when it left `pending_kobo` (deleted, or moved to `balance_kobo`) | D10 option (c); closing D2 | backup or the person who made the write |
-| D13 | Whether the account behind `91b0afb4` (recipient "Daniel Uwem Edemidiong", OPay) is an internal/test account | D2, D10 | owner confirms |
+| D1 | Apply 0201 → 0202 → 0203 and merge PR #82 in one window (runbook A1–A3) | the window | **Open** — approve / defer |
+| D2 | Correct the two wallet gaps (section 10.9) | paying wallet `91b0afb4`; closing PAY-5 | **Open.** `dfca505f` ₦1,000 and `91b0afb4` ₦200: sources exact, ledger-only corrections ready to file once D3 is built. `91b0afb4` ₦36,450 and ₦4,500: still unattributed |
+| D3 | Build the dual-control `earnings_adjustment` action | any correction in D2, D10 | **Design final (section 10.4); build needs owner approval** |
+| D4 | The two ₦20,000 requests | — | **Decided 2026-11-01 (owner): both intended, ₦40,000 total, keep both; normal verification and two-admin approval.** New blocker found: their bank account is deactivated (section 10.1, D4a) |
+| D4a | How the four `91b0afb4` requests reach an active bank account (all four point at deactivated accounts) | paying any of them | **Open** — see section 10.1 |
+| D5 | Root's own ₦5,000 (`e7ca4751`) | — | **Decided 2026-11-01 (owner): to be cancelled/rejected later through an authorized process; not now; no bypass of two-admin approval.** How (D5a): section 10.2 |
+| D5a | Who performs that rejection: today only root can (single super admin), which is a self-action | executing D5 | **Open** — a second super admin, or a written owner exception (section 10.2) |
+| D6 | Requester and approver for each withdrawal | after the window | **Requirements complete (section 10.3).** Owner names the people; one role change is advisable (second super admin), not made |
+| D7 | Supabase GitHub integration cannot apply migrations on merge | merging PR #82 | **Open, blocker.** Branching is enabled on the production project; whether "Deploy to production" is on cannot be read from here (section 10.5) |
+| D8 | Backup and restore | the window | **Open, blocker.** The organization is on the **Free plan: no daily backups, no PITR** (section 10.6) |
+| D9 | ~~The 4 cancelled ₦100 transfers: paid or not~~ | — | **Answered 2026-10-31: all four paid** |
+| D10 | Recording the four paid-but-cancelled transfers | closing PAY-6 | **Process designed (section 10.7)**; option choice and an independent approver still owner's |
+| D11 | Paystack LIVE webhook | W9 | **Delivery evidenced (section 10.8)**; the exact URL still needs one dashboard look |
+| D12 | Where the ₦400 left `pending_kobo` | D10 (c), D2 | **Investigated; not attributable from available records** (section 10.9) |
+| D13 | Is `91b0afb4` an internal QA/test account? | D2, D10 | **Strong evidence yes (section 10.10)**, but it holds a ₦300,000 real-payment credit and third-party bank accounts: owner confirmation required |
 
 ## 8. What changed in the repository (Batch D)
 
@@ -245,7 +247,7 @@ unexplained in part (9.7), and decisions D2–D8 and D10–D13 are open.
 | `6ad1272d-14b8-41d9-8267-7ce8c0b3b4e8` | `payout_6ad1272d-…_1783681779407` | 2026-07-10 11:09:39 | `cancelled` | success, ₦100, fee ₦10 | 0 |
 | `56b084bb-21df-4f23-9c90-02a5087f9642` | `payout_56b084bb-…_1783683296950` | 2026-07-10 11:34:56 | `cancelled` | success, ₦100, fee ₦10 | 0 |
 
-All four were paid to the same recipient: Daniel Uwem Edemidiong, OPay. Organizer wallet `91b0afb4` (username `testerboy`).
+All four were paid to the same recipient, an OPay account held by "D.U.E." (initials only: this repository is public). Organizer wallet `91b0afb4` (username `testerboy`).
 
 ### 9.2 Root cause, traced through the code (not inferred)
 
@@ -340,6 +342,8 @@ The incident started because no completion signal arrived. Before W9, the owner 
 
 ### 9.7 The two wallet gaps (G1–G3 read, read-only)
 
+> **Corrected in section 10.9.** The ₦200 pre-July-9 money was returned to the balance, so there is no −₦200 offset. The unexplained outflow is ₦4,500, not ₦4,300.
+
 **Fee rule applied.** Before 0203, production's `confirm_ticket_payment` (md5 `56d67141…`) credits the organizer `v_credit_kobo` = the tickets' face value; the buyer fee is charged on top (`buyer_fee_kobo` in the ledger metadata). For these historical sales, face value **is** the organizer's earning. That is the live rule, not an assumption. 0203's 4%/5% split applies only to sales after it.
 
 **`dfca505f` (₦1,000): source exact.**
@@ -388,3 +392,332 @@ Without these, the ₦36,450 and ₦4,300 cannot be attributed. The section 2 bo
 - production `vite build`: OK.
 
 Production was not touched.
+
+## 10. Continuation (2026-11-01): owner decisions D4/D5, and D3, D6–D8, D10–D13
+
+**Status: Batch D is still NOT complete.** Production was not changed.
+
+**Evidence.** Production evidence in this section comes from read-only `SELECT`s (Supabase connector, 2026-11-01) and read-only project, branch and organization metadata calls. There were no writes, role changes, approvals or transfers.
+
+**Privacy.** This repository is **public**. People are named here by role or initials only. The account numbers, emails and full names seen in the evidence are deliberately not reproduced. Commit `9eb3fa3` contained one recipient's full name in this file; this commit removes it. **It remains in git history (owner action O9).**
+
+### 10.1 D4: both ₦20,000 requests intended (decided), plus a new blocker (D4a)
+
+**Owner decision (2026-11-01, recorded verbatim in substance):**
+- both ₦20,000 requests (`1abe8e53`, `a0e389c9`) were intentional, ₦40,000 in total;
+- keep both; do not reject either as a duplicate;
+- payment remains subject to normal verification and two-admin approval.
+
+**Verification finding: none of `91b0afb4`'s four pending requests can be paid as they stand.**
+
+| Request | Amount | Bank account on the request | Account state |
+|---|---|---|---|
+| `42fda9ea` | ₦100 | OPay, holder "D.U.E." (`dd3f9bc4`, created 2026-07-03) | **inactive** since 2026-09-24 02:33:57 |
+| `6348714b` | ₦4,000 | same `dd3f9bc4` | **inactive** |
+| `1abe8e53` | ₦20,000 | OPay, holder "C.J.N." (`dc040c7a`) | **inactive**; created 02:34:33, **15 s before** this request; deactivated 02:35:15, 17 s after the second |
+| `a0e389c9` | ₦20,000 | same `dc040c7a` | **inactive** |
+
+Why that blocks payment, in the code:
+- **0203 `admin_claim_payout_for_processing`** pays only to an **active** account whose recipient equals the authorized one. Otherwise it raises "bank account changed … authorize it again".
+- **Before this commit,** `execute_withdrawal_authorization` did not check `is_active`. Two admins could authorize such a request, and the claim would then refuse it forever.
+- **Fixed in 0203 (this commit):** authorization now refuses an inactive account up front. A new test was added (earnings policy 166/166).
+- **There is no function that changes the bank account on a pending request.** An organizer cannot cancel their own request either.
+
+**D4a, owner decision needed** (the D4 intent is unchanged by every option):
+1. **Organizer re-activates the same account.** Only if the product supports it; today the app soft-deletes and creates new rows. Then authorize with two admins.
+2. **Build a dual-control "re-point withdrawal to a verified active account" action.** It changes the request's `bank_account_id` (new recipient verified), and needs requester + super-admin approver. Small, but new money-path code; design on request.
+3. **Reject and re-request.** Contradicts "do not reject" as stated; only if the owner revises D4.
+
+**Verification the owner must also do** (normal verification under D4):
+- confirm with the organizer that "C.J.N." is the intended recipient of ₦40,000. It is a third-party name: not the user's display name, and not the other holder on this wallet;
+- the account was created and deactivated within one minute around the two requests.
+
+### 10.2 D5: root's ₦5,000 to be rejected later (decided), and how (D5a)
+
+**Owner decision (2026-11-01):**
+- `e7ca4751` (₦5,000, the root admin's own withdrawal) is to be cancelled/rejected later through an authorized process;
+- it is not to be executed now;
+- two-admin approval must not be bypassed.
+
+**What the code allows** (production bodies, read 2026-11-01):
+- `admin_reject_organizer_payout` is single-admin and requires `is_admin_or_root()` = `is_super_admin()` (root or `role = 'admin'`). It has no self-check, and 0202/0203 leave it unchanged.
+- The only super admin is root (section 10.3), so today **only root can reject it**: root acting alone on its own request.
+- There is **no dual-control reject**. Even if one were built, its approver must be a super admin who does not own the request, and none exists.
+
+**D5a, owner decision needed:**
+1. **(Recommended)** Appoint a second super admin (see section 10.3), who rejects `e7ca4751`. One admin, no money leaves VENTS: ₦5,000 returns to root's available balance. Optionally a sub-admin files the reason first, through `request_admin_action`, for the record.
+2. A written owner exception allowing root's single-admin reject of its own request. No money leaves, but it is the self-action the rule exists to prevent.
+
+**History, for the record.** Root has already paid itself once on pre-0203 code: `645682f5`, ₦100, 2026-10-17, claimed and approved by root. 0203 makes that impossible.
+
+### 10.3 D6: requester and approver requirements (complete), and the role changes needed (not made)
+
+**Staff today** (read-only 2026-11-01):
+
+| Account | Role | Super admin? | Also owns a wallet with money? |
+|---|---|---|---|
+| root `c9eb5eb6` | `admin` (and root) | **yes, the only one** | yes: pending `e7ca4751` |
+| sub-admin `a4402494` | `sub-admin` | no | not among the earnings wallets |
+| sub-admin `dfca505f` (`ventsofficial`) | `sub-admin` | no | yes: the ₦1,000-gap wallet |
+
+**This is case A of section 3.** After 0203:
+
+| Withdrawal | Requester (any admin, not the owner) | Approver (super admin, not requester, not owner) | Claim and pay (any admin, not owner) | Possible today? |
+|---|---|---|---|---|
+| `91b0afb4` × 4 | `a4402494` or `dfca505f` | root | either sub-admin | **Yes, but blocked by D4a** (inactive accounts) |
+| root `e7ca4751` | — | — | — | Rejection only (D5); see D5a |
+| future `dfca505f` withdrawals | `a4402494` | root | `a4402494` | yes |
+| future root withdrawals | a sub-admin | **nobody** | — | **No**, until a second super admin exists |
+
+**Role change needed (owner decides who; not made here).**
+- One person, other than the root account holder, given `role = 'admin'` (super admin).
+- Without it:
+  - root is the single approver of every withdrawal and adjustment;
+  - D5 cannot be done two-person;
+  - root's own future withdrawals can never be paid.
+- No other change is required for the four `91b0afb4` requests.
+
+**Separation-of-duties concern (owner to confirm; no conclusion drawn).** Two-admin control only works if the admins are different people acting independently. The evidence shows three overlaps:
+- the payout bank accounts on the root, `a4402494` and `91b0afb4` records share one family name;
+- the four incident transfers went to the same holder initials ("D.U.E.") as root's own payout account;
+- if root approves `91b0afb4`'s withdrawals and `91b0afb4`'s money goes to an account of the root account holder, the approver is the beneficiary.
+
+Owner confirmation: who operates each staff account and the `91b0afb4` account.
+
+**Exact steps once the owner has named people:**
+1. Each named admin signs in, with email verified.
+2. The requester files Admin → Payouts → Authorize with the exact amount.
+3. Root (or the new super admin) approves.
+4. A different admin claims and pays.
+
+### 10.4 D3: `earnings_adjustment`, final design (not built; needs owner approval)
+
+**Purpose.** It is the only sanctioned way to correct a wallet or ledger. It replaces the direct writes that caused most of the gaps.
+
+| Element | Design |
+|---|---|
+| Entry point | `request_admin_action('earnings_adjustment', target = organizer_id, payload)`, executed only by `approve_admin_action` (existing maker-checker; self-approval already blocked) |
+| Payload (all required) | `kind` ∈ {`ledger_only`, `wallet_credit`, `wallet_debit`, `late_recorded_payout`}; `amount_kobo` > 0; `reason` (≥ 20 chars); `evidence_ref` (e.g. "Paystack TRF_…", "G1 row 64e7e2e8"); `expected_balance_kobo` and `expected_ledger_gap_kobo` as the requester saw them; for `late_recorded_payout` also `request_id`, `transfer_code`, `paid_at` |
+| Who | Requester: any admin. Approver: a super admin. Neither may be the wallet owner, and they must differ. Same rule as `authorize_withdrawal` |
+| Executor `execute_earnings_adjustment(admin_request_id)` | `SECURITY DEFINER`, not client-callable. Locks the wallet `FOR UPDATE`. **Refuses if the balance or ledger gap differs from the payload** (stale approval). Refuses a debit below 0 (no negative balances) and amounts above a cap (₦50,000 by default; larger needs an owner flag in `app_config`). Idempotent: unique on `admin_request_id` |
+| Effects by kind | `ledger_only`: one ledger row (new types `adjustment_credit` / `adjustment_debit`) and **no wallet change**; this explains or corrects history. `wallet_credit` / `wallet_debit`: ledger row + equal balance change. `late_recorded_payout`: one `payout` row linked to `request_id` (metadata `recorded_late`, `paid_at`, `transfer_code`), `total_withdrawn_kobo += amount`, balance unchanged; marks the `payout_exceptions` row resolved; the request keeps its status |
+| Audit | Every ledger row carries `metadata.admin_request_id`, `requested_by`, `approved_by`, `reason`, `evidence_ref`. Plus an `admin_logs` row |
+| Reconciliation | `admin_earnings_reconciliation()` counts the new types. Each adjustment must move the wallet's `ledger_gap_kobo` by exactly its amount (checked by tests) |
+| Not allowed | Editing or deleting existing ledger rows or withdrawal requests; any back-dated `created_at` |
+| Delivery | A new migration (0205) after the window. Local tests: maker ≠ checker; owner excluded; stale-expectation refusal; idempotency; cap; each kind's effect on reconciliation; the three real cases below replayed |
+
+**Real cases it would handle once approved** (none executed):
+
+| Case | Kind | Amount | Effect |
+|---|---|---|---|
+| `dfca505f`: ledger credit `64e7e2e8` for a ticket that never existed | `ledger_only` debit | ₦1,000 | gap ₦1,000 → 0 |
+| `91b0afb4`: payout rows `56bd6ede` / `328cb300` whose money was returned to the balance (section 10.9) | `ledger_only` credit | ₦200 | gap falls by ₦200 |
+| The four paid-but-cancelled transfers (D10) | `late_recorded_payout` × 4 | ₦100 each | see 10.7 |
+
+### 10.5 D7: Supabase GitHub integration (inspected; owner must confirm one setting)
+
+| Evidence (2026-11-01) | Reading |
+|---|---|
+| `list_branches` on the production project returns a default branch `main` (created 2026-09-13 20:48 UTC, status `FUNCTIONS_DEPLOYED`, never updated since) | **Supabase Branching is enabled on the production project.** Branching works through the GitHub integration |
+| No preview branches exist, although PRs #82/#83 touch `supabase/migrations`; PR #82's only check runs are Vercel and CodeRabbit; no Supabase comment | Automatic preview branching is off, or the repository is not connected |
+| Production migration history: 0001–0013 under repository numbers, then apply-time timestamps (manual applies). Not one entry for repository files 0014–0200, though many merges to `main` happened after 2026-09-13 | No automatic deployment has applied repository migrations so far. A deploy that ran would have tried to apply 0014+ |
+| Repository: no `.github/workflows`, no `supabase/config.toml` | Nothing in the repository applies migrations |
+| Supabase docs: with **Deploy to production** enabled, a push or merge to the production branch applies new migrations from `supabase/migrations` | If that toggle is on and starts working, merging PR #82 could try to apply 0014–0203. Most of these are already in production under other version names, so the run would re-run old migrations, an unsafe outcome |
+
+**Conclusion:** no evidence of automatic migration so far, but it **cannot be ruled out from here**. Branching being on makes it a real possibility. **Blocker until the owner confirms** (owner action O3).
+
+### 10.6 D8: backups (inspected; blocker)
+
+| Evidence | Reading |
+|---|---|
+| `get_organization`: plan **`free`** | Per Supabase docs, daily backups are for Pro, Team and Enterprise projects, and PITR is a paid add-on (it needs at least Small compute) |
+| Vercel project on Hobby (runtime logs retained 1 hour) | No log history for incidents |
+
+Consequences:
+- **There is no managed backup or restore point today.**
+- Runbook W2 ("take the backup / restore point") and R4 ("point-in-time restore to W2") **cannot be done on this plan** as written.
+- The only backup is a **manual logical dump**.
+- `scripts/ops/verify-backup-restore.sh` exists and its self-test passes (4/4). It has never been run on a real dump.
+- Storage objects (images, verification documents) are not in database backups.
+
+The runbook now requires one of the two O4 options (owner action O4).
+
+### 10.7 D10: authorized reconciliation process for the four paid ₦100 transfers (designed)
+
+Preconditions:
+- 0201–0203 applied;
+- D3 built and approved;
+- the exceptions check (Admin → Payouts) lists exactly the four as `paid_not_recorded`, with transfer codes matching the owner's Paystack export.
+
+| Step | Who | What |
+|---|---|---|
+| 1 | Owner | Export the four Paystack LIVE transfer records: code, reference, amount, fee, recipient, status, time. Store them outside the repository |
+| 2 | Requester (sub-admin) | For each request, files `earnings_adjustment` `late_recorded_payout`, ₦100, with `request_id`, `transfer_code`, `paid_at`, and `evidence_ref` = the export |
+| 3 | Approver | A super admin who is **not the recipient's account holder**. Today the only super admin is root, whose own payout account shares the holder initials, so this needs the second super admin (10.3) or a written owner exception |
+| 4 | System | Per request: one linked `payout` row dated at resolution, `total_withdrawn_kobo += ₦100`, balance unchanged, exception resolved. The request stays `cancelled` |
+| 5 | Both admins | `admin_earnings_reconciliation()`: `91b0afb4`'s ledger net falls by ₦400 |
+| 6 | Owner | D12 outcome: if the ₦400 is shown to have been moved into `balance_kobo`, a separate `wallet_debit` ₦400 (two admins), because the organizer already received it. If it was deleted, nothing more. Unknown: leave it, and record why |
+| 7 | Owner / accountant | Record **₦440** (₦400 + ₦40 fees) leaving VENTS's Paystack balance in VENTS's own books. VENTS has no platform-expense ledger in the database |
+
+Option choice (D10 a/b/c in section 7) remains the owner's.
+
+### 10.8 D11: Paystack webhook (delivery evidenced)
+
+| Payout | Transfer initiated | Completed | Gap | By |
+|---|---|---|---|---|
+| `645682f5` (₦100) | 2026-10-17 09:32:11.10 | 09:32:12.53 | 1.4 s | `system:project_admin`, lookup = transfer code |
+| `5065d5f1` (₦100) | 2026-10-27 17:56:32.48 | 17:56:34.00 | 1.5 s | same |
+
+Reconcile is a manual admin action that polls Paystack. No admin clicked within 1.5 s of initiating, so these completions came from **signed `transfer.success` webhooks reaching production**. Delivery works as of 2026-10-27.
+
+Not verified:
+- the exact URL;
+- whether `transfer.failed` / `transfer.reversed` are delivered (none have occurred);
+- the test-mode URL.
+
+No log evidence exists, because Vercel Hobby keeps 1 hour. Owner action O5.
+
+### 10.9 Wallet gaps: corrected decomposition, D12, and what is still unexplained
+
+**Correction to section 9.7.**
+- The two "pre-July-9" requests `4ee9fb31` / `a27e3434` carry this admin note (2026-07-09 08:56:59): "funds were deducted from balance but never entered pending tracking … Amount returned to available balance".
+- So their ₦200 went **back to the balance**. Their ₦200 of `payout` ledger rows (`56bd6ede`, `328cb300`) were never reversed, and no admin log exists for the write.
+- So the +₦200 is **exactly explained** (a ledger-only correction, 10.4), and there is **no** matching −₦200.
+
+The corrected decomposition:
+
+| `91b0afb4` component | Amount | Status |
+|---|---|---|
+| Earned counter above ledger credits | +₦36,450 | **Unexplained** |
+| Payout ledger rows for money that was returned | +₦200 | **Explained exactly** (direct write, 2026-07-09) |
+| Balance + pending that left with no counter or ledger row | −₦4,500 | **Unexplained**; up to ₦400 of it may be D12 |
+| **Gap** | **₦32,150** | 36,450 + 200 − 4,500 |
+
+**What the ledger shows** (all credits, read-only):
+
+| Credit | Amount | Note |
+|---|---|---|
+| "Admin test credit" (2026-06-22) | ₦10,000 | not a sale |
+| 4 ticket-sale credits (2026-07-03..08-06; "Payment test", "Standard (demo)") | ₦3,550 | 25 paid tickets, ₦3,500 face; **21 of the 25 bought by the account itself** |
+| "Service booking payment" (2026-09-25) | ₦300,000 | Booking `3d3af0ad`: ₦315,000 paid by Paystack (₦15,000 fee), customer username `dero`, status **`confirmed`, not completed**. Credited at payment under the pre-0203 rule |
+
+Because of this, the section 2 "key bound" (pending ₦44,100 is inside the ledger-explained ₦312,750) is **weaker than it reads**:
+- the explained funds are almost entirely one ₦300,000 booking and a ₦10,000 test credit;
+- the booking was paid by a user named like the repository owner, and the service is not completed;
+- under 0203 rules that money would not yet be withdrawable.
+
+Owner check: is booking `3d3af0ad` (Paystack reference beginning `BKG-65aefaef`) a real charge, and a real service?
+
+**₦36,450.**
+- No sale, booking, admin log or ledger row is behind it.
+- `credit_organizer_wallet` has written a ledger row in every version since 2026-06-22.
+- So this is consistent only with a direct write to `organizer_wallets.total_earned_kobo` / `balance_kobo`. That was possible through the `organizer_wallets_admin_write` policy until 2026-09-27, or in the InsForge era, whose values were copied unchanged at the 2026-08-14/15 cutover.
+- Its time and author **cannot be determined from available records**.
+
+**₦4,500 and D12 (the ₦400).**
+- After the 2026-07-12 23:41 sweep, the four cancelled requests' ₦400 sat in `pending_kobo`. Today pending (₦44,100) equals the open requests exactly.
+- Every function in the repository's history that lowers `pending_kobo` either moves the amount to the balance or completes a request with a ledger row. The `GREATEST(0, …)` clamp can only absorb money, never remove it.
+- No admin log touches this wallet's balances after 2026-07-12.
+- **Whether the ₦400 was deleted or moved to the balance cannot be told from current totals.** Both are consistent.
+- The only documented pattern is the same kind of direct write as 2026-07-09.
+
+**Evidence that would settle it (owner):**
+1. the InsForge export used for the 2026-08-14 cutover (wallet row for `91b0afb4`: `balance_kobo`, `pending_kobo`, `total_earned_kobo`, `total_withdrawn_kobo`). That shows whether the ₦400 and ₦36,450 predate the cutover;
+2. any InsForge-era backups between 2026-06-22 and 2026-08-14;
+3. the people who ran SQL against production wallets before 2026-09-27.
+
+There is no Supabase backup to consult (Free plan, 10.6).
+
+**`dfca505f` ₦1,000:** unchanged. The source is exact (ledger credit `64e7e2e8`, ticket never existed). Ready for a `ledger_only` correction once D3 exists.
+
+### 10.10 D13: is `91b0afb4` (`testerboy`) an internal QA/test account?
+
+Evidence that it is:
+- display name "TB";
+- 14 events, including "Test Payout" ×3, "Promote Flow Verification Event", "VENTS Reviewer Demo Event" and "Test for Apple";
+- root credited it Vents Cents as a "Live test credit" (2026-06-17);
+- ledger: "Admin test credit", "Payment test" and "(demo)" sales;
+- 21 of its 25 paid tickets were bought by itself;
+- migration `20260713100000` (commit 8b9783e) calls it "the 'testerboy' test organizer account … pre-launch testing";
+- one of its bank accounts is in the company's own name ("VENTS LTD").
+
+Against treating it as purely internal:
+- it holds a ₦300,000 credit from a ₦315,000 Paystack-paid booking (10.9);
+- its bank accounts include two third-party holders ("B.N.C.", "C.J.N.");
+- the ₦40,000 pair is directed to "C.J.N.".
+
+**Conclusion: strong evidence of an internal QA/test account operated by VENTS staff, but with real money and third-party payees attached. Owner must confirm** (O7):
+- who operates it;
+- whether the ₦315,000 booking was a real charge;
+- who "B.N.C." and "C.J.N." are, and why test withdrawals go to them.
+
+Until then, treat its withdrawals as real payouts needing full verification.
+
+### 10.11 Review: 0202 payout fixes, 0203 checksum dependencies, rollback, tests
+
+| Item | Result |
+|---|---|
+| 0202 payout fixes (late success after cancel, `payout_exceptions`, transfer guard, exceptions list) | Re-read against production's `complete_organizer_payout` (`563304a9…`); incident replay 16/16; payout engine 72/72 |
+| 0203 pins | `complete_organizer_payout` pinned to 0202's own body `f6ca5add…`; the order and drift-guard suite passes 37/37. This commit changes only `execute_withdrawal_authorization`, a function 0203 itself creates, so no pin moves. `gen0203.py` regenerates the file identically |
+| New fix | `execute_withdrawal_authorization` refuses an inactive bank account (10.1); +2 checks, earnings policy 166/166 |
+| Rollback | `pre_0201_0203_functions.sql` restores the 19 replaced functions (12/12). It leaves 0202's exception table and trigger, and 0203's new functions, in place, which is safe. The trigger is compatible with the existing production trigger `trg_block_delete_live_organizer_withdrawal` (different event) |
+| Existing production triggers on the payout tables | `trg_block_delete_live_organizer_withdrawal`, `trg_realtime_admin_stats_payout`, `trg_realtime_admin_stats_transaction`. None conflicts with 0202's `BEFORE UPDATE` guard |
+
+### 10.12 PR #83: dependency, merge order, outstanding items
+
+**Dependency.**
+- PR #83 (`claude/bold-allen-bpxsd6`, Draft) is stacked on PR #82: its base is `claude/vents-work-earn` at `efdca0f`.
+- It changes 34 files: UX, the representative search and migration **0204**. **None of them overlaps the files changed by `9eb3fa3` or this commit.**
+- A local test merge onto `9eb3fa3` was **clean**; `tsc` passed.
+
+**Outstanding on PR #83:**
+1. **Merged vitest: 3036/3037, one failure, caused by #83.** `src/app/components/LocationPicker.maps.test.tsx:139` stubs the key with a fake value that begins with Google's 4-character API-key prefix, and `googleMapsKeyNeverCommitted.security.test.ts` rejects any tracked string with that prefix. It is not a real key. **Fix in #83:** use a fake value without that prefix (e.g. `'test-places-key'`).
+2. Its "3 unhandled rejections in `AdminPayoutsScreen.doubleSubmit.test.tsx`" note is out of date: `9eb3fa3` fixed them on #82.
+3. **0204** depends only on objects already in production (`recruiters`, `check_rate_limit`, `recruiter_target_is_organizer` from 0196, `service_providers`). It is **not** in this window's runbook and must be applied separately, after the window.
+4. If `search_recruiter_invite_targets` is meant to work on the read-only Preview, it must be added to the Preview RPC allowlist.
+5. No review threads; no CodeRabbit review (Draft).
+6. Its own local suite (`run-recruiter-search-verification.sh`, 23/23 claimed) could not be re-run here: the sandbox's `postgres` user cannot read a scratch worktree.
+
+**PR #82:**
+- all 10 review threads resolved;
+- the CodeRabbit overview on the PR still lists 4 findings from `51d5b55`; their threads are resolved.
+
+**Correct merge order:**
+1. PR #82 → `main`, in the approved window, together with 0201 → 0202 → 0203. The window does not include #83.
+2. Then retarget PR #83 to `main` (GitHub does this automatically if `claude/vents-work-earn` is deleted on merge; otherwise change its base by hand), fix item 1, and re-run CI.
+3. Merge #83.
+4. Apply 0204 in its own transaction.
+
+**Do not merge #83 into #82's branch first.** That would put 0204 and unrelated UX changes into the money-critical window.
+
+### 10.13 Owner actions (physical steps; none was done by Claude)
+
+| # | Where | Exact action | Closes |
+|---|---|---|---|
+| O1 | Admin console / user records | Decide who becomes the second super admin (`role = 'admin'`): a person other than the root account holder. Then make the change through the normal audited role-change flow | D5a, D6, D10 step 3 |
+| O2 | Organizer of `91b0afb4` | Confirm "C.J.N." is the intended recipient of the ₦40,000, and the "D.U.E." account for the ₦4,100. Choose a D4a path | D4a |
+| O3 | Supabase dashboard → project VENTS → Project Settings → **Integrations** → GitHub Integration | Record: connected repository, production branch, "Deploy to production", "Automatic branching", working directory. **Set "Deploy to production" off and "Automatic branching" off** (or disconnect) before any merge to `main`. Then Branches: confirm only `main`. Then GitHub → `DERO2026/vents-app` → Settings → GitHub Apps: record whether "Supabase" is installed and its permissions | D7 |
+| O4 | Supabase dashboard → Organization → Billing | Either (a) upgrade to **Pro** before the window, wait for the first daily backup (Database → Backups), optionally add PITR (needs Small compute); or (b) stay on Free and, in W2, take `supabase db dump` (schema + data) or `pg_dump -Fc` from the Session pooler URL, run `scripts/ops/verify-backup-restore.sh <dump>` locally (must print 19/19), and store the dump encrypted outside the repository. Also export the Storage buckets you cannot lose | D8 |
+| O5 | Paystack dashboard (LIVE) → Settings → API Keys & Webhooks | Record the Live Webhook URL. Expect `https://<production domain>/api/webhook/paystack`. Paste it into the runbook D11 row | D11 |
+| O6 | Paystack dashboard (LIVE) → Transfers | Export the four 2026-07-10 transfers. List all transfers to the D.U.E. OPay recipient for 2026-07-09..13 (expect exactly four). Look up the transaction with reference starting `BKG-65aefaef` (₦315,000, 2026-09-25) and confirm it was a real charge | D10, D13, 10.9 |
+| O7 | Owner knowledge | State who operates `testerboy`, `ventsofficial`, the second sub-admin and root, and who "B.N.C." and "C.J.N." are | D13, separation of duties |
+| O8 | InsForge archive | Find the cutover export (2026-08-14) and any older backups. Read the `organizer_wallets` row for `91b0afb4` | ₦36,450, ₦4,500, D12 |
+| O9 | GitHub | Commit `9eb3fa3` contains a payee's full name in this public repository. Decide whether to accept it, or rewrite history (needs care: open PRs) and ask GitHub support to purge cached views | privacy |
+| O10 | Owner | Approve or reject building D3 (and the D4a "re-point" action if chosen) | D3, D2, D10 |
+
+### 10.14 What changed in the repository (this continuation)
+
+| File | Change |
+|---|---|
+| `supabase/migrations/0203_earnings_policies.sql`, `scripts/local-pg-test/generators/0203_template.sql` | `execute_withdrawal_authorization` refuses an inactive bank account |
+| `scripts/local-pg-test/run-earnings-policy-verification.sh` | +2 checks (166) |
+| This document, `docs/deploy-runbook-0201-0203.md`, `docs/LAUNCH_READINESS_MASTER.md` | D4/D5 recorded; D3/D6/D7/D8/D10–D13 findings; owner actions; the recipient's full name removed |
+
+**Tests (2026-11-01):**
+- 16/16 local Postgres suites pass (earnings policy 166, payout engine 72, incident replay 16, rollback snapshot 12, migration order 37, payout gate 27, backup-restore 4, 9 others);
+- vitest: 2,962/2,962;
+- `tsc --noEmit`: clean;
+- production `vite build`: OK (12 API functions).
+- Test merge with PR #83: clean, `tsc` passes, vitest 3,036/3,037. The one failure is #83's key-shaped test value (10.12).
+
+An earlier full run here failed one test because this document quoted that key-shaped string. The text was reworded, and the test then passed.
