@@ -128,6 +128,7 @@ SELECT
 | W7 | Merge PR #82 (A2); wait for the Vercel production deployment to be **Ready** | production `/` serves the new bundle; checkout shows "Service fee (4%)"; Admin → Payouts shows the authorize step | build fails → R2 |
 | W8 | Clear `disable_purchases` only. One ₦100 live purchase by the owner (PAY-4) | charged ₦104; the organizer's `on_hold_kobo` rises by ₦95; `get_earnings_holds()` shows a 48 h release | any other amount → set `disable_purchases` again, R3 |
 | W9 | **First** confirm D11: the Paystack LIVE webhook URL is the production `/api/webhook/paystack` (Paystack dashboard → Settings → API Keys & Webhooks). Then clear `disable_payouts`. Watch Sentry and webhook logs for 30 minutes. The first real payout must reach `completed` from the webhook alone (no Reconcile) | no new errors; first payout completed by webhook | webhook URL not confirmed → keep `disable_payouts`; errors → R3 |
+| W10 | **After** the window and only once W9 is green: PR #83 → retarget to `main` (if not automatic) → CI green → owner merges #83 → apply **0204** alone (`0204_search_recruiter_invite_targets.sql`, its own transaction). 0204 touches no payout or earnings object, so it is not part of W4–W6c | `SELECT pg_get_functiondef('public.search_recruiter_invite_targets(text)'::regprocedure) IS NOT NULL;` | error → drop the function; the app falls back to the old search |
 
 ## 5. Go / no-go after W9
 

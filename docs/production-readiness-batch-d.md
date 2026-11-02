@@ -824,7 +824,7 @@ These are the pre-`9eb3fa3` counts.
 | T1 | ~~Consolidate #84 into #82~~ **Done 2026-11-02 (§12)**; #84 to be closed | — |
 | T2 | ~~Build D3 `earnings_adjustment` as migration 0206~~ **Built 2026-11-02 (§13); not applied** | — |
 | T3 | ~~Dual-control "re-point withdrawal to an active account"~~ **Built 2026-11-02 (§14, migration 0207); not applied** | — |
-| T4 | #83: replace the key-shaped fake value; update its stale note; retarget after #82 | merging #83 |
+| T4 | ~~#83: replace the key-shaped fake value; update its stale note~~ **Done 2026-11-02 (§15, `cc00756` on #83)**. Retargeting to `main` waits for #82 to merge | merging #83 |
 
 **Blocked (waiting on evidence or a decision)**
 
@@ -1079,7 +1079,7 @@ New `scripts/local-pg-test/run-earnings-adjustment-verification.sh`, **71/71**, 
   - **D10:** four `late_recorded_payout` entries (₦100 each). Option (c) adds a ₦400 `wallet_debit` only if D12 shows the ₦400 went back to the balance.
 - **Approver independence (D5a/O1):** today root is the only super admin, and root's payout account shares the incident payee's initials. So D10 needs a second super admin or a written owner exception.
 - **Gating owner actions:** O3 (Supabase "Deploy to production" off) and O4 (backups), then D1/A1–A7.
-- **Remaining technical work:** T3 (re-point action, if chosen for D4a), T4 (#83's test).
+- **Remaining technical work:** none in code. T3 built (§14), T4 done (§15); #83's retarget waits for #82.
 
 ## 14. T3 built (2026-11-02): migration 0207, the audited two-admin withdrawal bank-account reassignment (D4a)
 
@@ -1161,3 +1161,25 @@ New `scripts/local-pg-test/run-withdrawal-reassignment-verification.sh`, **61/61
 | vitest | **3014/3014**, 325 files, 0 unhandled errors, exit 0 |
 | `tsc --noEmit` | clean |
 | Production `vite build` | passes |
+
+## 15. T4 done (2026-11-02): PR #83's failing test
+
+**Commit `cc00756`** on `claude/bold-allen-bpxsd6` (PR #83). No production access.
+
+| Item | Result |
+|---|---|
+| The failing test | `LocationPicker.maps.test.tsx` stubbed the Maps key with a fake value carrying Google's 4-character API-key prefix. `googleMapsKeyNeverCommitted.security.test.ts` correctly flagged it as a committed key-shaped string. Nothing in `googleMaps.ts` checks the prefix at runtime, so the stub is now `'test-places-key-for-unit-tests'`. **The security test is unchanged** and still scans every tracked file |
+| #83's stale note | Its "3 unhandled rejections in `AdminPayoutsScreen.doubleSubmit.test.tsx`" came from the old mock, fixed on #82 in `9eb3fa3`. The byte-identical one-line fix is now on #83 too, so #83's own run exits 0, and the identical line merges cleanly with #82 |
+| #83 alone | vitest **3030/3030**, exit 0, 0 unhandled; `tsc` clean; production build passes; `run-recruiter-search-verification.sh` **23/23** (re-run here; the earlier sandbox permission problem is gone) |
+| #83 merged onto #82's head `a2ac0da` (local test merge only) | **clean merge**; vitest **3089/3089**, 0 unhandled; `tsc` clean. On the merged tree: recruiter search 23/23, withdrawal reassignment 61/61, earnings adjustment 71/71, state machine 51/51, migration order 37/37 |
+| 0204 stays separate | `0204_search_recruiter_invite_targets.sql` references none of the payout or earnings objects: no `approve_admin_action`, `request_admin_action`, withdrawals, wallets or ledger (checked). It is **not** part of the Batch D window (W4–W6c). Apply it on its own, after the window, in its own transaction |
+
+**Retarget, after #82 merges (not done now):**
+1. If GitHub deletes `claude/vents-work-earn` on merge, it retargets #83 to `main` automatically. Otherwise: PR #83 → Edit → base `main`.
+2. Confirm #83's diff then shows only its own 34 files.
+3. Wait for CI and Vercel to go green.
+4. Merge #83 (owner).
+5. Apply 0204 separately (SQL editor / `psql -1`, never `supabase db push`). Verify `search_recruiter_invite_targets` with `pg_get_functiondef`.
+6. If the Find search should work on the read-only Preview, add the RPC to the Preview allowlist (`docs/preview-read-only.md`) in a follow-up.
+
+Retargeting now, before #82 merges, would make #83's diff include all of #82 and invite merging it out of order. **Do not.**
