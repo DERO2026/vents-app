@@ -190,6 +190,9 @@ SQL
 echo "== Applying 0203 =="
 expect_ok "0203 applies on top of 0201, 0202 and the live functions" "$(cat "$MIG/0203_earnings_policies.sql")"
 expect_ok "0203 is idempotent (second run is a no-op)" "$(cat "$MIG/0203_earnings_policies.sql")"
+# 0205 (payout state machine) as the window ships it: every withdrawal rule
+# below runs under its trigger.
+expect_ok "0205 applies on top of 0203" "$(cat "$MIG/0205_payout_cancelled_transfer_safety.sql")"
 expect_value "every patched live function carries the 0203 marker" \
   "$(val "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prosrc LIKE '%[0203]%';")" "14"
 expect_value "no live ticket function still hard-codes the 1.05 multiplier" \

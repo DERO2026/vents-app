@@ -819,7 +819,7 @@ These are the pre-`9eb3fa3` counts.
 
 | # | Item | Blocks |
 |---|---|---|
-| T1 | **Consolidate #84 into #82:** webhook fallback + tests; re-based 0205 (one state-machine trigger, no-delete trigger, merged integrity report); runbook W6a rewritten; all suites re-run; close #84 | the window plan |
+| T1 | ~~Consolidate #84 into #82~~ **Done 2026-11-02 (§12)**; #84 to be closed | — |
 | T2 | Build D3 `earnings_adjustment` as migration 0206 (after the owner approves, O10) | D2, D10 corrections |
 | T3 | If the owner picks D4a option 2: dual-control "re-point withdrawal to an active account" | paying `91b0afb4`'s 4 requests |
 | T4 | #83: replace the key-shaped fake value; update its stale note; retarget after #82 | merging #83 |
@@ -853,7 +853,7 @@ Plus: D1 (approve the window), D10 option (a/b/c), the ₦40 fees in VENTS's boo
 3. W1: pause purchases and payouts.
 4. W2: a verified dump.
 5. W4–W6: 0201 → 0202 → 0203.
-6. W6a: re-based 0205, only after T1.
+6. W6a: 0205 (rebuilt; T1 done).
 7. W7: merge #82.
 8. W8: ₦100 purchase test.
 9. W9: confirm the webhook URL, then reopen payouts.
@@ -899,3 +899,88 @@ Then answer **O10** (build D3: yes or no).
 > 5. Commit and push to `claude/vents-work-earn`; comment on #84 pointing to the commit and recommend closing it.
 >
 > Do not merge any PR, apply migrations, run any SQL against production (including read-only), change roles, touch withdrawals or balances, or enable sign-ups. Keep personal data out of the repo.
+
+## 12. T1 done (2026-11-02): PR #84 consolidated into this PR
+
+**No production access of any kind.** Repository and local PostgreSQL 16 only.
+
+### 12.1 What was ported, and what was not
+
+| From #84 | Here | Notes |
+|---|---|---|
+| Webhook: on `not_found` by transfer code, retry once by the fixed reference (success and failure) | `api/webhook/paystack.ts` | Applied from #84's own diff. HMAC check unchanged and first |
+| Webhook: `needs_review` → loud error log, 200, no email | same | — |
+| Webhook tests (13) | `api/_lib/payoutCancelledTransferIncident.security.test.ts` | **3 fail against the previous handler**, all 13 pass now. Its migration-text tests are rewritten for the rebuilt 0205 |
+| State-machine trigger | `0205_payout_cancelled_transfer_safety.sql` → `organizer_withdrawal_requests_guard` | **Merged with 0202's guard**: one `BEFORE UPDATE` trigger. 0202's `organizer_withdrawal_transfer_guard` trigger and function are dropped by 0205 (no duplicate guards). Its error messages are kept, so existing checks still match |
+| Immutable owner, amount, reference, transfer code | same trigger | — |
+| No-delete trigger | `organizer_withdrawal_requests_no_delete` | Soft account deletion unaffected; a hard delete of a paid organizer now fails |
+| `admin_payout_integrity_report()` | same | Merged: #84's issues + unresolved `payout_exceptions` rows + payout ledger rows linked to no request. Raises "Admin access required" for non-admins (#84 returned an empty set). `admin_list_payout_exceptions()` (0202) stays for the API's report-only Paystack check |
+| `payout_cancel_returned_funds()` | same | Evidence helper for the report; not client-callable |
+| **Not ported:** #84's `complete_organizer_payout` patch | — | This branch's 0202 already resolves a late success from evidence (replay 16/16) |
+| **Not ported:** the md5 pin on 0203's body | — | Replaced by an object-existence prerequisite check (0202 and 0203 objects) |
+| New: undo for 0205 alone | `supabase/rollback/undo_0205.sql` | Needs `vents.rollback_confirm = 'undo-0205'`; restores 0202's guard verbatim |
+
+### 12.2 Tests
+
+New suite `scripts/local-pg-test/run-payout-state-machine-verification.sh`, **51/51**. It runs the July sweep statement **extracted verbatim** from `migrations/20260713100000_admin-stats-and-payout-cleanup.sql`.
+
+**Order and application:**
+- 0205 refuses before 0202/0203.
+- The sweep reproduces the incident on production's code.
+- 0201 → 0202 → 0203 → 0205 apply; applying 0205 changes no request, wallet or ledger row; 0205 is idempotent.
+- Exactly two triggers remain (guard + no-delete); 0202's guard is gone.
+- `complete_organizer_payout` is untouched.
+
+**Integrity report:** lists the four incident requests; refuses non-admins and anon; the helpers are not client-callable.
+
+**July sweep:** the verbatim sweep is now refused, atomically.
+- processing with only a reference: cannot be cancelled or rejected;
+- with a transfer code: cannot return to pending;
+- release before a code is allowed;
+- pending without a transfer can still be rejected.
+
+**Final states:**
+- failed, rejected and reversed cannot change; completed cannot become failed; cancelled cannot become pending;
+- pending → reversed is refused;
+- completed → reversed and cancelled → completed are allowed.
+
+**Immutable:**
+- amount, owner, transfer code and reference cannot change (including on an incident row);
+- the bank-account link can still be nulled (FK `SET NULL`);
+- notes and timestamps can change.
+
+**Deletion:** requests with a code, a reference, or completed/failed status cannot be deleted; a never-sent rejected request can be.
+
+**Late success after 0205:** `needs_review`, no money moved, the exception appears in the report, and a duplicate webhook adds nothing.
+
+**Undo:** refused without confirmation. With it, 0202's guard is restored, the sweep is still refused, no money moves, and 0205 re-applies.
+
+**Existing 0202/0203 transitions under 0205:** `run-payout-engine-verification.sh` and `run-earnings-policy-verification.sh` now apply 0205 after 0203, so every engine and two-admin path runs under the new trigger.
+- Payout engine **74/74**. One expectation now meets the state machine before the status CHECK; the CHECK is tested separately.
+- Earnings policy **167/167**.
+- Rollback snapshot **12/12**: the R3 restore keeps 0205's two triggers.
+
+**Full run:** 17/17 local suites; vitest, tsc and build in 12.3.
+
+### 12.3 Verification on this commit
+
+| Check | Result |
+|---|---|
+| Local PostgreSQL suites | **17/17 pass**: state machine **51** (new), payout engine **74**, earnings policy **167**, incident replay 16, rollback snapshot 12, migration order 37, payout gate 27, backup-restore 4, 9 others |
+| vitest | **2975/2975**, 321 files, 0 unhandled errors, exit 0 (+13 ported webhook/migration tests) |
+| `tsc --noEmit` | clean |
+| Production `vite build` (dummy env values) | passes |
+
+### 12.4 Remaining checklist after T1
+
+- **Technical (Claude):**
+  - T2: build 0206 `earnings_adjustment` after O10;
+  - T3: re-point action, if chosen for D4a;
+  - T4: #83's key-shaped test value.
+- **Blocked:** B1–B4 (§11.4).
+- **Owner:** O1–O10, D1, D10 option, ₦40 fees, A1–A7.
+  - **O3 (Supabase "Deploy to production" off) and O4 (backups) remain the gating actions.**
+- **PRs:**
+  - #84 is to be closed (superseded by this commit);
+  - #83 is unchanged (retarget after #82);
+  - #82 stays Draft.

@@ -112,6 +112,10 @@ pass "0202 applies on top of 0201 and the live payout functions"
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/live-money-functions.sql" >/dev/null
 "${PSQL[@]}" -q -f "$MIG/0203_earnings_policies.sql" >/dev/null
 pass "0203 applies on top of 0202"
+# 0205 (one payout state machine) on top, as the window ships it: every
+# engine transition below runs under its trigger.
+"${PSQL[@]}" -q -1 -f "$MIG/0205_payout_cancelled_transfer_safety.sql" >/dev/null
+pass "0205 applies on top of 0203"
 "${PSQL[@]}" -q -c "GRANT EXECUTE ON FUNCTION public.admin_claim_payout_for_processing(uuid), public.admin_mark_payout_processing(uuid,text,text), public.admin_release_payout_claim(uuid,text), public.admin_cancel_processing_payout(uuid,text) TO authenticated;"
 
 "${PSQL[@]}" -q <<SQL
@@ -201,9 +205,9 @@ R4=$(request "$ORG2" 100000 "$BANK2" "legacy"); claim "$R4" >/dev/null
 # available, a cancelled_payout_refund ledger row. (A historical row: the
 # transfer guard, which now forbids this, is lifted for that one write.)
 legacy_cancel() {
-  "${PSQL[@]}" -q -c "ALTER TABLE public.organizer_withdrawal_requests DISABLE TRIGGER organizer_withdrawal_transfer_guard;
+  "${PSQL[@]}" -q -c "ALTER TABLE public.organizer_withdrawal_requests DISABLE TRIGGER organizer_withdrawal_requests_guard;
     UPDATE public.organizer_withdrawal_requests SET status = 'cancelled' WHERE id = '$1';
-    ALTER TABLE public.organizer_withdrawal_requests ENABLE TRIGGER organizer_withdrawal_transfer_guard;
+    ALTER TABLE public.organizer_withdrawal_requests ENABLE TRIGGER organizer_withdrawal_requests_guard;
     $2"
 }
 legacy_cancel "$R4" "UPDATE public.organizer_wallets SET balance_kobo = balance_kobo + 100000, pending_kobo = pending_kobo - 100000 WHERE organizer_id = '$ORG2'; INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, withdrawal_request_id) VALUES ('$ORG2', 'cancelled_payout_refund', 100000, 'legacy cancel', '$R4');"
@@ -232,8 +236,11 @@ expect_value "a non-admin sees nothing in the reconciliation report" \
   "$(val "$(as "$OTHER" "SELECT count(*) FROM public.admin_earnings_reconciliation();")")" "0"
 expect_error "a reversal is an allowed ledger type; nonsense is not" "organizer_transactions_type_check" \
   "INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo) VALUES ('$ORG', 'bonus', 1);"
-expect_error "a withdrawal status outside the state machine is refused" "organizer_withdrawal_requests_status_check" \
+# R6 is final: 0205's state machine refuses before the status CHECK runs.
+expect_error "a final withdrawal cannot be moved to any other status (0205)" "final status cannot change" \
   "UPDATE public.organizer_withdrawal_requests SET status = 'paid' WHERE id = '$R6';"
+expect_error "a withdrawal status outside the state machine is refused by the CHECK" "organizer_withdrawal_requests_status_check" \
+  "INSERT INTO public.organizer_withdrawal_requests (organizer_id, amount_kobo, status) VALUES ('$ORG', 1, 'paid');"
 
 echo "== Ledger and balances at the end =="
 expect_value "ORG's ledger explains balance + pending exactly" \

@@ -804,11 +804,30 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       // it is handled like a failure.
       const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout'
         : event.event === 'transfer.reversed' ? 'reverse_organizer_payout' : 'fail_organizer_payout';
-      const rows = event.event === 'transfer.success'
-        ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [lookupKey])
-        : await callProjectAdminTableRpc<any>(rpcName, [lookupKey, event.data?.reason || event.event]);
+      const callFor = (key: string) => event.event === 'transfer.success'
+        ? callProjectAdminTableRpc<any>('complete_organizer_payout', [key])
+        : callProjectAdminTableRpc<any>(rpcName, [key, event.data?.reason || event.event]);
+      let usedKey: string = lookupKey;
+      let rows = await callFor(lookupKey);
+      // A request whose "mark sent" step failed after Paystack accepted the
+      // transfer has the fixed reference but no transfer code yet. Matching
+      // by code alone answered not_found and the outcome was lost until
+      // someone ran Reconcile; fall back to the reference.
+      if (rows[0]?.status === 'not_found' && transferCode && reference && reference !== transferCode) {
+        usedKey = reference;
+        rows = await callFor(reference);
+      }
       const row = rows[0];
-      console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
+      console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', usedKey);
+
+      // 0205: Paystack reports a transfer paid for a request VENTS shows as
+      // cancelled without the money having been returned. Nothing was moved;
+      // an admin must reconcile it (admin_payout_integrity_report). Answer
+      // 200 -- retrying cannot change the outcome -- but make it loud.
+      if (row?.status === 'needs_review') {
+        console.error('[Paystack webhook] PAYOUT NEEDS REVIEW: Paystack reports', event.event, 'for', usedKey,
+          '(amount kobo:', event.data?.amount, ') but VENTS does not hold this request as in flight. No money was moved.');
+      }
 
       // Fire the payout email only on a genuine, first-time state change --
       // never on 'not_found'/'already_completed'/'already_finalized', which

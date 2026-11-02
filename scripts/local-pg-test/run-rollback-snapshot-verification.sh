@@ -63,6 +63,7 @@ done
 "${PSQL[@]}" -q -1 -f "$MIG/0201_vents_earn_representative_rewards.sql" >/dev/null
 "${PSQL[@]}" -q -1 -c "SET vents.migration_local_test = 'on';" -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
 "${PSQL[@]}" -q -1 -f "$MIG/0203_earnings_policies.sql" >/dev/null
+"${PSQL[@]}" -q -1 -f "$MIG/0205_payout_cancelled_transfer_safety.sql" >/dev/null
 expect_value "0203 is applied (confirm_ticket_payment carries its marker)" \
   "$(val "SELECT (prosrc LIKE '%[0203]%')::text FROM pg_proc WHERE oid = 'public.confirm_ticket_payment(text,bigint)'::regprocedure;")" "true"
 
@@ -96,8 +97,8 @@ else fail "restored bodies differ from production:$MISMATCH"; fi
 expect_value "grants on the 19 functions are unchanged by the restore" "$(val "$GRANTS_SQL")" "$GRANTS_BEFORE"
 expect_value "the restore leaves the migrations' tables in place (no financial rows dropped)" \
   "$(val "SELECT (to_regclass('public.earnings_holds') IS NOT NULL AND to_regclass('public.earn_audit_log') IS NOT NULL)::text;")" "true"
-expect_value "the restore keeps 0202's payout exception table and transfer guard (they only refuse unsafe changes)" \
-  "$(val "SELECT (to_regclass('public.payout_exceptions') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard' AND NOT tgisinternal))::text;")" "true"
+expect_value "the restore keeps 0202's exception table and 0205's state machine and no-delete triggers (they only refuse unsafe changes)" \
+  "$(val "SELECT (to_regclass('public.payout_exceptions') IS NOT NULL AND (SELECT count(*) FROM pg_trigger WHERE tgname IN ('organizer_withdrawal_requests_guard', 'organizer_withdrawal_requests_no_delete') AND NOT tgisinternal) = 2)::text;")" "true"
 expect_value "a second confirmed restore is a no-op (idempotent)" "$(restore "restore-pre-0201-0203")" "ok"
 
 echo
