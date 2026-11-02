@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase } from '../../lib/supabase';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { CheckCircle2, XCircle, Clock, ChevronRight, Eye, Check, X, CheckCheck } from 'lucide-react';
+import { describeEarningsAdjustment } from '../../lib/earningsAdjustment';
 
 type Status = 'pending' | 'approved' | 'rejected';
 
@@ -65,6 +66,7 @@ function describe(r: ActionRequest): string {
     set_user_role: `${who} requested to change role of ${label} → ${r.payload?.new_role || '?'}`,
     reject_payout: `${who} requested to reject a payout`,
     resolve_booking_dispute: `${who} requested to resolve a booking dispute for the ${r.payload?.outcome === 'customer' ? 'CUSTOMER (earnings stay held)' : r.payload?.outcome === 'provider' ? 'PROVIDER (earnings release)' : '?'} (${label})`,
+    earnings_adjustment: describeEarningsAdjustment(who, label, r.payload),
     authorize_withdrawal: `${who} requested to AUTHORIZE a withdrawal of ${typeof r.payload?.amount_kobo === 'number' ? '₦' + (r.payload.amount_kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 }) : '?'} (${label})`,
     toggle_user_verified: `${who} requested to change verification of ${label}`,
     credit_vents_cents: `${who} requested to credit ${r.payload?.amount ?? '?'} VC to ${label}`,

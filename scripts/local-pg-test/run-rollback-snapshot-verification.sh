@@ -64,6 +64,7 @@ done
 "${PSQL[@]}" -q -1 -c "SET vents.migration_local_test = 'on';" -f "$MIG/0202_payout_engine_safety.sql" >/dev/null
 "${PSQL[@]}" -q -1 -f "$MIG/0203_earnings_policies.sql" >/dev/null
 "${PSQL[@]}" -q -1 -f "$MIG/0205_payout_cancelled_transfer_safety.sql" >/dev/null
+"${PSQL[@]}" -q -1 -f "$MIG/0206_earnings_adjustment.sql" >/dev/null
 expect_value "0203 is applied (confirm_ticket_payment carries its marker)" \
   "$(val "SELECT (prosrc LIKE '%[0203]%')::text FROM pg_proc WHERE oid = 'public.confirm_ticket_payment(text,bigint)'::regprocedure;")" "true"
 

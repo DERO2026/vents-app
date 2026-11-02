@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { ConfirmModal } from './adminShared';
+import { EarningsAdjustmentForm } from './EarningsAdjustmentForm';
 import { notifyByEmail } from './adminAuditLog';
 import { apiUrl } from '../../../lib/apiBase';
 import { withTimeoutFallback } from '../../../lib/withTimeoutFallback';
@@ -34,6 +35,7 @@ export function AdminPayoutsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
   const [checkingExceptions, setCheckingExceptions] = useState(false);
+  const [showAdjustment, setShowAdjustment] = useState(false);
   const [exceptionReport, setExceptionReport] = useState<any[] | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [rejectConfirmId, setRejectConfirmId] = useState<string | null>(null);
@@ -396,7 +398,12 @@ export function AdminPayoutsScreen() {
         <button data-testid="payout-exceptions-check" onClick={handleCheckExceptions} disabled={checkingExceptions} title="Ask Paystack about requests that ended cancelled, failed or rejected while holding a transfer code. Changes nothing." style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(251,191,36,.3)', cursor: checkingExceptions ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(251,191,36,.1)', color: '#FBBF24', opacity: checkingExceptions ? 0.6 : 1 }}>
           {checkingExceptions ? 'Checking…' : 'Check payout exceptions'}
         </button>
+        <button data-testid="earnings-adjustment-toggle" onClick={() => setShowAdjustment((v) => !v)} title="File an audited correction for a second admin to approve (0206). Moves nothing by itself." style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${adminTheme.border}`, cursor: 'pointer', fontWeight: 600, fontSize: 12, background: adminTheme.panel, color: adminTheme.textMuted }}>
+          {showAdjustment ? 'Hide adjustment form' : 'Request earnings adjustment'}
+        </button>
       </div>
+
+      {showAdjustment && <EarningsAdjustmentForm />}
 
       {exceptionReport && (
         <div data-testid="payout-exceptions-report" style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>

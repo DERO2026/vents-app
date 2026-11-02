@@ -774,7 +774,8 @@ These are the pre-`9eb3fa3` counts.
 | 0202 payout engine safety (+ incident fix) | #82 | 0201 (0202 → 0201 drops `payout_reversal`, proven by `run-migration-order-verification.sh`) | 2nd |
 | 0203 earnings policies | #82 | 0202's exact bodies (md5 pins, including `complete_organizer_payout` `f6ca5add…`) | 3rd |
 | 0204 recruiter search | #83 | only production objects (0196's `recruiter_target_is_organizer`, `recruiters`, `check_rate_limit`, `service_providers`) | after the window, own transaction |
-| 0205 cancelled-transfer safety | #84 | 0203 **on the old 0202** (md5 `dbcccdb9…`) | **cannot be applied on #82's head**; re-base first (11.1) |
+| 0205 cancelled-transfer safety | #84 → rebuilt in #82 (§12) | 0202/0203 objects only (no md5) | 4th, in the window (W6a) |
+| 0206 earnings adjustment | #82 (§13) | 0203 + 0205 objects | 5th, in the window (W6b) |
 
 **Unsafe orders and merges:**
 - **0202 before 0201** drops the `payout_reversal` ledger type. 0203 before 0202, or out of order generally, is refused by the drift guards, which fail closed.
@@ -820,7 +821,7 @@ These are the pre-`9eb3fa3` counts.
 | # | Item | Blocks |
 |---|---|---|
 | T1 | ~~Consolidate #84 into #82~~ **Done 2026-11-02 (§12)**; #84 to be closed | — |
-| T2 | Build D3 `earnings_adjustment` as migration 0206 (after the owner approves, O10) | D2, D10 corrections |
+| T2 | ~~Build D3 `earnings_adjustment` as migration 0206~~ **Built 2026-11-02 (§13); not applied** | — |
 | T3 | If the owner picks D4a option 2: dual-control "re-point withdrawal to an active account" | paying `91b0afb4`'s 4 requests |
 | T4 | #83: replace the key-shaped fake value; update its stale note; retarget after #82 | merging #83 |
 
@@ -853,7 +854,7 @@ Plus: D1 (approve the window), D10 option (a/b/c), the ₦40 fees in VENTS's boo
 3. W1: pause purchases and payouts.
 4. W2: a verified dump.
 5. W4–W6: 0201 → 0202 → 0203.
-6. W6a: 0205 (rebuilt; T1 done).
+6. W6a: 0205 (rebuilt; T1 done); W6b: 0206 (built; T2 done; no adjustment filed in the window).
 7. W7: merge #82.
 8. W8: ₦100 purchase test.
 9. W9: confirm the webhook URL, then reopen payouts.
@@ -974,7 +975,7 @@ New suite `scripts/local-pg-test/run-payout-state-machine-verification.sh`, **51
 ### 12.4 Remaining checklist after T1
 
 - **Technical (Claude):**
-  - T2: build 0206 `earnings_adjustment` after O10;
+  - ~~T2: build 0206~~ done (§13);
   - T3: re-point action, if chosen for D4a;
   - T4: #83's key-shaped test value.
 - **Blocked:** B1–B4 (§11.4).
@@ -984,3 +985,97 @@ New suite `scripts/local-pg-test/run-payout-state-machine-verification.sh`, **51
   - #84 is to be closed (superseded by this commit);
   - #83 is unchanged (retarget after #82);
   - #82 stays Draft.
+
+## 13. T2 built (2026-11-02): migration 0206, the audited two-admin earnings adjustment
+
+**Not applied.** No production access of any kind. Nothing is executed by this commit. Every correction (D2, D10) still needs the owner's decision and then two admins.
+
+### 13.1 Design, checked against the existing architecture
+
+| Requirement | How 0206 meets it | Matches |
+|---|---|---|
+| Built on the existing maker-checker | `request_admin_action('earnings_adjustment', 'user', <organizer>, …)`, then `approve_admin_action` (super admin, not the requester), then `execute_earnings_adjustment` (not client-callable). Wired by anchored, idempotent patches | 0203's `authorize_withdrawal` / `execute_withdrawal_authorization` |
+| Kinds | `ledger_only` (credit or debit; ledger row, **no wallet change**). `wallet_credit` (+balance, +earned). `wallet_debit` (−balance, −earned, available balance only). `late_recorded_payout` (one `payout` row linked to the request, +withdrawn, balance unchanged, request status unchanged, its `payout_exceptions` resolved) | §10.4 design |
+| Two distinct admins, neither the payee | Executor: super-admin approver ≠ requester; neither = the wallet owner; the requester must **still** be an admin at approval. Also a table `CHECK` on `earnings_adjustments` | 0203 `organizer_withdrawal_requests_two_admins` |
+| Wallet snapshot; refuse if it changed | `admin_request_earnings_adjustment` snapshots balance, pending, on hold and ledger net **server-side** (never client-supplied). The executor locks the wallet `FOR UPDATE` and refuses on any difference ("The wallet changed since…"). The request stays pending and nothing moves | — |
+| Append-only, never back-dated | `earnings_adjustments` rejects `UPDATE`/`DELETE`. A trigger on `organizer_transactions` lets only the executor insert `adjustment_credit`/`adjustment_debit` rows and forbids changing or deleting any row an adjustment wrote (including the late `payout` row). `created_at` is always `now()`; the Paystack date goes in `metadata.paid_at` | 0202/0205 history protections |
+| Idempotent | `UNIQUE (admin_request_id)`; the approval consumes the request ("Request already approved"); one `payout` row per request (0202's unique index); a late payout already recorded is refused | — |
+| Authorization | Only `admin_request_earnings_adjustment` is client-callable (admins, checked inside). The executor, validator and ledger helper are revoked from clients; the table has RLS and no grants | — |
+| No bypass of wallet constraints | A debit never exceeds the **available** balance, never touches pending or held money, never makes earned negative; `balance_kobo >= 0` is still enforced by the table CHECK. Per-adjustment cap ₦50,000; requests expire after 7 days | — |
+| Late payout guards | Request must belong to the organizer, be cancelled/failed/rejected, carry a transfer code equal to the payload's, have no payout recorded, and the amount must equal the request. Refused if the cancel returned the money (then it is a `wallet_debit`) | — |
+| Audit | `admin_logs` `earnings_adjustment_applied` (both admins, before/after, reason, evidence). Full details on the ledger row's metadata and on the adjustment record (balance and ledger net before and after) | — |
+| Reconciliation | `admin_earnings_reconciliation()` counts the new types (anchored patch). Verified: a `ledger_only` debit moves the ledger gap by exactly its amount; wallet kinds move ledger and wallet together | 0203 |
+| Rollback | `supabase/rollback/undo_0206.sql`: confirmed. **Refused once anything was executed** or while a request is pending. Restores the 0203 ledger types and unwiring | 0205's undo |
+| App | `src/lib/earningsAdjustment.ts` (validation mirrors the server; calls only the helper RPC). Admin → Payouts → "Request earnings adjustment" form. Admin → Actions shows the approver the kind, effect, amount, reason, evidence and reviewed balance | — |
+
+**Not built (by design):**
+- no automatic or bulk corrections;
+- no adjustment above ₦50,000 (that needs a migration);
+- no editing of existing rows.
+
+### 13.2 Tests
+
+New `scripts/local-pg-test/run-earnings-adjustment-verification.sh`, **71/71**, on 0201 → 0202 → 0203 → 0205 → 0206 with the July sweep replayed:
+
+- **Install:**
+  - refused before 0203/0205; applying it changes nothing; idempotent;
+  - wired into the maker-checker and the reconciliation.
+- **Undo before execution:**
+  - refused without confirmation;
+  - with it, everything is unwired, 0203's withdrawal wiring stays intact, no money moves, and 0206 re-applies.
+- **Authorization:**
+  - a plain user, anon, a direct executor call and direct table access are all refused;
+  - an admin cannot file for their own wallet (helper, or a raw request at approval);
+  - the approver cannot be the wallet owner;
+  - the requester cannot self-approve, and a sub-admin cannot approve.
+- **Validation:** short reason, missing evidence, zero, over-cap, unknown kind, contradicting direction; a raw fractional amount or missing snapshot is refused at execution.
+- **ledger_only:**
+  - the wallet is unchanged; one linked row is created now;
+  - the gap moves by exactly the amount;
+  - the record holds both admins and the before/after snapshot; it is audited;
+  - a second approval is refused and adds nothing.
+- **Stale approvals:** a sale after the request makes approval fail; the request stays pending and nothing moves.
+- **Credit / debit:**
+  - exact balance and earned effects;
+  - a debit above the available balance is refused even when pending is large;
+  - ledger and wallet move together.
+- **late_recorded_payout on an incident row:**
+  - wrong transfer code, wrong amount and missing `paid_at` are refused;
+  - recording creates one linked payout row (`recorded_late`, `paid_at`); withdrawn rises; balance and pending are unchanged; the request stays cancelled;
+  - the exception is resolved and the integrity report clears it;
+  - the same payout cannot be recorded twice;
+  - returned-money and in-flight requests are refused.
+- **Append-only:**
+  - adjustment records and adjustment ledger rows cannot be updated or deleted;
+  - the late payout row cannot be back-dated;
+  - a forged adjustment row is refused;
+  - ordinary ledger writes still work; `balance_kobo >= 0` still holds.
+- **Expiry and demotion:** a request over 7 days old is refused; so is one from a requester since demoted.
+- **Undo after execution:** refused, and nothing changes.
+
+**Existing flows under 0206:**
+- the payout engine (**75**) and earnings policy (**168**) suites now apply 0206 after 0205;
+- rollback snapshot **12/12** with 0206 present.
+
+**App tests:**
+- `src/lib/earningsAdjustment.security.test.ts`: validation, RPC-only filing, the approver's label, a source scan that no `src/`/`api/` code calls the executor or writes adjustment rows, and the migration text;
+- `src/app/components/admin/EarningsAdjustmentForm.test.tsx`: 4 render tests.
+
+### 13.3 Verification on this commit
+
+| Check | Result |
+|---|---|
+| Local PostgreSQL suites | **18/18 pass**: earnings adjustment **71** (new), payout engine 75, earnings policy 168, state machine 51, incident replay 16, rollback snapshot 12, migration order 37, payout gate 27, backup-restore 4, 9 others |
+| vitest | **2998/2998**, 323 files, 0 unhandled errors, exit 0 |
+| `tsc --noEmit` | clean |
+| Production `vite build` | passes |
+
+### 13.4 Remaining after T2
+
+- **Owner decisions** that 0206 now makes executable (each is two admins after the window):
+  - **D2 `dfca505f`:** `ledger_only` debit ₦1,000 (ledger credit `64e7e2e8`);
+  - **D2 `91b0afb4`:** `ledger_only` credit ₦200 (the returned pre-July-9 money). For the ₦32,350: keep it (explanatory `ledger_only` entries) or `wallet_debit` (after O6/O8 evidence);
+  - **D10:** four `late_recorded_payout` entries (₦100 each). Option (c) adds a ₦400 `wallet_debit` only if D12 shows the ₦400 went back to the balance.
+- **Approver independence (D5a/O1):** today root is the only super admin, and root's payout account shares the incident payee's initials. So D10 needs a second super admin or a written owner exception.
+- **Gating owner actions:** O3 (Supabase "Deploy to production" off) and O4 (backups), then D1/A1–A7.
+- **Remaining technical work:** T3 (re-point action, if chosen for D4a), T4 (#83's test).
