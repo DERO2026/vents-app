@@ -194,6 +194,7 @@ expect_ok "0203 is idempotent (second run is a no-op)" "$(cat "$MIG/0203_earning
 # below runs under its trigger.
 expect_ok "0205 applies on top of 0203" "$(cat "$MIG/0205_payout_cancelled_transfer_safety.sql")"
 expect_ok "0206 applies on top of 0205" "$(cat "$MIG/0206_earnings_adjustment.sql")"
+expect_ok "0207 applies on top of 0206" "$(cat "$MIG/0207_withdrawal_bank_reassignment.sql")"
 expect_value "every patched live function carries the 0203 marker" \
   "$(val "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prosrc LIKE '%[0203]%';")" "14"
 expect_value "no live ticket function still hard-codes the 1.05 multiplier" \

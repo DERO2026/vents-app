@@ -118,6 +118,8 @@ pass "0203 applies on top of 0202"
 pass "0205 applies on top of 0203"
 "${PSQL[@]}" -q -1 -f "$MIG/0206_earnings_adjustment.sql" >/dev/null
 pass "0206 applies on top of 0205 (every engine path below also runs under its ledger trigger)"
+"${PSQL[@]}" -q -1 -f "$MIG/0207_withdrawal_bank_reassignment.sql" >/dev/null
+pass "0207 applies on top of 0206 (every engine path below also runs under its destination guard)"
 "${PSQL[@]}" -q -c "GRANT EXECUTE ON FUNCTION public.admin_claim_payout_for_processing(uuid), public.admin_mark_payout_processing(uuid,text,text), public.admin_release_payout_claim(uuid,text), public.admin_cancel_processing_payout(uuid,text) TO authenticated;"
 
 "${PSQL[@]}" -q <<SQL

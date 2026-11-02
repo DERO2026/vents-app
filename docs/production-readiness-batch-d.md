@@ -776,6 +776,7 @@ These are the pre-`9eb3fa3` counts.
 | 0204 recruiter search | #83 | only production objects (0196's `recruiter_target_is_organizer`, `recruiters`, `check_rate_limit`, `service_providers`) | after the window, own transaction |
 | 0205 cancelled-transfer safety | #84 → rebuilt in #82 (§12) | 0202/0203 objects only (no md5) | 4th, in the window (W6a) |
 | 0206 earnings adjustment | #82 (§13) | 0203 + 0205 objects | 5th, in the window (W6b) |
+| 0207 withdrawal bank reassignment | #82 (§14) | 0203 + 0205 objects | 6th, in the window (W6c) |
 
 **Unsafe orders and merges:**
 - **0202 before 0201** drops the `payout_reversal` ledger type. 0203 before 0202, or out of order generally, is refused by the drift guards, which fail closed.
@@ -822,7 +823,7 @@ These are the pre-`9eb3fa3` counts.
 |---|---|---|
 | T1 | ~~Consolidate #84 into #82~~ **Done 2026-11-02 (§12)**; #84 to be closed | — |
 | T2 | ~~Build D3 `earnings_adjustment` as migration 0206~~ **Built 2026-11-02 (§13); not applied** | — |
-| T3 | If the owner picks D4a option 2: dual-control "re-point withdrawal to an active account" | paying `91b0afb4`'s 4 requests |
+| T3 | ~~Dual-control "re-point withdrawal to an active account"~~ **Built 2026-11-02 (§14, migration 0207); not applied** | — |
 | T4 | #83: replace the key-shaped fake value; update its stale note; retarget after #82 | merging #83 |
 
 **Blocked (waiting on evidence or a decision)**
@@ -854,7 +855,7 @@ Plus: D1 (approve the window), D10 option (a/b/c), the ₦40 fees in VENTS's boo
 3. W1: pause purchases and payouts.
 4. W2: a verified dump.
 5. W4–W6: 0201 → 0202 → 0203.
-6. W6a: 0205 (rebuilt; T1 done); W6b: 0206 (built; T2 done; no adjustment filed in the window).
+6. W6a: 0205 (rebuilt; T1 done); W6b: 0206 (built; T2 done; no adjustment filed in the window); W6c: 0207 (built; T3 done; no reassignment filed in the window).
 7. W7: merge #82.
 8. W8: ₦100 purchase test.
 9. W9: confirm the webhook URL, then reopen payouts.
@@ -1079,3 +1080,84 @@ New `scripts/local-pg-test/run-earnings-adjustment-verification.sh`, **71/71**, 
 - **Approver independence (D5a/O1):** today root is the only super admin, and root's payout account shares the incident payee's initials. So D10 needs a second super admin or a written owner exception.
 - **Gating owner actions:** O3 (Supabase "Deploy to production" off) and O4 (backups), then D1/A1–A7.
 - **Remaining technical work:** T3 (re-point action, if chosen for D4a), T4 (#83's test).
+
+## 14. T3 built (2026-11-02): migration 0207, the audited two-admin withdrawal bank-account reassignment (D4a)
+
+**Not applied.** No production access of any kind. Nothing is reassigned by this commit.
+
+### 14.1 Design, checked against the existing architecture
+
+| Requirement | How 0207 meets it |
+|---|---|
+| Request/approve with two distinct admins | `admin_request_withdrawal_bank_reassignment` files `request_admin_action('reassign_withdrawal_bank_account', 'withdrawal', <request>)`. Then `approve_admin_action` (super admin ≠ requester), then `execute_withdrawal_bank_reassignment` (not client-callable). The same pattern as 0203 `authorize_withdrawal` and 0206 `earnings_adjustment`; wired by anchored patches beside them |
+| Neither admin is the payee | Executor: the withdrawal's organizer is neither requester nor approver; the requester must still be an admin. Also a table CHECK on `withdrawal_bank_reassignments` |
+| The replacement account is the payee's, active and verified | Same `organizer_id` as the withdrawal; `is_active`; a Paystack `recipient_code` present; different from the current account |
+| Never alters amount, reference, wallet or ledger | Only `bank_account_id` and the request's bank snapshot columns (`bank_name`, `bank_code`, `account_number`, `account_name`) change. No wallet or ledger write exists in the file (also tested as text) |
+| Only a safe withdrawal can move | `pending`, **not yet authorized** (`approved_by IS NULL`), and no Paystack reference or transfer code. A processing or attempted request is refused |
+| Stale requests refused | The server snapshots the withdrawal (`bank_account_id`, `updated_at`) and the new account (`updated_at`, an md5 fingerprint of the recipient code) at request time. The executor locks both rows and refuses any difference, status change or deactivation |
+| Audit without exposing bank details | `withdrawal_bank_reassignments` (append-only) and `admin_logs` `withdrawal_bank_reassigned` hold account **IDs** and **masked** numbers (`Bank ****1234`) only. The request payload holds masked numbers and a fingerprint, never the full number or recipient code (tested) |
+| Cannot bypass 0202/0203/0205 | Afterwards the request still needs the normal two-admin `authorize_withdrawal`, which binds the **new** recipient; then the claim (active-account and recipient checks, fixed reference, 0205 state machine). A moved request that is authorized can no longer be moved |
+| No silent destination swaps | New trigger `organizer_withdrawal_destination_guard`: `bank_account_id` (except → NULL via the FK) and the snapshot columns change only inside the executor |
+| Idempotent, expiring | `UNIQUE (admin_request_id)`; the approval consumes the request; requests expire after 7 days |
+| Rollback | `supabase/rollback/undo_0207.sql`: confirmed. Refused once anything was reassigned or a request is pending. Unwires only 0207 |
+| App | `src/lib/withdrawalReassignment.ts`. Admin → Payouts → a pending, unauthorized withdrawal → "Move to another bank account": lists only the organizer's active, verified accounts, masked. Admin → Actions shows the approver the masked old → new accounts, the amount and the reason |
+
+### 14.2 Tests
+
+New `scripts/local-pg-test/run-withdrawal-reassignment-verification.sh`, **61/61**, on 0201 → 0207, reproducing D4a (pending requests on a deactivated account):
+
+- **Install:**
+  - refused before 0203/0205; applying changes nothing; idempotent;
+  - wired beside 0203 and 0206.
+- **Undo before use:**
+  - refused without confirmation;
+  - unwires 0207 only, changes nothing, and 0207 re-applies.
+- **Destination guard:**
+  - a raw `bank_account_id` change is refused, and so is a change to the snapshot columns;
+  - the FK `SET NULL` path still works.
+- **The D4a deadlock:** before reassignment, authorizing a request on a deactivated account is refused (0203).
+- **Authorization:**
+  - a plain user, anon, a direct executor call and direct table access are refused;
+  - an admin cannot file for their own withdrawal; the approver cannot be the organizer;
+  - no self-approval; a sub-admin cannot approve.
+- **Validation:** a short reason; another organizer's, inactive, unverified, the same or a missing account; a processing request; a request with a reference.
+- **Reassignment:**
+  - the destination and snapshot are updated;
+  - amount, status, reference and code are unchanged; wallet and ledger are unchanged;
+  - the record holds both admins and masked old/new accounts;
+  - **no full number or recipient code** appears in the request, the record or the audit log;
+  - audited once; a second approval is refused.
+- **Safeguards afterwards:**
+  - still unclaimable without two-admin authorization;
+  - authorization binds the new recipient;
+  - once authorized it cannot be moved;
+  - the claim pays the new recipient under the fixed reference;
+  - a processing request cannot be moved.
+- **Stale requests:** a changed withdrawal, a new account whose recipient changed, a new account deactivated after the request, and a withdrawal no longer pending are all refused.
+- **Expiry and demotion:** a request over 7 days old, and one from a demoted requester, are refused.
+- **Append-only; undo after use:** both refused.
+
+**Existing flows under 0207:**
+- the payout engine (**76**) and earnings policy (**169**) suites now apply 0207;
+- rollback snapshot 12/12; earnings adjustment 71/71.
+
+**App tests:**
+- `src/lib/withdrawalReassignment.security.test.ts`: masking, eligibility, RPC-only filing, the approver's label, a source scan (no client/API code updates a withdrawal's destination or calls the executor), and the migration text;
+- `src/app/components/admin/WithdrawalReassignForm.test.tsx`: 3 render tests (only eligible accounts, masked; RPC only; empty state; validation).
+
+### 14.3 D4a: what it now takes (owner and organizer, after the window)
+
+1. **The organizer must add and verify a new bank account.** In production (read-only 2026-11-01) **every** bank account of `91b0afb4` is inactive, so today there is nothing eligible to move to.
+2. **O2:** confirm with the organizer the intended payee of each request. The ₦40,000 pair was created against an account in a third party's name (§10.1).
+3. A sub-admin files "Move to another bank account" for each of the four requests; a different super admin approves.
+4. Then the normal two-admin authorization for each, then payment.
+5. **Separation of duties (O1):** root is the only super admin, and root's own payout account shares a holder name with this organizer's accounts (§10.3). The owner should confirm the approver is independent of the payee.
+
+### 14.4 Verification on this commit
+
+| Check | Result |
+|---|---|
+| Local PostgreSQL suites | **19/19 pass**: withdrawal reassignment **61** (new), earnings adjustment 71, payout engine 76, earnings policy 169, state machine 51, incident replay 16, rollback snapshot 12, migration order 37, payout gate 27, backup-restore 4, 9 others |
+| vitest | **3014/3014**, 325 files, 0 unhandled errors, exit 0 |
+| `tsc --noEmit` | clean |
+| Production `vite build` | passes |

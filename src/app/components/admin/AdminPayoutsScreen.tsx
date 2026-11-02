@@ -11,6 +11,7 @@ import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { ConfirmModal } from './adminShared';
 import { EarningsAdjustmentForm } from './EarningsAdjustmentForm';
+import { WithdrawalReassignForm } from './WithdrawalReassignForm';
 import { notifyByEmail } from './adminAuditLog';
 import { apiUrl } from '../../../lib/apiBase';
 import { withTimeoutFallback } from '../../../lib/withTimeoutFallback';
@@ -36,6 +37,7 @@ export function AdminPayoutsScreen() {
   const [reconciling, setReconciling] = useState(false);
   const [checkingExceptions, setCheckingExceptions] = useState(false);
   const [showAdjustment, setShowAdjustment] = useState(false);
+  const [reassignFor, setReassignFor] = useState<string | null>(null);
   const [exceptionReport, setExceptionReport] = useState<any[] | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [rejectConfirmId, setRejectConfirmId] = useState<string | null>(null);
@@ -356,6 +358,12 @@ export function AdminPayoutsScreen() {
           </button>
           <button onClick={() => setRejectConfirmId(r.request_id)} disabled={busy} title="Rejects the request — funds stay in the platform, nothing is sent to Paystack" style={{ flex: 1, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: 8, color: adminTheme.text, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Cancel Request</button>
         </div>
+        {!a?.approved && (
+          <button data-testid={`withdrawal-reassign-toggle-${r.request_id}`} onClick={() => setReassignFor((v) => (v === r.request_id ? null : r.request_id))} title="If the organizer's bank account was deactivated: move this request to another of their verified accounts (two admins, 0207). Moves no money." style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', padding: 0, color: adminTheme.textMuted, fontSize: 11.5, textDecoration: 'underline', cursor: 'pointer' }}>
+            {reassignFor === r.request_id ? 'Hide' : 'Move to another bank account'}
+          </button>
+        )}
+        {reassignFor === r.request_id && <WithdrawalReassignForm requestId={r.request_id} organizerId={r.organizer_id} />}
       </div>
     );
   };
