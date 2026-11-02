@@ -504,7 +504,7 @@ Owner confirmation: who operates each staff account and the `91b0afb4` account.
 | Audit | Every ledger row carries `metadata.admin_request_id`, `requested_by`, `approved_by`, `reason`, `evidence_ref`. Plus an `admin_logs` row |
 | Reconciliation | `admin_earnings_reconciliation()` counts the new types. Each adjustment must move the wallet's `ledger_gap_kobo` by exactly its amount (checked by tests) |
 | Not allowed | Editing or deleting existing ledger rows or withdrawal requests; any back-dated `created_at` |
-| Delivery | A new migration (0205) after the window. Local tests: maker ≠ checker; owner excluded; stale-expectation refusal; idempotency; cap; each kind's effect on reconciliation; the three real cases below replayed |
+| Delivery | A new migration (**0206**; 0204 is PR #83 and 0205 is PR #84) after the window. Local tests: maker ≠ checker; owner excluded; stale-expectation refusal; idempotency; cap; each kind's effect on reconciliation; the three real cases below replayed |
 
 **Real cases it would handle once approved** (none executed):
 
@@ -721,3 +721,181 @@ Until then, treat its withdrawals as real payouts needing full verification.
 - Test merge with PR #83: clean, `tsc` passes, vitest 3,036/3,037. The one failure is #83's key-shaped test value (10.12).
 
 An earlier full run here failed one test because this document quoted that key-shaped string. The text was reworded, and the test then passed.
+
+## 11. Consolidation (2026-11-02): PR #84 audit, migration order 0201–0205, one checklist
+
+**No production access of any kind was used for this section,** not even read-only SQL. Everything below comes from the repository, the three PRs, and local PostgreSQL 16 runs.
+
+### 11.1 PR #84 audit (`claude/payout-incident-batch-d`, head `ca55288`, Draft)
+
+**What #84 is.**
+- Another session wrote a second, independent fix for the same cancelled-transfer incident.
+- It branches from `efdca0f`, the commit **before** this PR's own incident fix (`9eb3fa3`). So its diff against #82's head looks as if it deletes that fix (the exceptions table, guard trigger, exceptions report, replay test and UI).
+- Measured against its real merge base it only adds things. It does not touch 0202 or 0203.
+
+**Its claims, verified locally on its own branch:**
+- incident reproduction 47/47;
+- payout engine 50/50;
+- earnings policy 163/163;
+- migration order 37/37;
+- rollback snapshot 11/11.
+
+These are the pre-`9eb3fa3` counts.
+
+| Area | Finding | Severity |
+|---|---|---|
+| **Applies on #82's head?** | **No.** 0205's guard requires `complete_organizer_payout` md5 `dbcccdb9…` (0203 on top of the *old* 0202). Applied locally after #82's current 0201→0202→0203 it **refuses**: "differs from 0203's body (md5 741fc578…)". Its patch anchor (`SELECT w.balance_kobo INTO v_balance …`) also no longer exists in the current 0202. It fails closed, but runbook step W6a as #84 wrote it would stop the window | **Blocker for #84 as-is** |
+| "0202 can charge the organizer twice on a replayed success" | **True of the old 0202 (`efdca0f`). Already fixed on #82** by `9eb3fa3`: the cancelled branch takes money back only with a `cancelled_payout_refund` row; otherwise it completes from pending only when pending is not owed to other open requests, or returns `needs_review` and moves nothing. Proven by `run-payout-incident-replay.sh` (16/16), including production's exact state. **#84's D11 ("0202 without 0205 is unsafe") does not hold for #82's head** | Superseded |
+| SQL correctness: late-success patch | Correct on its own base. Logged once (de-duplicated by an admin log lookup); no receivable; no money moved. Evidence test: refund row **or** a 0202 `cancel_processing_payout` log. The log branch is practically unreachable: 0202 refuses a cancel once a reference or code exists | OK (redundant with #82) |
+| Security: state-machine trigger | **Stricter than #82's guard; worth keeping:** final states stay final; owner, amount, reference and code are immutable. No conflict found with 0202/0203 transitions (pending→processing, release without code, processing→completed/failed, completed→reversed, cancelled→completed). Not `SECURITY DEFINER`; client `EXECUTE` revoked | **Keep (port)** |
+| No-delete trigger | Blocks deleting any request with a reference, code or non-pending/rejected/cancelled status. Account deletion is a soft delete (0134), so in-app deletion is unaffected. A **hard** delete of a paid organizer's auth user (which cascades) now fails with a clear error, which is the right call for financial records. Document it in the admin runbook | OK; document |
+| `admin_payout_integrity_report()` | Read-only, `STABLE SECURITY DEFINER`, `is_admin()` in the `WHERE` (a non-admin gets no rows rather than an error). Wider than #82's `admin_list_payout_exceptions()`: also flags completed without a payout row, processing over a day, and payout rows linked to no request | **Keep (merge with #82's list)** |
+| Webhook (`api/webhook/paystack.ts`) | HMAC check unchanged and still first. On `not_found` by transfer code it retries **once** by reference, bounded and idempotent (both RPCs are status-gated). `needs_review` is logged as an error, answered 200 and never emailed. Compatible with #82's 0202 (`complete_organizer_payout` matches id, code or reference). Fixes a real gap: "mark sent" failed → outcome lost | **Keep (port)** |
+| Rollback | Its documented undo (drop its 2 triggers and restore the function) works. After a full R3 restore the triggers would remain; they only refuse unsafe transitions, as with #82's guard | OK |
+| Tests | 3 new webhook tests (`payoutCancelledTransferIncident.security.test.ts`); doc claims 2968/2968 (re-run in 11.5) | — |
+| Personal data | None found in #84's changes | OK |
+| Git conflicts with #82 head | `docs/production-readiness-batch-d.md` (both rewrote §2) and `AdminPayoutsScreen.doubleSubmit.test.tsx` (the **same** one-line mock fix in both) | Trivial / docs |
+| Numbering | #84's D10–D13 mean something different from this document's (its D11 = "apply 0205", D12 = "the ₦300,000 booking", D13 = "₦40 fees"). The consolidated list (11.4) is authoritative | Fixed here |
+| Reconciliation | #84's **₦32,350** "held with no source" and this document's **₦32,150** wallet−ledger gap agree once both are on the same basis. 32,150 + ₦200 (ledger-only correction for the returned pre-July-9 money) = **₦32,350 = +₦36,450 unsourced earned − ₦4,100 unexplained outflow** (the ₦4,500 of 10.9 minus the ₦400 that Paystack really paid). Recording the ₦400 (D10) and correcting the ₦200 (D2) is what turns the ₦32,150 view into the ₦32,350 one | Aligned |
+
+**Recommendation.** Do not merge #84 as it stands. **Consolidate it into #82:**
+1. Port the webhook reference fallback, the `needs_review` logging, and its 3 tests.
+2. Port the state-machine and no-delete triggers and the integrity report into a **re-based 0205**:
+   - drop its `complete_organizer_payout` patch (#82's 0202 already does this);
+   - re-pin its guard to #82's 0203 body, or remove the md5 dependency;
+   - fold #82's `organizer_withdrawal_transfer_guard` into the one state-machine trigger, so there is one source of truth.
+3. Re-run every suite; then close #84 with a pointer.
+
+### 11.2 Migration order 0201–0205 and unsafe orders
+
+| Migration | PR | Depends on | Order |
+|---|---|---|---|
+| 0201 representative rewards | #82 | 0193/0196/0197 (in production) | 1st |
+| 0202 payout engine safety (+ incident fix) | #82 | 0201 (0202 → 0201 drops `payout_reversal`, proven by `run-migration-order-verification.sh`) | 2nd |
+| 0203 earnings policies | #82 | 0202's exact bodies (md5 pins, including `complete_organizer_payout` `f6ca5add…`) | 3rd |
+| 0204 recruiter search | #83 | only production objects (0196's `recruiter_target_is_organizer`, `recruiters`, `check_rate_limit`, `service_providers`) | after the window, own transaction |
+| 0205 cancelled-transfer safety | #84 | 0203 **on the old 0202** (md5 `dbcccdb9…`) | **cannot be applied on #82's head**; re-base first (11.1) |
+
+**Unsafe orders and merges:**
+- **0202 before 0201** drops the `payout_reversal` ledger type. 0203 before 0202, or out of order generally, is refused by the drift guards, which fail closed.
+- **#84's 0205 in step W6a as #84 wrote it:** refused, so the window stops after 0203. Applying 0201–0203 without 0205 is safe on #82's head, but don't plan the window around a step that is guaranteed to fail.
+- **"Fixing" that refusal by reverting 0202 to `efdca0f`** to match 0205's md5 would remove the transfer guard, the exceptions table and the evidence-based branch. Do not do this.
+- **Merging #83 or #84 into `claude/vents-work-earn` before the window** puts 0204/0205 and unrelated UX changes inside the money-critical window. Merge #82 alone.
+- **Merging #82 to `main` while Supabase "Deploy to production" may be on (D7)** could make Supabase try to apply `supabase/migrations` (0014–0205 are not recorded under those versions in production). This is a blocker.
+- **`supabase db push`** must never be used (production's history uses apply-time versions).
+- **Migration number collision:** 0204 (#83) and 0205 (#84) are taken; the D3 adjustment migration becomes **0206**.
+
+### 11.3 PR status (2026-11-02)
+
+| PR | Branch / head | Base | State | Mergeable | Exact remaining blockers |
+|---|---|---|---|---|---|
+| #82 | `claude/vents-work-earn` `6369cde` | `main` | Draft, open | GitHub: no failing check; Vercel Preview Ready | Owner: A1–A7; D1, D2, D3, D4a, D5a, D6 names, D7, D8, D10. Technical: consolidate #84 (11.1); D3 action not built; D4a has no re-point path |
+| #83 | `claude/bold-allen-bpxsd6` `101dcea` | `claude/vents-work-earn` at `efdca0f` | Draft, open | clean test merge with `6369cde` | One failing test in #83 (key-shaped fake value); its doc's "3 unhandled rejections" note is stale (fixed on #82); retarget to `main` after #82; apply 0204 separately; add the RPC to the Preview allowlist if wanted |
+| #84 | `claude/payout-incident-batch-d` `ca55288` | `claude/vents-work-earn` (merge base `efdca0f`) | Draft, open | **conflicts** with `6369cde` (2 files); 0205 refuses on #82's 0203 | Consolidate into #82 and close (11.1) |
+| #81 | `codex/monetization-master-checklist` | `main` | Draft, open | — | Outside Batch D |
+
+### 11.4 The consolidated Batch D checklist (authoritative; replaces the D-tables above and #84's)
+
+**Completed**
+
+| # | Item | Evidence |
+|---|---|---|
+| C1 | Root cause of the 4 paid-but-cancelled ₦100 transfers | §9.2; status-only sweep `20260713100000` + live `complete_organizer_payout` swallowing late success |
+| C2 | 0202 incident fix (evidence-based late success, `payout_exceptions`, transfer guard, exceptions list, report-only Paystack check) | `9eb3fa3`; replay 16/16, payout engine 72/72 |
+| C3 | 0203: refuse authorizing a withdrawal to an inactive bank account | `6369cde`; earnings policy 166/166 |
+| C4 | Rollback snapshot of all 19 replaced functions | 12/12 |
+| C5 | Backup restore drill script | self-test 4/4 |
+| C6 | Owner decisions D4 (both ₦20,000 intended) and D5 (reject root's ₦5,000 later, authorized) recorded | §10.1–10.2 |
+| C7 | D6 requirements (case A: one super admin) | §10.3 |
+| C8 | D3 `earnings_adjustment` design (migration 0206) | §10.4 |
+| C9 | D10 reconciliation process design | §10.7 |
+| C10 | D11 webhook delivery evidenced | §10.8 |
+| C11 | D12 investigated (not attributable); D13 evidence gathered | §10.9–10.10 |
+| C12 | Gap figures aligned with #84 (₦32,350 unsourced = +₦36,450 − ₦4,100); `dfca505f` ₦1,000 source exact | 11.1 |
+| C13 | PR #84 audited; migration order verified; PR #83 test-merged | 11.1–11.3 |
+| C14 | Personal data removed from the current docs | §10, 11.6 |
+
+**Outstanding technical work (Claude can do it; no production access needed)**
+
+| # | Item | Blocks |
+|---|---|---|
+| T1 | **Consolidate #84 into #82:** webhook fallback + tests; re-based 0205 (one state-machine trigger, no-delete trigger, merged integrity report); runbook W6a rewritten; all suites re-run; close #84 | the window plan |
+| T2 | Build D3 `earnings_adjustment` as migration 0206 (after the owner approves, O10) | D2, D10 corrections |
+| T3 | If the owner picks D4a option 2: dual-control "re-point withdrawal to an active account" | paying `91b0afb4`'s 4 requests |
+| T4 | #83: replace the key-shaped fake value; update its stale note; retarget after #82 | merging #83 |
+
+**Blocked (waiting on evidence or a decision)**
+
+| # | Item | Waiting on |
+|---|---|---|
+| B1 | D2 corrections (`dfca505f` −₦1,000 ledger-only; `91b0afb4` +₦200 ledger-only; the ₦32,350) | T2, plus O8 evidence for the ₦36,450 / ₦4,100 |
+| B2 | D10 recording of the 4 transfers | T2, O6, a second super admin (O1) |
+| B3 | Paying `91b0afb4`'s 4 pending requests | D4a, O2, O6 (the ₦300,000 booking must be real money, or ₦44,100 of pending is unbacked) |
+| B4 | Rejecting root's ₦5,000 (D5) | D5a / O1 |
+
+**Owner-only actions (exact steps in §10.13)**
+- **O1:** second super admin.
+- **O2:** confirm payees and choose a D4a path.
+- **O3:** Supabase GitHub integration: turn "Deploy to production" and "Automatic branching" **off**.
+- **O4:** backups: Pro, or a verified manual dump.
+- **O5:** record the Paystack webhook URL.
+- **O6:** Paystack exports: the 4 transfers, and booking `BKG-65aefaef…`.
+- **O7:** who operates which account.
+- **O8:** InsForge cutover export.
+- **O9:** a payee's full name in commit `9eb3fa3`'s history.
+- **O10:** approve building D3 (and T3).
+
+Plus: D1 (approve the window), D10 option (a/b/c), the ₦40 fees in VENTS's books, and approvals A1–A7.
+
+**Deployment-only actions (inside the approved window; runbook §3–§5)**
+1. Preconditions: O3, O4.
+2. P1–P4 preflight.
+3. W1: pause purchases and payouts.
+4. W2: a verified dump.
+5. W4–W6: 0201 → 0202 → 0203.
+6. W6a: re-based 0205, only after T1.
+7. W7: merge #82.
+8. W8: ₦100 purchase test.
+9. W9: confirm the webhook URL, then reopen payouts.
+10. After the window: 0204 with #83; 0206 when built.
+
+### 11.5 Verification (2026-11-02)
+
+| Check | #82 head `6369cde` | #84 head `ca55288` |
+|---|---|---|
+| Local PostgreSQL suites | **16/16 pass**: earnings policy 166, payout engine 72, incident replay 16, rollback snapshot 12, migration order 37, payout gate 27, backup-restore 4, 9 others | its 5 relevant suites pass (47 / 50 / 163 / 37 / 11) |
+| 0205 applied after #82's 0201→0203 | **refused** by its md5 guard (shown locally) | applies (on its own base) |
+| vitest | **2962/2962**, 0 unhandled errors, exit 0 | 2968/2968, exit 0 |
+| `tsc --noEmit` | clean | clean |
+| Production `vite build` (dummy env values) | passes | not re-run (no build-affecting change beyond the webhook) |
+| Test merge #83 onto #82 (2026-11-01) | clean; 3036/3037, the 1 failure is #83's own | — |
+| Merge #84 into #82 | — | conflicts: 2 files (11.1) |
+
+### 11.6 Privacy
+
+The repository is public. This section and §10 name people by role or initials only.
+- #84's changes contain no personal data.
+- Commit `9eb3fa3` still carries one payee's full name in git history (O9).
+
+### 11.7 Next exact action, and the next Claude prompt
+
+**Next exact action (owner, about 10 minutes, no risk):** do **O3** and **O4**, because they gate everything else:
+- **O3:** in Supabase → Project Settings → Integrations → GitHub, set "Deploy to production" and "Automatic branching" off and record the settings.
+- **O4:** choose Pro, or a manual dump in W2.
+
+Then answer **O10** (build D3: yes or no).
+
+**Next Claude prompt (can run in parallel; repository only):**
+
+> Continue VENTS Batch D from `docs/production-readiness-batch-d.md` §11. Consolidate PR #84 into PR #82 (branch `claude/vents-work-earn`) as §11.1 recommends:
+> 1. Port #84's webhook reference fallback, its `needs_review` logging and its 3 webhook tests.
+> 2. Write a re-based `supabase/migrations/0205_payout_cancelled_transfer_safety.sql` with **no** `complete_organizer_payout` patch:
+>    - one state-machine trigger that merges #84's rules with 0202's `organizer_withdrawal_transfer_guard` (remove the duplicate);
+>    - the no-delete trigger;
+>    - `admin_payout_integrity_report()` merged with `admin_list_payout_exceptions()`;
+>    - a guard on #82's 0203 body, or no md5 dependency.
+> 3. Add local suite checks: the July sweep is refused; final states are final; owner, amount and reference are immutable; no hard-delete with history; no conflict with 0202/0203 transitions; rollback leaves it safe.
+> 4. Rewrite runbook W6a; re-run all local Postgres suites, vitest, tsc and the production build.
+> 5. Commit and push to `claude/vents-work-earn`; comment on #84 pointing to the commit and recommend closing it.
+>
+> Do not merge any PR, apply migrations, run any SQL against production (including read-only), change roles, touch withdrawals or balances, or enable sign-ups. Keep personal data out of the repo.
