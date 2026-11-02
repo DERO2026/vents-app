@@ -52,7 +52,7 @@ vi.mock('../../../lib/supabase', () => {
       eq: () => q,
       limit: () => q,
       maybeSingle: () => Promise.resolve({ data: null, error: null }),
-      in: () => Promise.resolve({ data: [], error: null }),
+      in: () => makeQuery([]),
       then: (resolve: any) => resolve({ data: resolveData, error: null }),
     };
     return q;

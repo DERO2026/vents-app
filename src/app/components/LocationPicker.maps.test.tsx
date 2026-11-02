@@ -136,7 +136,7 @@ describe('loadGoogleMaps', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock('../../lib/googleMaps');
-    vi.stubEnv('VITE_GOOGLE_PLACES_API_KEY', 'AIzaTestKeyForUnitTestsOnly');
+    vi.stubEnv('VITE_GOOGLE_PLACES_API_KEY', 'test-places-key-for-unit-tests');
   });
   afterEach(() => {
     vi.unstubAllEnvs();
