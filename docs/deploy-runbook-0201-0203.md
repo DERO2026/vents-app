@@ -17,8 +17,89 @@ re-check them in step P3.
 | A3 | Pause purchases and payouts for the window (`disable_purchases`, `disable_payouts`) | Owner | Stops checkouts and payouts while the database and frontend disagree |
 | A4 | The two admins for withdrawal authorization: one may request; a **different super admin** approves; **neither** may own a withdrawal they act on | Owner names them | 0203 enforces this; with fewer than two eligible admins, no withdrawal can be paid |
 | A5 | What to do with the 5 pending withdrawals (section 6) | Owner | Each is real money leaving VENTS. **Decided in part:** D4 (both ₦20,000 kept) and D5 (root's ₦5,000 to be rejected through an authorized process). Still open: D4a payees (O2) and D5a (who rejects) |
-| A6 | Confirm the Supabase dashboard GitHub integration / branching does **not** auto-apply migrations on merge | Owner (dashboard) | **Branching is enabled on the production project** (default branch created 2026-09-13). The repo has no CI or `config.toml`, but "Deploy to production" would apply `supabase/migrations` on merge. Turn it off (Batch D §10.13 O3) |
-| A7 | Backup method | Owner (dashboard) | **The organization is on the Free plan: no daily backups, no PITR.** Pro upgrade, or a verified manual dump in W2 (D8) |
+| A6 | Confirm the Supabase dashboard GitHub integration / branching does **not** auto-apply migrations on merge (**exact steps: §0a O3**) | Owner (dashboard) | **Branching is enabled on the production project** (default branch created 2026-09-13). The repo has no CI or `config.toml`, but "Deploy to production" would apply `supabase/migrations` on merge. Turn it off (Batch D §10.13 O3) |
+| A7 | Backup method (**exact steps: §0a O4**) | Owner (dashboard) | **The organization is on the Free plan: no daily backups, no PITR.** Pro upgrade, or a verified manual dump in W2 (D8) |
+
+## 0a. Owner steps in the Supabase dashboard before the window can be scheduled (O3, O4)
+
+Claude cannot do these: they are dashboard settings and a credentialed database dump. Do them in this order and record each answer in the A6/A7 rows above.
+
+### O3: stop merges from applying migrations (A6, blocker)
+
+Evidence: Supabase Branching is enabled on project `slrtjxtzhowhwhebjprv` (a default branch `main` exists, created 2026-09-13). If **Deploy to production** is on, a merge to `main` makes Supabase apply `supabase/migrations/*` to production, and they are not recorded under those versions there.
+
+1. Supabase dashboard → project **VENTS** → **Project Settings** → **Integrations** → **GitHub Integration**.
+2. **Record**:
+   - connected repository (expected `DERO2026/vents-app`, or none);
+   - production branch name;
+   - working directory;
+   - the state of **Deploy to production**, **Automatic branching** and **Supabase changes only**.
+3. Turn **Deploy to production** **off**.
+4. Turn **Automatic branching** **off**.
+5. Safest option: **disconnect** the GitHub integration entirely. Nothing in Batch D needs it: every migration is applied by hand (W4–W6c).
+6. Dashboard → **Branches** (Manage branches): confirm only the production branch (`main`) is listed. No preview or persistent branches.
+7. GitHub → account/org `DERO2026` → **Settings** → **Applications** → **Installed GitHub Apps** → **Supabase**: record whether it has access to `vents-app`. Remove that access if you disconnected in step 5.
+
+**Verify:** the integration page shows both toggles off (or "not connected"), and the next push to PR #82 shows no "Supabase" check run (today it shows only Vercel and CodeRabbit).
+
+### O4: a restorable backup (A7, blocker)
+
+The organization is on the **Free plan**: no downloadable daily backups and no point-in-time recovery. Choose one of the two below, and **also** take the W2 dump in the window either way.
+
+**(a) Pro plan.** Dashboard → Organization → **Billing** → upgrade.
+- Then **Database** → **Backups** must list a daily backup (the first can take up to 24 hours).
+- Optional: PITR (**Settings** → **Add-ons**; needs at least Small compute).
+- A daily backup can be up to a day old, so it does not replace the W2 dump.
+
+**(b) Stay on Free.** The manual dump below is the only backup. Rehearse it once **before** scheduling the window.
+
+**Manual dump (W2; rehearse once beforehand):**
+
+1. Use **PostgreSQL 17** client tools: `pg_dump --version` must say 17.x. Production runs PostgreSQL 17.6. An older `pg_dump` refuses, and an older `pg_restore` cannot read a 17 archive.
+2. Dashboard → **Connect** → copy the **Session pooler** connection string (port **5432**, not the 6543 transaction pooler) and your database password.
+3. Dump (read-only for production):
+
+   ```sh
+   pg_dump "<session-pooler-connection-string>" -Fc --no-owner --no-privileges \
+     -f "vents-W2-$(date -u +%Y%m%dT%H%MZ).dump"
+   ```
+
+4. At the same time, in the SQL editor, record the row counts (plain counts need no admin claim):
+
+   ```sql
+   SELECT 'organizer_wallets', count(*) FROM public.organizer_wallets
+   UNION ALL SELECT 'organizer_transactions', count(*) FROM public.organizer_transactions
+   UNION ALL SELECT 'organizer_withdrawal_requests', count(*) FROM public.organizer_withdrawal_requests
+   UNION ALL SELECT 'tickets', count(*) FROM public.tickets
+   UNION ALL SELECT 'service_bookings', count(*) FROM public.service_bookings;
+   ```
+
+**Restore drill** (on your own **Linux or WSL** machine with a local **PostgreSQL 17** server running and `sudo` access; the script restores only into a throwaway local database and refuses if a hosted database URL is in the environment):
+
+```sh
+unset DATABASE_URL PGHOST PGPASSWORD PGDATABASE   # the script refuses if any is set
+git checkout claude/vents-work-earn
+bash scripts/ops/verify-backup-restore.sh /path/to/vents-W2-....dump
+```
+
+**Pass criteria:**
+- the output ends with **`Functions matching: 19/19`** and exit code 0;
+- the printed money-table counts equal the counts from step 4.
+
+Restore errors about roles, extensions or Supabase-managed schemas are expected and counted; only the public schema is checked.
+
+**19/19 holds only for a dump taken before 0201 is applied** (it checks the 19 pre-apply function bodies). Take the W2 dump after W1 and before W4. Any other result: **stop**, the window does not start.
+
+**Store** the dump encrypted (for example `gpg -c vents-W2-….dump`), outside the repository, with the P2 function capture. It contains personal data: never commit or share it.
+
+**Storage files** (avatars, event images, verification documents) are not in a database dump. If any bucket must survive a disaster, download it separately before the window.
+
+### Also dashboard or owner only (not blocking the schedule)
+
+- **Organization → Team:** keep project access limited to the owner and turn on MFA. Anyone with SQL access can act as any admin (§3a).
+- **First use of §3a** (P1): confirm in the SQL editor that the read-only admin-claim pattern returns rows.
+- **O1:** a second super admin is appointed through the app's audited role change, not the dashboard.
+- **O5:** the Paystack webhook URL is set in the **Paystack** dashboard, not Supabase.
 
 ## 1. What is ready in the repository (Batch C)
 

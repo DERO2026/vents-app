@@ -1374,8 +1374,8 @@ No other code or test gap found: every new money function has a local suite, its
 
 **Pending: owner approvals** (runbook §0)
 
-- [ ] **A6:** Supabase "Deploy to production" and "Automatic branching" **off** (O3). **BLOCKER**
-- [ ] **A7:** backups: Pro, or a verified manual dump in W2 (O4). **BLOCKER**
+- [ ] **A6:** Supabase "Deploy to production" and "Automatic branching" **off** (O3; exact steps in runbook §0a). **BLOCKER**
+- [ ] **A7:** backups: Pro, or a verified manual dump in W2 (O4; exact steps in runbook §0a, PostgreSQL 17 tools; drill must print 19/19). **BLOCKER**
 - [ ] **A1:** apply 0201 → 0202 → 0203 → 0205 → 0206 → 0207 (not 0204)
 - [ ] **A2:** merge #82 right after W6c
 - [ ] **A3:** pause purchases and payouts for the window
@@ -1403,7 +1403,7 @@ No other code or test gap found: every new money function has a local suite, its
 - [ ] **O7:** who operates each staff account and `91b0afb4`
 - [ ] **O8:** InsForge cutover export (the ₦36,450 / ₦4,100)
 - [ ] **O9:** a payee's full name in the history of `9eb3fa3`: accept or purge
-- [ ] Close PR #84
+- ~~Close PR #84~~ **closed without merging 2026-11-04**
 - [ ] Limit production SQL/dashboard access (G2)
 - [ ] Verify the §3a admin-check pattern in P1 (G1)
 
