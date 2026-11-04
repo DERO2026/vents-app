@@ -112,6 +112,28 @@ SELECT
 
 `in_flight_payouts` must be 0. A transfer in flight while payout functions are replaced must first finish, through the webhook or Reconcile.
 
+## 3a. Running admin-only checks in the SQL editor (read-only)
+
+Several checks below call functions that answer only to an admin:
+- `admin_earnings_reconciliation()`, `admin_payout_integrity_report()`, `admin_list_payout_exceptions()`;
+- user-scoped ones such as `get_earnings_holds()`.
+
+In the Supabase SQL editor `auth.uid()` is NULL, so they return **no rows** (the reconciliation filters with `WHERE is_admin()`) or raise "Admin access required". **An empty reconciliation in the SQL editor does not mean "no gaps".** Run them like this, always inside a **read-only** transaction:
+
+```sql
+BEGIN READ ONLY;
+SELECT set_config('request.jwt.claims',
+                  json_build_object('sub', '<a super admin user id>', 'role', 'authenticated')::text, true);
+SELECT * FROM public.admin_earnings_reconciliation();
+-- SELECT issue, count(*) FROM public.admin_payout_integrity_report() GROUP BY 1;
+ROLLBACK;
+```
+
+- `READ ONLY` makes any write fail, and `ROLLBACK` discards the setting. Never use this pattern to file or approve an admin action: that would impersonate an admin and defeat the two-person rule.
+- This is standard Supabase behaviour (`auth.uid()` reads the `sub` claim). It is **not yet verified against production**; check it the first time in P1.
+
+**Known limitation:** anyone with SQL access to the production project can set these claims and act as any admin. Two-admin control protects against app users and individual admins, not against database owners. Keep dashboard and SQL access limited to the owner, and treat it as part of D6/O1.
+
 ## 4. Window (W1–W9)
 
 | Step | Action | Verify (read-only) | Stop if |
@@ -120,13 +142,13 @@ SELECT
 | W2 | Take the backup (A7/D8). **On the Free plan there is no dashboard backup or PITR:** take `pg_dump -Fc` (or `supabase db dump` for schema and data) through the Session pooler URL, run `scripts/ops/verify-backup-restore.sh <dump>` locally, and store the dump encrypted outside the repository. On Pro: also record the latest daily backup time. Store the P2 output next to it | drill prints `Functions matching: 19/19`, plus money-table counts that match P4 | no verified dump → stop |
 | W3 | P1–P4 | as above | any mismatch |
 | W4 | In a session with `SET lock_timeout = '5s';`, apply **0201** (one transaction; SQL editor or `psql -1 -v ON_ERROR_STOP=1 -f`; **never `supabase db push`**) | `get_my_representative_rewards()` exists; `SELECT count(*) FROM public.representative_attributions;` = 2; `SELECT payouts_enabled, legacy_commission_reconciled FROM public.earn_settings;` = false/false | error → section 7 row R1 |
-| W5 | Apply **0202** (do **not** set `vents.migration_local_test`) | `SELECT * FROM public.admin_earnings_reconciliation();` lists only the 2 known gaps; `SELECT count(*) FROM public.organizer_withdrawal_requests r WHERE r.status IN ('cancelled','failed','rejected') AND r.transfer_code IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.organizer_transactions t WHERE t.withdrawal_request_id = r.id AND t.type = 'payout');` = **4** (the four paid-but-cancelled ₦100 transfers; any other number: stop); `SELECT count(*) FROM public.payout_exceptions;` = 0; `SELECT count(*) FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard';` = 1; `SELECT pg_get_constraintdef(oid) LIKE '%payout_reversal%' FROM pg_constraint WHERE conname = 'organizer_transactions_type_check';` = true | error (including the drift guard) → R1 |
+| W5 | Apply **0202** (do **not** set `vents.migration_local_test`) | `SELECT * FROM public.admin_earnings_reconciliation();` **run as in §3a** (otherwise it returns no rows) lists only the 2 known gaps; `SELECT count(*) FROM public.organizer_withdrawal_requests r WHERE r.status IN ('cancelled','failed','rejected') AND r.transfer_code IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.organizer_transactions t WHERE t.withdrawal_request_id = r.id AND t.type = 'payout');` = **4** (the four paid-but-cancelled ₦100 transfers; any other number: stop); `SELECT count(*) FROM public.payout_exceptions;` = 0; `SELECT count(*) FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard';` = 1; `SELECT pg_get_constraintdef(oid) LIKE '%payout_reversal%' FROM pg_constraint WHERE conname = 'organizer_transactions_type_check';` = true | error (including the drift guard) → R1 |
 | W6 | Apply **0203** | `SELECT count(*) FROM pg_proc WHERE prosrc LIKE '%[0203]%';` ≥ 14; `SELECT public.earnings_release_delay();` = 48:00:00; `SELECT column_default FROM information_schema.columns WHERE table_name='tickets' AND column_name='fee_model';` mentions `v2_4_5` | error → R1 |
-| W6a | Apply **0205** (`0205_payout_cancelled_transfer_safety.sql`, its own transaction; the version rebuilt on this branch: it has no md5 dependency and does not touch `complete_organizer_payout`) | `SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.organizer_withdrawal_requests'::regclass AND NOT tgisinternal AND tgname LIKE 'organizer_withdrawal%';` = `organizer_withdrawal_requests_guard,organizer_withdrawal_requests_no_delete` (0202's `organizer_withdrawal_transfer_guard` is gone). As an admin (Admin → SQL is not an admin session, so run it from the app or skip it): `SELECT issue, count(*) FROM public.admin_payout_integrity_report() GROUP BY 1;` shows `transfer_on_cancelled_request_funds_not_returned` = 4 | error (including its prerequisite check) → R1. 0201–0203 without 0205 are still safe (0202 has its own guard), so a failed W6a does not require rolling back W4–W6 |
+| W6a | Apply **0205** (`0205_payout_cancelled_transfer_safety.sql`, its own transaction; the version rebuilt on this branch: it has no md5 dependency and does not touch `complete_organizer_payout`) | `SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.organizer_withdrawal_requests'::regclass AND NOT tgisinternal AND tgname LIKE 'organizer_withdrawal%';` = `organizer_withdrawal_requests_guard,organizer_withdrawal_requests_no_delete` (0202's `organizer_withdrawal_transfer_guard` is gone). As in §3a (read-only, admin claim; no app screen calls it yet): `SELECT issue, count(*) FROM public.admin_payout_integrity_report() GROUP BY 1;` shows `transfer_on_cancelled_request_funds_not_returned` = 4 | error (including its prerequisite check) → R1. 0201–0203 without 0205 are still safe (0202 has its own guard), so a failed W6a does not require rolling back W4–W6 |
 | W6b | Apply **0206** (`0206_earnings_adjustment.sql`, its own transaction). It adds the audited two-admin earnings adjustment and moves no money | `SELECT to_regclass('public.earnings_adjustments') IS NOT NULL, position('execute_earnings_adjustment' IN pg_get_functiondef('public.approve_admin_action(uuid)'::regprocedure)) > 0, pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'organizer_transactions_type_check')) LIKE '%adjustment_debit%';` = true/true/true; `SELECT count(*) FROM public.earnings_adjustments;` = 0 | error → R1; 0201–0205 stay valid without it. **No adjustment is filed in the window:** each correction (D2, D10) is a separate, owner-approved, two-admin action afterwards |
 | W6c | Apply **0207** (`0207_withdrawal_bank_reassignment.sql`, its own transaction). It adds the audited two-admin withdrawal bank-account reassignment (D4a) and a guard that lets a withdrawal's destination change only through it. It moves no money and changes no withdrawal | `SELECT to_regclass('public.withdrawal_bank_reassignments') IS NOT NULL, EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'organizer_withdrawal_destination_guard'), position('execute_withdrawal_bank_reassignment' IN pg_get_functiondef('public.approve_admin_action(uuid)'::regprocedure)) > 0;` = true/true/true; `SELECT count(*) FROM public.withdrawal_bank_reassignments;` = 0 | error → R1; 0201–0206 stay valid without it. **No reassignment is filed in the window** |
 | W7 | Merge PR #82 (A2); wait for the Vercel production deployment to be **Ready** | production `/` serves the new bundle; checkout shows "Service fee (4%)"; Admin → Payouts shows the authorize step | build fails → R2 |
-| W8 | Clear `disable_purchases` only. One ₦100 live purchase by the owner (PAY-4) | charged ₦104; the organizer's `on_hold_kobo` rises by ₦95; `get_earnings_holds()` shows a 48 h release | any other amount → set `disable_purchases` again, R3 |
+| W8 | Clear `disable_purchases` only. One ₦100 live purchase by the owner (PAY-4) | charged ₦104; the organizer's `on_hold_kobo` rises by ₦95; `get_earnings_holds()` (run as in §3a with the organizer's id as `sub`) shows a 48 h release | any other amount → set `disable_purchases` again, R3 |
 | W9 | **First** confirm D11: the Paystack LIVE webhook URL is the production `/api/webhook/paystack` (Paystack dashboard → Settings → API Keys & Webhooks). Then clear `disable_payouts`. Watch Sentry and webhook logs for 30 minutes. The first real payout must reach `completed` from the webhook alone (no Reconcile) | no new errors; first payout completed by webhook | webhook URL not confirmed → keep `disable_payouts`; errors → R3 |
 | W10 | **After** the window and only once W9 is green: PR #83 → retarget to `main` (if not automatic) → CI green → owner merges #83 → apply **0204** alone (`0204_search_recruiter_invite_targets.sql`, its own transaction). 0204 touches no payout or earnings object, so it is not part of W4–W6c | `SELECT pg_get_functiondef('public.search_recruiter_invite_targets(text)'::regprocedure) IS NOT NULL;` | error → drop the function; the app falls back to the old search |
 
@@ -134,7 +156,7 @@ SELECT
 
 Go when all hold:
 - W4–W8 verified;
-- `admin_earnings_reconciliation()` shows nothing new;
+- `admin_earnings_reconciliation()` (run as in §3a) shows nothing new;
 - Admin → Payouts → **Check payout exceptions** reports exactly the four known requests as `paid_not_recorded` and nothing else (report only; resolve them later per Batch D §9.5, never by editing the rows);
 - the test purchase settled as expected;
 - no Sentry errors from `/api/webhook/paystack` or `/api/wallet/*`.
@@ -156,7 +178,7 @@ What 0203 requires for each one (enforced in SQL; proven locally):
 Recommendation:
 - **Before the window:** contact the organizer about the identical ₦20,000 pair. If it is a duplicate, reject one (a single admin can; it returns ₦20,000 to their available balance and moves no money out of VENTS). Do not pay anything on the old engine.
 - **After the window, for each remaining request:**
-  1. Run `admin_earnings_reconciliation()` and confirm the organizer's wallet has **no ledger gap**. If it is one of the two gap wallets, resolve the gap first with an audited adjustment; never pay out money the ledger cannot explain.
+  1. Run `admin_earnings_reconciliation()` (as in §3a) and confirm the organizer's wallet has **no ledger gap**. If it is one of the two gap wallets, resolve the gap first with an audited adjustment; never pay out money the ledger cannot explain.
   2. Confirm the bank account with the organizer (the requests are about 2 months old).
   3. Then authorize with two admins and pay.
 

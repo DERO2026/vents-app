@@ -1288,3 +1288,139 @@ Each is exercised by its suite: state machine (R1a), earnings adjustment (R1b, p
 - **Close PR #84.**
 
 **Technical work:** none outstanding in code.
+
+## 17. Status review (2026-11-04, later)
+
+**No production access of any kind**; no migration applied; nothing merged, deployed, approved or moved.
+
+### 17.1 PR #84 can be closed without merging
+
+Verified file by file against #82's head (`1ed74fc`):
+
+| #84 file | In #82 |
+|---|---|
+| `api/webhook/paystack.ts` | **byte-identical** (reference fallback, `needs_review` logging) |
+| `api/_lib/payoutCancelledTransferIncident.security.test.ts` | ported; its migration-text tests rewritten for the rebuilt 0205 (15 tests) |
+| `api/_lib/payoutEngine.security.test.ts` | ported (same assertion change) |
+| `supabase/migrations/0205_payout_cancelled_transfer_safety.sql` | **superseded** by #82's rebuilt 0205. #84's version refuses to apply on #82 (md5 pin) and patches `complete_organizer_payout`, which #82's 0202 already handles |
+| `scripts/local-pg-test/run-payout-cancelled-transfer-verification.sh` (47 checks) | covered by `run-payout-incident-replay.sh`, `run-payout-state-machine-verification.sh` (the sweep verbatim), and the payout engine / earnings policy legacy-cancel and 0203 path checks, all under 0205 |
+| `AdminPayoutsScreen.doubleSubmit.test.tsx` | equivalent line (#82 also has a comment) |
+| `docs/money-flow-audit.md` (P0-1 note, P0-1b row) | **brought over today**, updated to the final design (P0-1, P0-4, P1-6) |
+| `docs/production-readiness-batch-d.md`, `docs/deploy-runbook-0201-0203.md` | superseded by §11–§17 and runbook W6a–W6c |
+
+**Nothing of #84 remains unported.** Closing it loses nothing; merging it would conflict and its 0205 would refuse. **Owner action: close #84.**
+
+### 17.2 Heads (unchanged by today's review except this docs commit)
+
+| Ref | Head | Note |
+|---|---|---|
+| `main` | `5612ee0` | unchanged since 2026-10-30 |
+| PR #82 `claude/vents-work-earn` | this commit, on `1ed74fc` | Draft; merges 1st |
+| PR #83 `claude/bold-allen-bpxsd6` | `cc00756` | Draft; base `claude/vents-work-earn`; merges 2nd, after retargeting to `main` |
+| PR #84 `claude/payout-incident-batch-d` | `ca55288` | Draft, open; close without merging |
+
+### 17.3 Execution and rollback order (verified)
+
+**Apply (window):**
+1. P1–P4 preflight.
+2. W1: pause.
+3. W2: verified backup.
+4. W4 0201 → W5 0202 → W6 0203 → W6a 0205 → W6b 0206 → W6c 0207, each in its own transaction.
+5. W7: merge #82.
+6. W8 / W9: checks, reopen.
+
+**After the window:** W10 (retarget #83, merge, 0204 alone).
+
+Each later migration refuses without its predecessors, and each suite tests this:
+- 0205 needs 0202/0203;
+- 0206 needs 0203/0205;
+- 0207 needs 0203/0205.
+
+**Undo:** R1c (0207) → R1b (0206) → R1a (0205); R3 for the 19 pre-0201 functions.
+- R1a refuses while 0206 exists;
+- R1b and R1c refuse once used, or while a request is pending.
+
+**Checked today, ad hoc** (a scratch run of the reassignment suite; nothing committed): undoing **0206 with 0207 still installed** works. It unwires 0206 only; 0203's and 0207's wiring and the destination guard stay. R1a then succeeds and restores 0202's guard beside 0207's.
+
+### 17.4 Gaps found today (no production change)
+
+| # | Gap | Severity | Done |
+|---|---|---|---|
+| G1 | **Admin-only checks in the runbook could not work as written.** In the SQL editor `auth.uid()` is NULL: `admin_earnings_reconciliation()` returns **no rows** (it filters with `WHERE is_admin()`), and `admin_payout_integrity_report()` raises. W5's "lists only the 2 known gaps" would have read as a false all-clear | High (false verification) | Runbook §3a added: run them in a `BEGIN READ ONLY` transaction with `request.jwt.claims.sub` set to a super admin; W5, W6a, W8, §5 and §6 point to it. **The pattern itself is standard Supabase behaviour but not yet verified against production: check it in P1** |
+| G2 | **Two-admin control does not bind database owners.** Anyone with SQL access can set those claims and act as any admin | Inherent | Recorded in §3a; owner keeps dashboard and SQL access limited (part of D6/O1) |
+| G3 | `admin_payout_integrity_report()` and `admin_earnings_reconciliation()` have **no app screen**; only §3a reaches them | Low | Not built (optional **T5**: a read-only Admin → Payouts "Integrity" view). Not a deployment blocker |
+| G4 | `docs/money-flow-audit.md` was stale (P0-1 described the old take-back; no 0205–0207) | Docs | Updated |
+
+No other code or test gap found: every new money function has a local suite, its undo is tested, and the app tests scan for bypasses.
+
+### 17.5 The complete Batch D checklist
+
+**Done**
+
+- ~~Root cause of the 4 paid-but-cancelled transfers~~ (§9)
+- ~~0202 incident fix~~ (`9eb3fa3`)
+- ~~0203: refuse authorizing an inactive account~~ (`6369cde`)
+- ~~T1: #84 consolidated; 0205 rebuilt~~ (`12ba4c9`)
+- ~~T2: 0206 earnings adjustment~~ (`cc61d26`)
+- ~~T3: 0207 withdrawal reassignment~~ (`a2ac0da`)
+- ~~T4: #83 test fix~~ (`cc00756`)
+- ~~0205 authorization guard; undo order~~ (`1ed74fc`)
+- ~~Rollback snapshot (19 functions); backup-restore drill script~~
+- ~~D4 (both ₦20,000 kept) and D5 (root's ₦5,000 to be rejected through an authorized process) recorded~~
+- ~~D3 / O10 (build 0206/0207)~~
+- ~~D6 requirements; D11 webhook delivery evidenced; D12 and D13 investigated~~
+- ~~PR #84 audited and fully ported~~ (§17.1)
+- ~~Runbook admin-check method~~ (§3a, G1)
+
+**Pending: owner approvals** (runbook §0)
+
+- [ ] **A6:** Supabase "Deploy to production" and "Automatic branching" **off** (O3). **BLOCKER**
+- [ ] **A7:** backups: Pro, or a verified manual dump in W2 (O4). **BLOCKER**
+- [ ] **A1:** apply 0201 → 0202 → 0203 → 0205 → 0206 → 0207 (not 0204)
+- [ ] **A2:** merge #82 right after W6c
+- [ ] **A3:** pause purchases and payouts for the window
+- [ ] **A4:** name the requesting and approving admins (D6)
+- [ ] **A5:** pending withdrawals. Partly decided; D4a payees and D5a open
+
+**Pending: owner decisions**
+
+- [ ] **D1:** approve and schedule the window
+- [ ] **D2:** corrections for `dfca505f` −₦1,000 (ledger), `91b0afb4` +₦200 (ledger) and the ₦32,350 (keep with entries, or debit)
+- [ ] **D4a:** confirm the payee of each `91b0afb4` request (O2), after the organizer adds a verified account
+- [ ] **D5a:** who rejects root's ₦5,000 (a second super admin, or a written exception)
+- [ ] **D10:** option a/b/c for the 4 paid transfers
+- [ ] **D13:** confirm whether `91b0afb4` is an internal test account
+- [ ] Record the ₦40 Paystack fees in VENTS's books
+
+**Pending: operational prerequisites**
+
+- [ ] **O1:** a second super admin (not the root account holder)
+- [ ] **O2:** organizer confirmations (payees, including "C.J.N." for ₦40,000)
+- [ ] **O3:** see A6
+- [ ] **O4:** see A7
+- [ ] **O5:** record the Paystack LIVE webhook URL
+- [ ] **O6:** Paystack exports (the 4 transfers; booking `BKG-65aefaef…`)
+- [ ] **O7:** who operates each staff account and `91b0afb4`
+- [ ] **O8:** InsForge cutover export (the ₦36,450 / ₦4,100)
+- [ ] **O9:** a payee's full name in the history of `9eb3fa3`: accept or purge
+- [ ] Close PR #84
+- [ ] Limit production SQL/dashboard access (G2)
+- [ ] Verify the §3a admin-check pattern in P1 (G1)
+
+**Pending: deployment (in the window, after the above)**
+
+- [ ] P1–P4, W1–W3
+- [ ] W4–W6c (0201 → 0207 excluding 0204)
+- [ ] W7: merge #82
+- [ ] W8–W9: checks, reopen
+
+**Pending: after the window**
+
+- [ ] W10: retarget #83 to `main`, merge it, apply 0204 alone
+- [ ] D4a: organizer adds an account → reassign (two admins) → authorize (two admins) → pay
+- [ ] D5: reject root's ₦5,000 per D5a
+- [ ] D2 / D10: corrections through 0206 (two admins)
+
+**Optional technical**
+
+- [ ] T5: read-only Admin "Integrity" view for the two reports (G3)
