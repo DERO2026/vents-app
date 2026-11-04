@@ -205,7 +205,7 @@ Record the answers in the runbook's A6 row before approving the window.
 
 | # | Decision | Needed before | Options |
 |---|---|---|---|
-| D1 | Apply 0201 → 0202 → 0203 and merge PR #82 in one window (runbook A1–A3) | the window | **Open** — approve / defer |
+| D1 | Apply 0201 → 0202 → 0203 → 0205 → 0206 → 0207 and merge PR #82 in one window (runbook A1–A3); 0204 with PR #83 afterwards (W10) | the window | **Open** — approve / defer |
 | D2 | Correct the two wallet gaps (section 10.9) | paying wallet `91b0afb4`; closing PAY-5 | **Open.** `dfca505f` ₦1,000 and `91b0afb4` ₦200: sources exact, ledger-only corrections ready to file once D3 is built. `91b0afb4` ₦36,450 and ₦4,500: still unattributed |
 | D3 | Build the dual-control `earnings_adjustment` action | any correction in D2, D10 | **Built as 0206 (T2, 2026-11-02, at the owner's instruction); not applied** (§13) |
 | D4 | The two ₦20,000 requests | — | **Decided 2026-11-01 (owner): both intended, ₦40,000 total, keep both; normal verification and two-admin approval.** New blocker found: their bank account is deactivated (section 10.1, D4a) |
@@ -213,8 +213,8 @@ Record the answers in the runbook's A6 row before approving the window.
 | D5 | Root's own ₦5,000 (`e7ca4751`) | — | **Decided 2026-11-01 (owner): to be cancelled/rejected later through an authorized process; not now; no bypass of two-admin approval.** How (D5a): section 10.2 |
 | D5a | Who performs that rejection: today only root can (single super admin), which is a self-action | executing D5 | **Open** — a second super admin, or a written owner exception (section 10.2) |
 | D6 | Requester and approver for each withdrawal | after the window | **Requirements complete (section 10.3).** Owner names the people; one role change is advisable (second super admin), not made |
-| D7 | Supabase GitHub integration cannot apply migrations on merge | merging PR #82 | **Open, blocker.** Branching is enabled on the production project; whether "Deploy to production" is on cannot be read from here (section 10.5) |
-| D8 | Backup and restore | the window | **Open, blocker.** The organization is on the **Free plan: no daily backups, no PITR** (section 10.6) |
+| D7 | Supabase GitHub integration cannot apply migrations on merge (exact steps: runbook §0a O3) | merging PR #82 | **Open, blocker.** Branching is enabled on the production project; whether "Deploy to production" is on cannot be read from here (section 10.5) |
+| D8 | Backup and restore (exact steps: runbook §0a O4) | the window | **Open, blocker.** The organization is on the **Free plan: no daily backups, no PITR** (section 10.6) |
 | D9 | ~~The 4 cancelled ₦100 transfers: paid or not~~ | — | **Answered 2026-10-31: all four paid** |
 | D10 | Recording the four paid-but-cancelled transfers | closing PAY-6 | **Process designed (section 10.7)**; option choice and an independent approver still owner's |
 | D11 | Paystack LIVE webhook | W9 | **Delivery evidenced (section 10.8)**; the exact URL still needs one dashboard look |
@@ -1424,3 +1424,133 @@ No other code or test gap found: every new money function has a local suite, its
 **Optional technical**
 
 - [ ] T5: read-only Admin "Integrity" view for the two reports (G3)
+
+## 18. Owner approval register and window checklist (2026-11-04, final)
+
+**No production access of any kind.** Heads:
+- `main` is at `5612ee0`;
+- PR #82 is at this commit, on top of `0c592d9` (Draft);
+- PR #83 is at `cc00756` (Draft);
+- PR #84 is **closed without merging**.
+
+### 18.1 Register
+
+Status: **Done**, **Decided**, **Open**. Who acts: **Owner-dash** (Supabase/GitHub/Paystack dashboard), **Owner** (a decision or knowledge), **Admins** (two named admins in the app), **Claude** (repository only).
+
+| # | Item | Status | Who acts | Blocks |
+|---|---|---|---|---|
+| A1 | Apply 0201 → 0202 → 0203 → 0205 → 0206 → 0207 (not 0204) | Open | Owner | the window |
+| A2 | Merge #82 right after W6c | Open | Owner | the window |
+| A3 | Pause purchases and payouts for the window | Open | Owner (Admin → System, in W1) | the window |
+| A4 | Name the requester and the approver admins | Open | Owner | payouts after the window |
+| A5 | The 5 pending withdrawals | Decided in part (D4, D5); D4a payees and D5a open | Owner | payouts after the window |
+| A6 | Supabase GitHub integration cannot apply migrations (§0a O3) | **Open: BLOCKER** | **Owner-dash** | scheduling |
+| A7 | Backup method and a rehearsed restore drill (§0a O4) | **Open: BLOCKER** | **Owner-dash** (+ own Linux/WSL with PostgreSQL 17) | scheduling |
+| D1 | Approve and schedule the window | Open | Owner | the window |
+| D2 | Wallet corrections: `dfca505f` −₦1,000 (ledger); `91b0afb4` +₦200 (ledger); the ₦32,350 (keep with entries / debit) | Open | Owner, then Admins via 0206 | after the window |
+| D3 | Build the adjustment action | **Done** (0206, not applied) | — | — |
+| D4 | The ₦20,000 pair | **Decided** (keep both) | — | — |
+| D4a | Move the 4 `91b0afb4` requests to an active account | Mechanism **done** (0207); payees open | Organizer + Owner (O2), then Admins | after the window |
+| D5 | Root's ₦5,000 | **Decided** (reject later, authorized) | — | — |
+| D5a | Who rejects it | Open | Owner (O1 or a written exception) | after the window |
+| D6 | Requester/approver rules | Requirements **done**; names = A4 | Owner | after the window |
+| D7 | = A6 | **Open: BLOCKER** | Owner-dash | scheduling |
+| D8 | = A7 | **Open: BLOCKER** | Owner-dash | scheduling |
+| D9 | Were the 4 transfers paid | **Done** (all paid) | — | — |
+| D10 | Record the 4 paid transfers (option a/b/c) | Open | Owner, then Admins via 0206 (approver independent of payee) | after the window |
+| D11 | Paystack webhook delivery | Evidenced; URL to record (O5) | **Owner-dash (Paystack)** | W9 |
+| D12 | Where the ₦400 went | Investigated; needs O8 | Owner | D10 (c), D2 |
+| D13 | Is `91b0afb4` an internal test account | Open | Owner (O7) | D2, D10 |
+| O1 | Second super admin (not the root account holder) | Open | Owner, via the app's audited role change | D5a, A4, D10 |
+| O2 | Organizer confirms payees (incl. "C.J.N." for ₦40,000) | Open | Owner + organizer | D4a |
+| O3 | = A6 | **Open: BLOCKER** | **Owner-dash** | scheduling |
+| O4 | = A7 | **Open: BLOCKER** | **Owner-dash** | scheduling |
+| O5 | Record the Paystack LIVE webhook URL | Open | **Owner-dash (Paystack)** | W9 |
+| O6 | Paystack exports (4 transfers; booking `BKG-65aefaef…`) | Open | **Owner-dash (Paystack)** | D10, D2 |
+| O7 | Who operates each staff account and `91b0afb4` | Open | Owner | D13 |
+| O8 | InsForge cutover export | Open | Owner | D12, D2 |
+| O9 | A payee's full name in the history of `9eb3fa3` | Open | Owner (GitHub) | privacy |
+| O10 | Build 0206/0207 | **Done** | — | — |
+| — | Close PR #84 | **Done** (closed, not merged) | — | — |
+| — | Limit production SQL/dashboard access; MFA | Open | **Owner-dash** (Organization → Team) | G2 |
+| — | Record the ₦40 Paystack fees in VENTS's books | Open | Owner/accountant | D10 |
+
+**Claude can prepare (repository only, no production):**
+- nothing is required before scheduling;
+- optional: T5 (a read-only admin Integrity view);
+- after O6/O8: draft the exact D2/D10 adjustment requests (amounts, reasons, evidence references) for two admins to file;
+- after the window: retarget notes and #83's merge follow-up.
+
+### 18.2 Blockers to scheduling the window
+
+Exactly two, both in the dashboard:
+1. **A6/O3:** Supabase GitHub integration: "Deploy to production" and "Automatic branching" off (or disconnected). Verify that no "Supabase" check runs on #82.
+2. **A7/O4:** a backup path. Pro, or the manual dump: PostgreSQL 17 `pg_dump` via the Session pooler, rehearsed once, with the restore drill printing `Functions matching: 19/19`.
+
+**Then:** D1, A1–A3, plus A4 names if payouts should restart the same day.
+
+### 18.3 Window execution checklist (runbook §2–§5)
+
+1. **T−1:**
+   - #82 CI green and Draft lifted by the owner (not merged);
+   - A6/A7 recorded;
+   - **no pending withdrawal paid or rejected**;
+   - window announced (60–90 min).
+2. **W1, pause:** Admin → System sets `disable_purchases` and `disable_payouts`. Verify true/true.
+3. **W2, backup:**
+   - run **P2** and save its output;
+   - run `pg_dump -Fc` (PostgreSQL 17, Session pooler) and record the row counts;
+   - run `scripts/ops/verify-backup-restore.sh <dump>`. It must print **19/19**, with matching counts;
+   - store the dump encrypted, outside the repository.
+4. **W3, preflight:**
+   - **P1**: all 8 checks true (no 0192 and no 0201–0207 objects);
+   - **P3**: 18 md5s match;
+   - **P4**: all 0, including `in_flight_payouts`.
+
+   Any mismatch: stop.
+5. **W4, apply 0201** (`SET lock_timeout = '5s'`, one transaction, never `supabase db push`). Verify.
+6. **W5, 0202.** Verify, with §3a for the reconciliation; 4 paid-but-cancelled requests; the 0202 guard present.
+7. **W6, 0203.** Verify (≥14 `[0203]` markers; 48 h delay; `v2_4_5`).
+8. **W6a, 0205.** Verify: 2 triggers; 0202's guard gone; integrity report = 4 via §3a.
+9. **W6b, 0206.** Verify: table, wiring, ledger types; 0 adjustments.
+10. **W6c, 0207.** Verify: table, destination guard, wiring; 0 reassignments.
+11. **W7, merge PR #82** (A2). Wait for the Vercel production deployment to be **Ready**. Checkout shows "Service fee (4%)".
+12. **W8, reopen purchases only.** One ₦100 live purchase is charged ₦104 and puts ₦95 on hold with a 48 h release (§3a).
+13. **W9, confirm the webhook URL (O5), then reopen payouts.** Watch 30 min. The first payout must complete by webhook.
+14. **Go / no-go (§5):**
+    - the reconciliation shows nothing new;
+    - "Check payout exceptions" shows exactly the 4 known requests;
+    - no Sentry errors.
+
+On any failure: R1 (a migration fails: it rolls back by itself, so stop). Undo order: **R1c → R1b → R1a**, then R3 only if unavoidable. R2: frontend fails, keep everything paused. R4: data damage, restore the W2 dump.
+
+### 18.4 Order verified against the files
+
+- `supabase/migrations/` on #82 holds 0201, 0202, 0203, 0205, 0206 and 0207. 0204 exists only on #83.
+- Each migration refuses without its predecessors:
+  - 0202's drift guard requires the 2026-10-30 production bodies or its own;
+  - 0203 pins 0202's bodies;
+  - 0205 refuses without 0202 + 0203;
+  - 0206 and 0207 each refuse without 0203 + 0205.
+- Undo files: `undo_0207` (R1c), `undo_0206` (R1b), `undo_0205` (R1a; refuses while 0206 exists), `pre_0201_0203_functions.sql` (R3).
+- All are exercised by the local suites (19/19 at `1ed74fc`; no SQL changed since).
+
+### 18.5 After the window
+
+1. **W10:** retarget #83 to `main` (do not do this before #82 merges). CI green, owner merges, then apply **0204** alone and verify `search_recruiter_invite_targets(text)`.
+2. **D4a:**
+   1. the organizer adds and verifies a bank account;
+   2. O2 confirms each payee;
+   3. Admins: "Move to another bank account" (0207, two admins) for each of the 4 requests;
+   4. then `authorize_withdrawal` (two admins);
+   5. then pay.
+3. **D5:** reject root's ₦5,000 per D5a, after O1, by a super admin other than root.
+4. **D2 / D10:** after O6/O7/O8 and the owner's choices, two admins file the corrections through 0206:
+   - a `ledger_only` debit of ₦1,000 on `dfca505f`;
+   - a `ledger_only` credit of ₦200 on `91b0afb4`;
+   - four `late_recorded_payout` entries of ₦100;
+   - the ₦32,350 as decided.
+
+   The approver must not be the payee's account holder.
+5. **Reconcile:** after each correction, `admin_earnings_reconciliation()` (§3a) moves by exactly the amount. Record the ₦40 fees in VENTS's books.
+6. **Optional:** T5 (read-only Integrity view); O9 (history purge decision).

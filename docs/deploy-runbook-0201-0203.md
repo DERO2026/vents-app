@@ -121,9 +121,9 @@ P2 remains the authoritative capture. See `docs/production-readiness-batch-d.md`
 
 1. Merge-readiness of PR #82: CI green, Draft lifted by the owner, review done. **Do not merge yet** (that is step W7).
 2. Owner confirms A6 and A7 in the Supabase dashboard.
-3. Owner decides A5 (section 6). Any rejection of a duplicate can happen now: it needs one admin and moves no money out of VENTS.
+3. A5 is decided in part: D4 keeps both ₦20,000 requests (**do not reject either**), and D5 rejects root's ₦5,000 later through an authorized process (D5a), not in the window.
 4. **Do not pay any of the 5 pending withdrawals before the window.** Today's payout engine is the one with the double-payout defects 0202 fixes (a retry after a timeout can send a second transfer).
-5. Announce the window to organizers and providers (checkout and payouts paused for about 15 minutes).
+5. Announce the window to organizers and providers. Checkout and payouts are paused for about **60–90 minutes**: W2's backup and restore drill takes most of it, so rehearse the dump and drill beforehand (§0a O4).
 
 ## 3. Preflight (P1–P4, read-only, in the window, before any change)
 
@@ -137,8 +137,12 @@ SELECT to_regprocedure('public.get_my_representative_rewards()') IS NULL      AS
        to_regprocedure('public.earnings_release_delay()') IS NULL             AS no_0203,
        NOT EXISTS (SELECT 1 FROM information_schema.columns
                     WHERE table_schema = 'public' AND table_name = 'tickets'
-                      AND column_name = 'qualifying_status')                  AS no_0192;
--- all four must be true
+                      AND column_name = 'qualifying_status')                  AS no_0192,
+       to_regprocedure('public.search_recruiter_invite_targets(text)') IS NULL AS no_0204,
+       to_regprocedure('public.organizer_withdrawal_requests_guard()') IS NULL AS no_0205,
+       to_regclass('public.earnings_adjustments') IS NULL                    AS no_0206,
+       to_regclass('public.withdrawal_bank_reassignments') IS NULL           AS no_0207;
+-- all eight must be true
 ```
 
 P2. Capture the rollback snapshot of all 19 replaced functions (save the output **outside** the database; it is the authoritative rollback source):
@@ -220,7 +224,7 @@ ROLLBACK;
 | Step | Action | Verify (read-only) | Stop if |
 |---|---|---|---|
 | W1 | Admin → System: set `disable_purchases` and `disable_payouts` (A3) | `SELECT disable_purchases, disable_payouts FROM public.app_config;` = true/true | not both true |
-| W2 | Take the backup (A7/D8). **On the Free plan there is no dashboard backup or PITR:** take `pg_dump -Fc` (or `supabase db dump` for schema and data) through the Session pooler URL, run `scripts/ops/verify-backup-restore.sh <dump>` locally, and store the dump encrypted outside the repository. On Pro: also record the latest daily backup time. Store the P2 output next to it | drill prints `Functions matching: 19/19`, plus money-table counts that match P4 | no verified dump → stop |
+| W2 | **First run P2 (below) and save its output**, then take the backup (A7/D8). **On the Free plan there is no dashboard backup or PITR:** take `pg_dump -Fc` (or `supabase db dump` for schema and data) through the Session pooler URL, run `scripts/ops/verify-backup-restore.sh <dump>` locally, and store the dump encrypted outside the repository. On Pro: also record the latest daily backup time. Store the P2 output next to it | drill prints `Functions matching: 19/19`, plus money-table counts that match P4 | no verified dump → stop |
 | W3 | P1–P4 | as above | any mismatch |
 | W4 | In a session with `SET lock_timeout = '5s';`, apply **0201** (one transaction; SQL editor or `psql -1 -v ON_ERROR_STOP=1 -f`; **never `supabase db push`**) | `get_my_representative_rewards()` exists; `SELECT count(*) FROM public.representative_attributions;` = 2; `SELECT payouts_enabled, legacy_commission_reconciled FROM public.earn_settings;` = false/false | error → section 7 row R1 |
 | W5 | Apply **0202** (do **not** set `vents.migration_local_test`) | `SELECT * FROM public.admin_earnings_reconciliation();` **run as in §3a** (otherwise it returns no rows) lists only the 2 known gaps; `SELECT count(*) FROM public.organizer_withdrawal_requests r WHERE r.status IN ('cancelled','failed','rejected') AND r.transfer_code IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.organizer_transactions t WHERE t.withdrawal_request_id = r.id AND t.type = 'payout');` = **4** (the four paid-but-cancelled ₦100 transfers; any other number: stop); `SELECT count(*) FROM public.payout_exceptions;` = 0; `SELECT count(*) FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard';` = 1; `SELECT pg_get_constraintdef(oid) LIKE '%payout_reversal%' FROM pg_constraint WHERE conname = 'organizer_transactions_type_check';` = true | error (including the drift guard) → R1 |
