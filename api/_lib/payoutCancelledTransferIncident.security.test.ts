@@ -134,6 +134,18 @@ describe('migration 0205 (text, rebuilt on this branch)', () => {
     expect(code).toMatch(/NEW\.organizer_id IS DISTINCT FROM OLD\.organizer_id OR NEW\.amount_kobo IS DISTINCT FROM OLD\.amount_kobo/);
   });
 
+  it('two-admin authorization cannot be forged, altered or erased by a raw UPDATE (2026-11-04 audit)', () => {
+    expect(code).toMatch(/its two-admin authorization cannot be changed or cleared/);
+    expect(code).toMatch(/NEW\.approved_by IS DISTINCT FROM auth\.uid\(\) OR NOT public\.is_super_admin\(\)/);
+    expect(code).toMatch(/q\.action_type = 'authorize_withdrawal'\s+AND q\.target_id = OLD\.id AND q\.status = 'pending'/);
+    expect(code).toMatch(/OLD\.status = 'pending' AND NEW\.status = 'processing' AND NEW\.approved_by IS NULL/);
+  });
+
+  it('its undo refuses while 0206 (which depends on it) is installed', () => {
+    const undo = readFileSync(join(__dirname, '..', '..', 'supabase', 'rollback', 'undo_0205.sql'), 'utf8');
+    expect(undo).toMatch(/to_regprocedure\('public\.execute_earnings_adjustment\(uuid\)'\) IS NOT NULL/);
+  });
+
   it('protects payout history from deletion', () => {
     expect(code).toMatch(/CREATE TRIGGER organizer_withdrawal_requests_no_delete\s+BEFORE DELETE ON public\.organizer_withdrawal_requests/);
   });

@@ -166,6 +166,26 @@ expect_ok "the bank account link may still be nulled (ON DELETE SET NULL when a 
   "UPDATE public.organizer_withdrawal_requests SET bank_account_id = NULL WHERE id = '${F}04';"
 expect_ok "admin notes and timestamps may change" "UPDATE public.organizer_withdrawal_requests SET admin_note = 'reviewed', updated_at = now() WHERE id = '$S1';"
 
+echo "== Two-admin authorization cannot be forged or erased =="
+FA="00000000-0000-0000-0000-0000000005fa"
+"${PSQL[@]}" -q -c "INSERT INTO public.organizer_withdrawal_requests (id, organizer_id, amount_kobo, status, bank_account_id) VALUES ('$FA', '$ORG', 100, 'pending', '$BANK');"
+AQ=$(val "WITH x AS (INSERT INTO public.admin_action_requests (action_type, target_type, target_id, requested_by, payload) VALUES ('authorize_withdrawal', 'withdrawal', '$FA', '$OTHER', '{}') RETURNING id) SELECT id FROM x;")
+expect_error "a raw UPDATE cannot record an authorization (no approving super admin session)" "can only be recorded by approve_admin_action" \
+  "UPDATE public.organizer_withdrawal_requests SET approval_request_id = '$AQ', approval_requested_by = '$OTHER', approved_by = '$ADMIN', approved_at = now(), approved_recipient_code = 'RCP_t' WHERE id = '$FA';"
+expect_error "...not even with a super admin session, if the requester is the approver" "can only be recorded by approve_admin_action" \
+  "SET test.uid='$ADMIN'; UPDATE public.organizer_withdrawal_requests SET approval_request_id = '$AQ', approval_requested_by = '$ADMIN', approved_by = '$ADMIN', approved_at = now(), approved_recipient_code = 'RCP_t' WHERE id = '$FA';"
+expect_error "...nor without a matching pending authorize_withdrawal request" "can only be recorded by approve_admin_action" \
+  "SET test.uid='$ADMIN'; UPDATE public.organizer_withdrawal_requests SET approval_request_id = gen_random_uuid(), approval_requested_by = '$OTHER', approved_by = '$ADMIN', approved_at = now(), approved_recipient_code = 'RCP_t' WHERE id = '$FA';"
+expect_error "a pending request cannot be moved to processing without authorization" "needs two-admin authorization" \
+  "UPDATE public.organizer_withdrawal_requests SET status = 'processing' WHERE id = '$FA';"
+expect_ok "the approving super admin, for the request's own pending authorize_withdrawal, can record it (what execute_withdrawal_authorization does)" \
+  "SET test.uid='$ADMIN'; UPDATE public.organizer_withdrawal_requests SET approval_request_id = '$AQ', approval_requested_by = '$OTHER', approved_by = '$ADMIN', approved_at = now(), approved_recipient_code = 'RCP_t' WHERE id = '$FA';"
+expect_error "once recorded, the authorization cannot be cleared" "cannot be changed or cleared" \
+  "UPDATE public.organizer_withdrawal_requests SET approved_by = NULL, approval_request_id = NULL, approval_requested_by = NULL, approved_at = NULL, approved_recipient_code = NULL WHERE id = '$FA';"
+expect_error "...or re-pointed to another recipient" "cannot be changed or cleared" \
+  "UPDATE public.organizer_withdrawal_requests SET approved_recipient_code = 'RCP_attacker' WHERE id = '$FA';"
+expect_ok "an authorized pending request may move to processing (0203's claim)" "UPDATE public.organizer_withdrawal_requests SET status = 'processing', paystack_reference = 'payout_fa' WHERE id = '$FA';"
+
 echo "== Payout history cannot be deleted =="
 expect_error "a request with a transfer code cannot be deleted" "payout history" "DELETE FROM public.organizer_withdrawal_requests WHERE id = '${IDS[0]}';"
 expect_error "a request with only a reference cannot be deleted" "payout history" "DELETE FROM public.organizer_withdrawal_requests WHERE id = '$S2';"

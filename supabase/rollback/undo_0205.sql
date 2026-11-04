@@ -5,11 +5,17 @@
 --   \i supabase/rollback/undo_0205.sql
 -- It restores 0202's organizer_withdrawal_transfer_guard (body copied
 -- verbatim from 0202), so the table is never left without a transfer
--- guard. It changes no balance, ledger row or request.
+-- guard. It changes no balance, ledger row or request. Undo order is the
+-- reverse of apply order: R1c (0207) -> R1b (0206) -> R1a (0205).
 DO $undo_guard$
 BEGIN
   IF current_setting('vents.rollback_confirm', true) IS DISTINCT FROM 'undo-0205' THEN
     RAISE EXCEPTION 'undo_0205 refused: set vents.rollback_confirm = ''undo-0205'' to confirm';
+  END IF;
+  -- 0206 calls payout_cancel_returned_funds() (dropped below). Undo in
+  -- reverse order: R1c (0207), R1b (0206), then R1a (0205).
+  IF to_regprocedure('public.execute_earnings_adjustment(uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION 'undo_0205 refused: 0206 is still installed and depends on 0205; undo 0206 first (runbook R1b), or keep 0205';
   END IF;
 END
 $undo_guard$;

@@ -41,6 +41,11 @@
 --          become completed (a late Paystack success, resolved by
 --          complete_organizer_payout);
 --        - only a completed request can be reversed;
+--        - the two-admin authorization (0203 approval_* columns) can only be
+--          recorded by approve_admin_action for the request's own pending
+--          authorize_withdrawal request, by the approving super admin, and
+--          never changes afterwards; a pending request cannot become
+--          'processing' without it (added 2026-11-04 audit);
 --        - once a transfer may exist (a transfer code, or 'processing'
 --          with a reference) a request cannot be cancelled or rejected,
 --          and with a transfer code it cannot return to pending.
@@ -115,6 +120,29 @@ BEGIN
     RAISE EXCEPTION 'Withdrawal %: its Paystack reference cannot be changed or cleared', OLD.id;
   END IF;
 
+  -- Two-admin authorization (0203) cannot be forged, altered or erased by a
+  -- raw UPDATE. Once set it never changes. It can only be set inside
+  -- approve_admin_action for this request's own pending authorize_withdrawal
+  -- request, by the super admin approving it, who is not the requester.
+  IF NEW.approval_request_id IS DISTINCT FROM OLD.approval_request_id
+     OR NEW.approval_requested_by IS DISTINCT FROM OLD.approval_requested_by
+     OR NEW.approved_by IS DISTINCT FROM OLD.approved_by
+     OR NEW.approved_at IS DISTINCT FROM OLD.approved_at
+     OR NEW.approved_recipient_code IS DISTINCT FROM OLD.approved_recipient_code THEN
+    IF OLD.approved_by IS NOT NULL OR OLD.approval_request_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Withdrawal %: its two-admin authorization cannot be changed or cleared', OLD.id;
+    END IF;
+    IF NEW.approved_by IS NULL OR NEW.approval_request_id IS NULL OR NEW.approved_recipient_code IS NULL
+       OR NEW.approved_by IS DISTINCT FROM auth.uid() OR NOT public.is_super_admin()
+       OR NOT EXISTS (SELECT 1 FROM public.admin_action_requests q
+                       WHERE q.id = NEW.approval_request_id AND q.action_type = 'authorize_withdrawal'
+                         AND q.target_id = OLD.id AND q.status = 'pending'
+                         AND q.requested_by = NEW.approval_requested_by
+                         AND q.requested_by IS DISTINCT FROM NEW.approved_by) THEN
+      RAISE EXCEPTION 'Withdrawal %: a two-admin authorization can only be recorded by approve_admin_action for its own authorize_withdrawal request', OLD.id;
+    END IF;
+  END IF;
+
   IF NEW.status IS NOT DISTINCT FROM OLD.status THEN
     RETURN NEW;
   END IF;
@@ -125,6 +153,12 @@ BEGIN
           OR (NEW.status <> 'pending' AND OLD.status = 'processing' AND OLD.paystack_reference IS NOT NULL)) THEN
     RAISE EXCEPTION 'Withdrawal %: a Paystack transfer exists or may exist (%), so it cannot be set to %; only Paystack''s outcome (completed, failed, reversed) can end it. Use Reconcile.',
       OLD.id, COALESCE(OLD.transfer_code, OLD.paystack_reference), NEW.status;
+  END IF;
+
+  -- Only an authorized request may be claimed for Paystack (0203's claim
+  -- enforces this; this stops a raw UPDATE from skipping it).
+  IF OLD.status = 'pending' AND NEW.status = 'processing' AND NEW.approved_by IS NULL THEN
+    RAISE EXCEPTION 'Withdrawal %: it needs two-admin authorization before it can be claimed for payment', OLD.id;
   END IF;
 
   -- Final states stay final.

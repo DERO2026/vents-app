@@ -207,9 +207,9 @@ Record the answers in the runbook's A6 row before approving the window.
 |---|---|---|---|
 | D1 | Apply 0201 → 0202 → 0203 and merge PR #82 in one window (runbook A1–A3) | the window | **Open** — approve / defer |
 | D2 | Correct the two wallet gaps (section 10.9) | paying wallet `91b0afb4`; closing PAY-5 | **Open.** `dfca505f` ₦1,000 and `91b0afb4` ₦200: sources exact, ledger-only corrections ready to file once D3 is built. `91b0afb4` ₦36,450 and ₦4,500: still unattributed |
-| D3 | Build the dual-control `earnings_adjustment` action | any correction in D2, D10 | **Design final (section 10.4); build needs owner approval** |
+| D3 | Build the dual-control `earnings_adjustment` action | any correction in D2, D10 | **Built as 0206 (T2, 2026-11-02, at the owner's instruction); not applied** (§13) |
 | D4 | The two ₦20,000 requests | — | **Decided 2026-11-01 (owner): both intended, ₦40,000 total, keep both; normal verification and two-admin approval.** New blocker found: their bank account is deactivated (section 10.1, D4a) |
-| D4a | How the four `91b0afb4` requests reach an active bank account (all four point at deactivated accounts) | paying any of them | **Open** — see section 10.1 |
+| D4a | How the four `91b0afb4` requests reach an active bank account (all four point at deactivated accounts) | paying any of them | **Mechanism built as 0207 (T3; not applied, §14).** Open: the organizer adds and verifies an account; owner confirms payees (O2) |
 | D5 | Root's own ₦5,000 (`e7ca4751`) | — | **Decided 2026-11-01 (owner): to be cancelled/rejected later through an authorized process; not now; no bypass of two-admin approval.** How (D5a): section 10.2 |
 | D5a | Who performs that rejection: today only root can (single super admin), which is a self-action | executing D5 | **Open** — a second super admin, or a written owner exception (section 10.2) |
 | D6 | Requester and approver for each withdrawal | after the window | **Requirements complete (section 10.3).** Owner names the people; one role change is advisable (second super admin), not made |
@@ -703,7 +703,7 @@ Until then, treat its withdrawals as real payouts needing full verification.
 | O7 | Owner knowledge | State who operates `testerboy`, `ventsofficial`, the second sub-admin and root, and who "B.N.C." and "C.J.N." are | D13, separation of duties |
 | O8 | InsForge archive | Find the cutover export (2026-08-14) and any older backups. Read the `organizer_wallets` row for `91b0afb4` | ₦36,450, ₦4,500, D12 |
 | O9 | GitHub | Commit `9eb3fa3` contains a payee's full name in this public repository. Decide whether to accept it, or rewrite history (needs care: open PRs) and ask GitHub support to purge cached views | privacy |
-| O10 | Owner | Approve or reject building D3 (and the D4a "re-point" action if chosen) | D3, D2, D10 |
+| O10 | Owner | ~~Approve or reject building D3 (and the D4a "re-point" action)~~ **Done:** both built at the owner's instruction (0206, 0207; not applied) | D3, D2, D10 |
 
 ### 10.14 What changed in the repository (this continuation)
 
@@ -1183,3 +1183,108 @@ New `scripts/local-pg-test/run-withdrawal-reassignment-verification.sh`, **61/61
 6. If the Find search should work on the read-only Preview, add the RPC to the Preview allowlist (`docs/preview-read-only.md`) in a follow-up.
 
 Retargeting now, before #82 merges, would make #83's diff include all of #82 and invite merging it out of order. **Do not.**
+
+## 16. Verification and audit (2026-11-04)
+
+**No production access of any kind** (no SQL, not even read-only); no migration applied; nothing merged or deployed.
+
+### 16.1 Branch and PR heads
+
+| PR | Branch | Head | Base | State | Merge order |
+|---|---|---|---|---|---|
+| #82 | `claude/vents-work-earn` | this commit (on top of `99348e0`) | `main` @ `5612ee0` (unchanged since 2026-10-30) | Draft, unmerged | **1st**, in the window with 0201 → 0202 → 0203 → 0205 → 0206 → 0207 |
+| #83 | `claude/bold-allen-bpxsd6` | `cc00756` | `claude/vents-work-earn` @ `efdca0f` | Draft, unmerged | **2nd**, after the window: retarget to `main`, CI green, merge, then 0204 alone (W10). Do not retarget before #82 merges |
+| #84 | `claude/payout-incident-batch-d` | `ca55288` | `claude/vents-work-earn` | Draft, **still open** | Do not merge: superseded by `12ba4c9` (§12). Owner to close |
+| #81 | `codex/monetization-master-checklist` | `e37db8a` | `main` | Draft | Outside Batch D |
+
+### 16.2 Migration 0205 audited and rebuilt
+
+**Gap found.** Since 0207 locked a withdrawal's *destination* against raw UPDATEs, the same class of bypass remained on its *authorization*. 0205 did not protect 0203's `approval_*` columns:
+- a raw UPDATE could have recorded a fake two-admin approval, cleared a real one, or swapped `approved_recipient_code`;
+- a raw UPDATE could have moved a pending request to `processing` without authorization.
+
+Only `execute_withdrawal_authorization` (0203) ever writes those columns.
+
+**Rebuilt** (`organizer_withdrawal_requests_guard`, same trigger, same file):
+- the authorization can be recorded only from NULL. It must be recorded by the current session's super admin (`auth.uid()` = `approved_by`), for a **pending** `authorize_withdrawal` request on this same withdrawal, whose requester is `approval_requested_by` and is not the approver. That is exactly what happens inside `approve_admin_action`;
+- once recorded it never changes or clears;
+- pending → processing requires it.
+
+**Undo order fixed.** 0206's late-payout validation calls `payout_cancel_returned_funds()`, which 0205 creates. `undo_0205.sql` now **refuses while 0206 is installed**. Undo order is R1c → R1b → R1a (runbook "R1-order" row).
+
+New checks:
+- state machine suite +8 (**59/59**): raw forge refused (no session; requester = approver; no matching request); unauthorized pending → processing refused; the legitimate approving session succeeds; once set it cannot be cleared or re-pointed; an authorized request can be claimed;
+- earnings adjustment suite +2 (**73/73**): `undo_0205` refused under 0206, nothing changed;
+- vitest +2 (migration text).
+
+The real two-admin path still works under the rebuilt guard. The earnings policy (169), payout engine (76) and withdrawal reassignment (61) suites all apply 0205 before their authorization and claim tests.
+
+### 16.3 Rollback files ↔ runbook rows (verified)
+
+| Undo | Confirmation setting | Runbook row | Refuses when |
+|---|---|---|---|
+| `supabase/rollback/undo_0205.sql` | `vents.rollback_confirm = 'undo-0205'` | **R1a** | no confirmation; **0206 still installed** (new) |
+| `supabase/rollback/undo_0206.sql` | `'undo-0206'` | **R1b** | no confirmation; any adjustment executed; a request pending |
+| `supabase/rollback/undo_0207.sql` | `'undo-0207'` | **R1c** | no confirmation; any reassignment executed; a request pending |
+| `supabase/rollback/pre_0201_0203_functions.sql` | `'restore-pre-0201-0203'` | **R3** | no confirmation; earnings on hold |
+
+Each is exercised by its suite: state machine (R1a), earnings adjustment (R1b, plus the R1a ordering), withdrawal reassignment (R1c), rollback snapshot (R3 with 0205–0207 present).
+
+### 16.4 Register corrections made today
+
+| Item | Was | Now |
+|---|---|---|
+| A1 | "Apply 0201, 0202 and 0203" | 0201 → 0202 → 0203 → 0205 → 0206 → 0207; 0204 excluded |
+| A2 | "immediately after 0203" | immediately after W6c (0207) |
+| A5 | open | partly decided (D4, D5); open: D4a payees, D5a |
+| D3 / O10 | build approval pending | built as 0206 at the owner's instruction; each correction still needs D2/D10 |
+| D4a | choose a mechanism | built as 0207; organizer + O2 pending |
+| R1a | — | must follow R1b |
+
+### 16.5 Verified results (this commit)
+
+| Check | Result |
+|---|---|
+| Local PostgreSQL suites | **19/19 pass**: state machine **59**, earnings adjustment **73**, withdrawal reassignment 61, payout engine 76, earnings policy 169, incident replay 16, rollback snapshot 12, migration order 37, payout gate 27, backup-restore 4, 9 others |
+| vitest | **3016/3016**, 325 files, 0 unhandled errors, exit 0 |
+| `tsc --noEmit` | clean |
+| Production `vite build` (dummy env values) | passes |
+| PR #83 (`cc00756`) | unchanged since §15: 3030/3030 alone; clean test merge onto #82 |
+
+### 16.6 Exactly what remains
+
+**Approvals (owner), runbook §0:**
+
+| # | Approval | Status |
+|---|---|---|
+| A1 | Apply 0201 → 0207 (excluding 0204) | open |
+| A2 | Merge #82 after W6c | open |
+| A3 | Pause purchases and payouts for the window | open |
+| A4 | Name the requesting and approving admins | open (D6; a second super admin advised, O1) |
+| A5 | The 5 pending withdrawals | partly decided (D4, D5); D4a payees and D5a open |
+| A6 | Supabase "Deploy to production" / "Automatic branching" **off** | open, **blocker** (O3) |
+| A7 | Backup method | open, **blocker** (O4: Pro, or a verified manual dump in W2) |
+
+**Owner decisions:**
+- **D1:** approve the window.
+- **D2:** the ₦1,000 / ₦200 / ₦32,350 corrections.
+- **D4a:** payees (O2), after the organizer adds a verified account.
+- **D5a:** who rejects root's ₦5,000.
+- **D6:** names.
+- **D10:** option a/b/c.
+- **D13:** confirm the account's nature.
+- Plus the ₦40 fees in VENTS's books.
+
+**Operational prerequisites:**
+- **O1:** second super admin.
+- **O2:** confirm payees.
+- **O3:** Supabase integration off.
+- **O4:** backups.
+- **O5:** record the Paystack webhook URL.
+- **O6:** Paystack exports (the 4 transfers; booking `BKG-65aefaef…`).
+- **O7:** who operates which account.
+- **O8:** InsForge cutover export.
+- **O9:** a payee name in the history of `9eb3fa3`.
+- **Close PR #84.**
+
+**Technical work:** none outstanding in code.

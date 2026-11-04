@@ -103,6 +103,12 @@ expect_value "wired into approve_admin_action, request_admin_action and the reco
   "$(val "SELECT (position('execute_earnings_adjustment' IN pg_get_functiondef('public.approve_admin_action(uuid)'::regprocedure)) > 0)::text || '/' || (position('earnings_adjustment' IN pg_get_functiondef('public.request_admin_action(text,text,uuid,text,jsonb,jsonb,jsonb,text)'::regprocedure)) > 0)::text || '/' || (position('adjustment_debit' IN pg_get_functiondef('public.admin_earnings_reconciliation()'::regprocedure)) > 0)::text;")" \
   "true/true/true"
 
+echo "== Rollback order: 0205 cannot be undone under 0206 =="
+expect_value "undo_0205 is refused while 0206 is installed (0206 calls payout_cancel_returned_funds)" \
+  "$(apply_file "$REPO_ROOT/supabase/rollback/undo_0205.sql" "SET vents.rollback_confirm = 'undo-0205';" | grep -c 'undo 0206 first')" "1"
+expect_value "...and changed nothing (0205's guard and helper still exist)" \
+  "$(val "SELECT (to_regprocedure('public.payout_cancel_returned_funds(uuid)') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'organizer_withdrawal_requests_guard'))::text;")" "true"
+
 echo "== Undo before any adjustment =="
 UNDO="$REPO_ROOT/supabase/rollback/undo_0206.sql"
 expect_value "undo refuses without confirmation" "$(apply_file "$UNDO" | grep -c 'undo_0206 refused')" "1"
