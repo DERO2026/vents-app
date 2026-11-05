@@ -38,6 +38,7 @@ sudo -u postgres env -i PATH="/usr/bin:/bin" pg_dump -h "$SOCKET_DIR" -p 5432 -F
 OUT=$(bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/good.dump" 2>&1); RC=$?
 if [ $RC -eq 0 ] && [[ "$OUT" == *"Functions matching: 19/19"* ]]; then pass "a backup holding the pre-apply functions verifies 19/19"
 else fail "good backup: rc=$RC $(echo "$OUT" | tail -3)"; fi
+if [[ "$OUT" == *"Public tables restored: "* ]] && [[ "$OUT" != *"NOT RESTORED"* ]]; then pass "a good backup restores every public table"; else fail "good backup: tables $(echo "$OUT" | grep -E 'tables restored|NOT RESTORED')"; fi
 if [[ "$OUT" == *"organizer_withdrawal_requests"* ]]; then pass "the drill reports the money-table counts"; else fail "no money-table counts"; fi
 
 pg -d "$SRC_DB" -q -c "CREATE OR REPLACE FUNCTION public.get_event_analytics(p_event_id uuid) RETURNS jsonb LANGUAGE sql AS \$\$ SELECT '{}'::jsonb \$\$;" >/dev/null
@@ -46,6 +47,20 @@ OUT=$(bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/drifted.dump"
 if [ $RC -ne 0 ] && [[ "$OUT" == *"MISMATCH  get_event_analytics"* ]] && [[ "$OUT" == *"Functions matching: 18/19"* ]]; then
   pass "a backup with a drifted function fails and names it"
 else fail "drifted backup: rc=$RC $(echo "$OUT" | grep -E 'MISMATCH|matching')"; fi
+
+if [[ "$OUT" == *"NOT RESTORED"* ]]; then fail "drifted backup reported a lost table"; fi
+
+# A public table that fails to restore (here: its extension type is missing)
+# must fail the drill even though all 19 functions match.
+pg -d "$SRC_DB" -q -1 -c "SET check_function_bodies = off; SET vents.rollback_confirm = 'restore-pre-0201-0203';" \
+  -f - <"$REPO_ROOT/supabase/rollback/pre_0201_0203_functions.sql" >/dev/null
+pg -d "$SRC_DB" -q -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE TABLE public.selftest_lost_table (id int, email citext); INSERT INTO public.selftest_lost_table VALUES (1, 'x');" >/dev/null
+sudo -u postgres env -i PATH="/usr/bin:/bin" pg_dump -h "$SOCKET_DIR" -p 5432 -d "$SRC_DB" | grep -v '^CREATE EXTENSION IF NOT EXISTS citext' > "$TMP/lost.sql"
+OUT=$(bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/lost.sql" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"Functions matching: 19/19"* ]] && [[ "$OUT" == *"NOT RESTORED  selftest_lost_table"* ]]; then
+  pass "a backup whose public table fails to restore fails the drill, even at 19/19"
+else fail "lost-table backup: rc=$RC $(echo "$OUT" | grep -E 'NOT RESTORED|tables restored|matching')"; fi
+if [[ "$OUT" != *"'x'"* ]]; then pass "the drill prints table names only, never row data"; else fail "row data printed"; fi
 
 OUT=$(DATABASE_URL=postgres://example.invalid/db bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/good.dump" 2>&1); RC=$?
 if [ $RC -eq 2 ] && [[ "$OUT" == *"REFUSING TO RUN"* ]]; then pass "the drill refuses to run when a hosted database URL is in the environment"

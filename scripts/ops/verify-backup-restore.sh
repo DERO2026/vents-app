@@ -7,7 +7,8 @@
 #   * whether each of the 19 functions 0201-0203 replace is present with the
 #     expected pre-apply md5 (the md5 table in
 #     supabase/rollback/pre_0201_0203_functions.sql).
-# Exit 0 only when every function matches. Usage:
+#   * whether every public table in the backup was restored.
+# Exit 0 only when every function matches and every public table restored. Usage:
 #   scripts/ops/verify-backup-restore.sh path/to/backup.dump   (pg_dump -Fc)
 #   scripts/ops/verify-backup-restore.sh path/to/backup.sql    (plain SQL)
 # A Supabase dump also contains roles, extensions and schemas a local server
@@ -48,6 +49,24 @@ fi
 ERRS=$(grep -c "ERROR" "$TMP/restore.log" || true)
 echo "Restored $(basename "$DUMP") into local $DB_NAME ($ERRS statement errors; roles/extensions a local server lacks are expected)"
 
+# Every public table in the backup must exist after the restore. Statement
+# errors are expected for Supabase-only objects, but a public table that
+# failed to restore is a real loss and must not hide among them. Names only;
+# the restore log (which can hold row data) is never printed.
+if head -c 5 "$TMP/backup" | grep -q "PGDMP"; then
+  sudo -u postgres env -i PATH="/usr/bin:/bin" pg_restore -l "$TMP/backup" 2>/dev/null \
+    | awk '$4 == "TABLE" && $5 == "public" { print $6 }' | sort -u >"$TMP/expected_tables"
+else
+  grep -oE '^CREATE (UNLOGGED )?TABLE public\.[A-Za-z_0-9]+' "$TMP/backup" | sed -E 's/.*public\.//' | sort -u >"$TMP/expected_tables"
+fi
+pg -d "$DB_NAME" -tA -c "SELECT relname FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r','p');" \
+  | sort -u >"$TMP/restored_tables"
+TBL_TOTAL=$(wc -l <"$TMP/expected_tables" | tr -d ' ')
+MISSING_TABLES=$(comm -23 "$TMP/expected_tables" "$TMP/restored_tables")
+TBL_MISSING=$(printf '%s' "$MISSING_TABLES" | grep -c . || true)
+echo "== Public tables restored: $((TBL_TOTAL - TBL_MISSING))/$TBL_TOTAL =="
+[ -z "$MISSING_TABLES" ] || printf '  NOT RESTORED  %s\n' $MISSING_TABLES
+
 echo "== Money tables (compare with the counts captured at backup time) =="
 for t in organizer_wallets organizer_transactions organizer_withdrawal_requests organizer_bank_accounts tickets pending_purchases service_bookings user_wallets admin_action_requests admin_logs; do
   n=$(pg -d "$DB_NAME" -tA -c "SELECT CASE WHEN to_regclass('public.$t') IS NULL THEN 'missing' ELSE (SELECT count(*)::text FROM public.$t) END;" 2>/dev/null | tail -n1)
@@ -63,4 +82,4 @@ while read -r fn md5; do
   else BAD=$((BAD+1)); printf '  MISMATCH  %s (got %s, expected %s)\n' "$fn" "${got:-missing}" "$md5"; fi
 done < <(grep -oE '^-- [a-z_0-9]+  \(production md5 [0-9a-f]{32}' "$SNAP" | sed -E 's/^-- ([a-z_0-9]+)  \(production md5 ([0-9a-f]{32})/\1 \2/')
 echo "Functions matching: $OK/$((OK+BAD))"
-[ "$BAD" -eq 0 ]
+[ "$BAD" -eq 0 ] && [ "$TBL_MISSING" -eq 0 ] && [ "$TBL_TOTAL" -gt 0 ]

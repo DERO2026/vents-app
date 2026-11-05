@@ -60,13 +60,15 @@ The organization is on the **Free plan**: no downloadable daily backups and no p
 3. Dump (read-only for production):
 
    ```sh
-   pg_dump "<session-pooler-connection-string>" -Fc --no-owner --no-privileges \
+   pg_dump "<session-pooler-connection-string>" -Fc \
      -f "vents-W2-$(date -u +%Y%m%dT%H%MZ).dump"
    ```
 
-   Leave the password out of the connection string; `pg_dump` prompts for it. If the dump aborts with `permission denied` on a Supabase internal schema (for example `LOCK TABLE "graphql"."_type"`), do **not** run the GRANT Supabase's docs suggest, because that changes production. Re-run with `-n public -n auth -n storage` added, or with `-n public` alone if that also fails. Record which variant worked, and use the same one in W2.
+   Do **not** add `--no-owner` or `--no-privileges` to the dump: they drop every GRANT and REVOKE from the archive, and a real restore would then leave every `SECURITY DEFINER` function that migrations revoke from `PUBLIC`/`anon`/`authenticated` callable by clients again. The drill applies those options at restore time instead.
 
-4. At the same time, in the SQL editor, record the row counts (plain counts need no admin claim):
+   Leave the password out of the connection string; `pg_dump` prompts for it. If the dump aborts with `permission denied` on a Supabase internal schema (for example `LOCK TABLE "graphql"."_type"`), do **not** run the GRANT Supabase's docs suggest, because that changes production. Re-run with `-n public -n auth -n storage` added, or with `-n public` alone if that also fails. Record which variant worked, and use the same one in W2. A `-n public` dump has no `auth.users` (no logins): record that limitation in A7.
+
+4. In the SQL editor, record the row counts immediately before **and** immediately after the dump (plain counts need no admin claim):
 
    ```sql
    SELECT 'organizer_wallets', count(*) FROM public.organizer_wallets
@@ -85,7 +87,7 @@ bash scripts/ops/verify-backup-restore.sh /path/to/vents-W2-....dump
 ```
 
 **Pass criteria:**
-- the output ends with **`Functions matching: 19/19`** and exit code 0;
+- the output shows **`Public tables restored: N/N`** with no `NOT RESTORED` line, ends with **`Functions matching: 19/19`**, and the exit code is 0;
 - the printed money-table counts equal the counts from step 4. In a rehearsal outside the window, purchases are not paused, so run step 4 both before and after the dump; each count must fall between those two values. In W2 (after W1), they must be equal.
 
 Restore errors about roles, extensions or Supabase-managed schemas are expected and counted; only the public schema is checked.
