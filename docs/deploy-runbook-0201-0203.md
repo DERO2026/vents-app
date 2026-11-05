@@ -55,7 +55,7 @@ The organization is on the **Free plan**: no downloadable daily backups and no p
 
 **Manual dump (W2; rehearse once beforehand):**
 
-1. Use **PostgreSQL 17** client tools: `pg_dump --version` must say 17.x. Production runs PostgreSQL 17.6. An older `pg_dump` refuses, and an older `pg_restore` cannot read a 17 archive.
+1. Use **PostgreSQL 17** client tools: `pg_dump --version` must say 17.x. Production runs PostgreSQL 17.6. An older `pg_dump` refuses, and an older `pg_restore` cannot read a 17 archive. Before dumping, run `bash scripts/ops/o4-preflight.sh` from the repository root (local only). It must end with `0 stop`. The drill always uses the local server on port **5432**; a 17 cluster on 5433 is not used.
 2. Dashboard → **Connect** → copy the **Session pooler** connection string (port **5432**, not the 6543 transaction pooler) and your database password.
 3. Dump (read-only for production):
 
@@ -63,6 +63,8 @@ The organization is on the **Free plan**: no downloadable daily backups and no p
    pg_dump "<session-pooler-connection-string>" -Fc --no-owner --no-privileges \
      -f "vents-W2-$(date -u +%Y%m%dT%H%MZ).dump"
    ```
+
+   Leave the password out of the connection string; `pg_dump` prompts for it. If the dump aborts with `permission denied` on a Supabase internal schema (for example `LOCK TABLE "graphql"."_type"`), do **not** run the GRANT Supabase's docs suggest, because that changes production. Re-run with `-n public -n auth -n storage` added, or with `-n public` alone if that also fails. Record which variant worked, and use the same one in W2.
 
 4. At the same time, in the SQL editor, record the row counts (plain counts need no admin claim):
 
@@ -84,7 +86,7 @@ bash scripts/ops/verify-backup-restore.sh /path/to/vents-W2-....dump
 
 **Pass criteria:**
 - the output ends with **`Functions matching: 19/19`** and exit code 0;
-- the printed money-table counts equal the counts from step 4.
+- the printed money-table counts equal the counts from step 4. In a rehearsal outside the window, purchases are not paused, so run step 4 both before and after the dump; each count must fall between those two values. In W2 (after W1), they must be equal.
 
 Restore errors about roles, extensions or Supabase-managed schemas are expected and counted; only the public schema is checked.
 
