@@ -4,6 +4,7 @@ import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { supabase } from '../../lib/supabase';
+import { uploadAllowanceError } from '../../lib/uploadAllowance';
 import { openExternalUrl } from '../../lib/externalLink';
 import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { pickImage } from '../../lib/pickImage';
@@ -571,7 +572,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
       // only ever called once the signup call above has returned a real
       // session (data?.session && data?.user), so auth.uid() is valid.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
+      if (limitError) throw uploadAllowanceError(limitError);
       // Supabase's storage client has no InsForge-style uploadAuto() that
       // generates its own key — the object path/key must be supplied
       // explicitly. signupAvatarFile is always a freshly cropped JPEG (see

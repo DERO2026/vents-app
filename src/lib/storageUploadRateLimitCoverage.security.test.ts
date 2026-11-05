@@ -54,7 +54,8 @@ describe('ServiceProviderSetupScreen.handleCropComplete: service-provider photo 
     const rpcIdx = fn.indexOf(RATE_LIMIT_CALL);
     const nearby = fn.slice(rpcIdx, rpcIdx + 200);
     expect(nearby).toMatch(/limitError/);
-    expect(nearby).toMatch(/throw new Error/);
+    // Aborts by throwing an error that names the real cause.
+    expect(nearby).toMatch(/throw uploadAllowanceError\(limitError\)/);
   });
 });
 

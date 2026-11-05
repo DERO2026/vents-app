@@ -10,7 +10,7 @@ describe('organizer role row', () => {
     [{}, 'Become an Organizer', 'Start', 'off'],
     [{ request: 'pending' as const }, 'Application submitted', 'In review', 'wait'],
     [{ request: 'rejected' as const }, 'Apply again', 'Retry', 'off'],
-    [{ isOrganizer: true }, 'Get verified with CAC', 'Active', 'on'],
+    [{ isOrganizer: true }, 'Creator Studio · get verified with CAC', 'Active', 'on'],
     [{ isOrganizer: true, isVerified: true }, 'Verified Organizer', 'Verified', 'on'],
   ])('%o -> %s / %s', (input, subtitle, pill, tone) => {
     const r = o(input);

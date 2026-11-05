@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { UserPlus, Users, Search, Sparkles, AlertCircle, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { searchUsers, UserSearchResult } from '../../lib/userSearch';
+import type { UserSearchResult } from '../../lib/userSearch';
+import {
+  searchRecruiterTargets, classifySearchError, normalizeQuery, MIN_QUERY_LENGTH,
+  SearchError, type RecruiterSearchResult,
+} from '../../lib/recruiterSearch';
 import { ventsColors, ventsTypography, ventsSpacing, ventsRadii, ventsStatusColors } from '../../lib/ventsDesignTokens';
 import { WorkBar, Pill, Tiles, Tile, NoteBand, MCard, Row, Ico, Chev } from './work/workUi';
 
@@ -18,6 +22,9 @@ interface RepresentativesScreenProps {
   focusPartnership?: { partnershipId: string; nonce: number } | null;
   // Opens Representative rewards (₦50,000 per qualifying organizer).
   onOpenRewards?: () => void;
+  // Debounce for the Find search box. 0 runs each search immediately
+  // (tests). Not a user-facing setting.
+  searchDebounceMs?: number;
 }
 
 type SubTab = 'find' | 'invitations' | 'team';
@@ -112,7 +119,9 @@ function SkeletonLine({ width, height = 12, radius = 6 }: { width: string; heigh
 // directly; it computes no money. Rewards (₦50,000 per qualifying
 // organizer, migration 0201) live on RepresentativeRewardsScreen.
 // Reached from VENTS Work and from Settings.
-export function RepresentativesScreen({ onBack, currentUser, focusPartnership, onOpenRewards }: RepresentativesScreenProps) {
+export const SEARCH_DEBOUNCE_MS = 300;
+
+export function RepresentativesScreen({ onBack, currentUser, focusPartnership, onOpenRewards, searchDebounceMs = SEARCH_DEBOUNCE_MS }: RepresentativesScreenProps) {
   // Opened from a partnership notification: start on Invitations (the
   // common case -- the focus effect below switches to My Team if the
   // current user turns out to be the recruiter) instead of flashing Find.
@@ -124,7 +133,20 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
   const [registerError, setRegisterError] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<UserSearchResult[]>([]);
+  const [results, setResults] = useState<RecruiterSearchResult[]>([]);
+  // Find search lifecycle. 'loading' covers the debounce wait and the
+  // request; 'done' with no results is the only state that may say "No
+  // matches found" -- an error is never shown as an empty result.
+  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [searchError, setSearchError] = useState<SearchError | null>(null);
+  // Monotonic id of the latest search: a slower response for an older
+  // query is dropped instead of replacing newer results.
+  const searchSeq = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    searchSeq.current++;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
   const [inviteTarget, setInviteTarget] = useState<UserSearchResult | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState(false);
@@ -322,19 +344,51 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
     setIsRecruiter(true);
   }
 
-  async function handleSearch(value: string) {
+  // Debounced: one request per pause in typing rather than one per
+  // keystroke. Per-keystroke calls exhausted search_users_for_request's
+  // 30/minute limit, and the swallowed 'rate_limited' error then showed
+  // as "No matches found".
+  function handleSearch(value: string) {
     setQuery(value);
     setInviteSent(false);
     setInviteError(null);
-    if (value.trim().length < 2) {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const seq = ++searchSeq.current;
+    if (normalizeQuery(value).length < MIN_QUERY_LENGTH) {
       setResults([]);
+      setSearchError(null);
+      setSearchState('idle');
       return;
     }
-    try {
-      setResults(await searchUsers(value));
-    } catch {
-      setResults([]);
+    setSearchError(null);
+    setSearchState('loading');
+    if (searchDebounceMs <= 0) {
+      void runSearch(value, seq);
+      return;
     }
+    searchTimer.current = setTimeout(() => void runSearch(value, seq), searchDebounceMs);
+  }
+
+  async function runSearch(value: string, seq: number) {
+    try {
+      const rows = await searchRecruiterTargets(value);
+      if (seq !== searchSeq.current) return;
+      setResults(rows);
+      setSearchState('done');
+    } catch (err) {
+      if (seq !== searchSeq.current) return;
+      setResults([]);
+      setSearchError(err instanceof SearchError ? err : classifySearchError(err));
+      setSearchState('error');
+    }
+  }
+
+  function retrySearch() {
+    if (normalizeQuery(query).length < MIN_QUERY_LENGTH) return;
+    const seq = ++searchSeq.current;
+    setSearchError(null);
+    setSearchState('loading');
+    void runSearch(query, seq);
   }
 
   async function handleSendInvite() {
@@ -1041,10 +1095,28 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
                 style={inputStyle}
               />
             </div>
-            {query.trim().length >= 2 && results.length === 0 && (
-              <EmptyState icon={<Search size={22} />} title="No matches found" body="Try a different username or check the spelling." />
+            {searchState === 'loading' && (
+              <p data-testid="search-loading" role="status" style={{ ...ventsTypography.caption, color: ventsColors.ink3, margin: `0 0 ${ventsSpacing.unit[2]}px` }}>
+                Searching…
+              </p>
             )}
-            {query.trim().length < 2 && results.length === 0 && !inviteTarget && (
+            {searchState === 'error' && searchError && (
+              <div
+                data-testid="search-error"
+                role="alert"
+                style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: ventsSpacing.unit[2], border: '1px solid rgba(248,113,113,0.35)' }}
+              >
+                <AlertCircle size={18} color={ventsColors.error} style={{ flexShrink: 0 }} />
+                <span style={{ ...ventsTypography.bodySecondary, color: ventsColors.ink1, flex: 1, minWidth: 0 }}>{searchError.message}</span>
+                {searchError.kind !== 'preview' && searchError.kind !== 'not_representative' && (
+                  <button data-testid="search-retry" onClick={retrySearch} style={pillButtonStyle}>Retry</button>
+                )}
+              </div>
+            )}
+            {searchState === 'done' && results.length === 0 && (
+              <EmptyState icon={<Search size={22} />} title="No matches found" body="No organizer or service provider matches that name. Check the spelling or try part of their username." />
+            )}
+            {searchState === 'idle' && results.length === 0 && !inviteTarget && (
               <EmptyState icon={<Search size={22} />} title="Search to get started" body="Find an organizer or service provider by their VENTS username to send a partnership invitation." />
             )}
             {results.map((r) => (
@@ -1073,6 +1145,11 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
                   >
                     {r.username || r.fullName}
                   </span>
+                  {(r.isOrganizer || r.providerId) && (
+                    <span data-testid="search-result-roles" style={{ ...ventsTypography.caption, color: ventsColors.accentSoft, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {[r.isOrganizer && 'Organizer', r.providerId && 'Provider'].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
                 </div>
                 <button onClick={() => setInviteTarget(r)} style={pillButtonStyle}>
                   Invite
