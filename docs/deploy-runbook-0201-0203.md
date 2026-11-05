@@ -78,7 +78,11 @@ The organization is on the **Free plan**: no downloadable daily backups and no p
    UNION ALL SELECT 'service_bookings', count(*) FROM public.service_bookings;
    ```
 
-**Restore drill** (on your own **Linux or WSL** machine with a local **PostgreSQL 17** server running and `sudo` access; the script restores only into a throwaway local database and refuses if a hosted database URL is in the environment):
+**Restore drill** (on your own machine with a local **PostgreSQL 17** server on port 5432; the script restores only into a throwaway local database and refuses if a hosted database URL is in the environment). Supported:
+- **macOS:** Homebrew `postgresql@17`, started with `brew services start postgresql@17`. The scripts run as you: Homebrew's superuser is your login name, and its socket is in `/tmp`. No `sudo` is needed.
+- **Linux/WSL:** the `postgresql-17` package. The scripts run as the `postgres` OS user via `sudo`, with the socket in `/var/run/postgresql`.
+
+Connection handling for both lives in `scripts/ops/_local_pg.sh`. Every call uses the local socket with an emptied environment.
 
 ```sh
 unset DATABASE_URL PGHOST PGPASSWORD PGDATABASE   # the script refuses if any is set

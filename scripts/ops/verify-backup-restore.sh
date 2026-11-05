@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Restore drill for a production backup, run by the owner on their own
-# machine (or here, against a local file). It restores the dump into a
+# Linux/WSL or macOS (Homebrew postgresql@17) machine, or here against a
+# local file. It restores the dump into a
 # THROWAWAY LOCAL database only -- never a hosted one -- then reports:
 #   * row counts of the money tables (compare with the production counts the
 #     owner captured at backup time, runbook P4/W2);
@@ -22,7 +23,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SNAP="$REPO_ROOT/supabase/rollback/pre_0201_0203_functions.sql"
 DB_NAME="${VERIFY_DB_NAME:-vents_local_pg_backup_restore}"
-SOCKET_DIR="/var/run/postgresql"
 
 die() { echo "REFUSING TO RUN: $1" >&2; exit 2; }
 for var in DATABASE_URL PROJECT_ADMIN_DATABASE_URL SUPABASE_DB_URL POSTGRES_URL POSTGRES_PRISMA_URL \
@@ -30,19 +30,18 @@ for var in DATABASE_URL PROJECT_ADMIN_DATABASE_URL SUPABASE_DB_URL POSTGRES_URL 
   if [ -n "${!var:-}" ]; then die "\$$var is set. Unset it; this drill only restores into a local server."; fi
 done
 [[ "$DB_NAME" =~ ^vents_local_pg_[a-z_]+$ ]] || die "database name '$DB_NAME' is not a local test name."
-[ -S "$SOCKET_DIR/.s.PGSQL.5432" ] || die "no local PostgreSQL socket at $SOCKET_DIR."
-pg() { sudo -u postgres env -i PATH="/usr/bin:/bin" psql -h "$SOCKET_DIR" -p 5432 "$@"; }
-server_check="$(pg -d postgres -tA -c "SELECT (inet_server_addr() IS NULL)::text || '/' || (NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin'))::text;" | tail -n1)"
-[ "$server_check" = "true/true" ] || die "connection is not a local, non-Supabase PostgreSQL server ($server_check)."
+# Linux or macOS (Homebrew) local server: see _local_pg.sh.
+. "$SCRIPT_DIR/_local_pg.sh" || { echo "REFUSING TO RUN: scripts/ops/_local_pg.sh missing" >&2; exit 2; }
+vents_require_local_server
 
-TMP=$(mktemp -d); chmod 755 "$TMP"
+TMP="$(vents_mktemp)"
 cleanup() { rm -rf "$TMP"; [ -n "${KEEP_DB:-}" ] || pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" -c "CREATE DATABASE $DB_NAME;" >/dev/null
-cp "$DUMP" "$TMP/backup"; chmod 644 "$TMP/backup"
+cp "$DUMP" "$TMP/backup"; chmod "$(vents_file_mode)" "$TMP/backup"
 if head -c 5 "$TMP/backup" | grep -q "PGDMP"; then
-  sudo -u postgres env -i PATH="/usr/bin:/bin" pg_restore -h "$SOCKET_DIR" -p 5432 -d "$DB_NAME" --no-owner --no-privileges "$TMP/backup" >"$TMP/restore.log" 2>&1
+  pgtool pg_restore -h "$SOCKET_DIR" -p 5432 -d "$DB_NAME" --no-owner --no-privileges "$TMP/backup" >"$TMP/restore.log" 2>&1
 else
   pg -d "$DB_NAME" -q -f "$TMP/backup" >"$TMP/restore.log" 2>&1
 fi
@@ -54,7 +53,7 @@ echo "Restored $(basename "$DUMP") into local $DB_NAME ($ERRS statement errors; 
 # failed to restore is a real loss and must not hide among them. Names only;
 # the restore log (which can hold row data) is never printed.
 if head -c 5 "$TMP/backup" | grep -q "PGDMP"; then
-  sudo -u postgres env -i PATH="/usr/bin:/bin" pg_restore -l "$TMP/backup" 2>/dev/null \
+  pgtool pg_restore -l "$TMP/backup" 2>/dev/null \
     | awk '$4 == "TABLE" && $5 == "public" { print $6 }' | sort -u >"$TMP/expected_tables"
 else
   grep -oE '^CREATE (UNLOGGED )?TABLE public\.[A-Za-z_0-9]+' "$TMP/backup" | sed -E 's/.*public\.//' | sort -u >"$TMP/expected_tables"

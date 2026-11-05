@@ -1445,7 +1445,7 @@ Status: **Done**, **Decided**, **Open**. Who acts: **Owner-dash** (Supabase/GitH
 | A4 | Name the requester and the approver admins | Open | Owner | payouts after the window |
 | A5 | The 5 pending withdrawals | Decided in part (D4, D5); D4a payees and D5a open | Owner | payouts after the window |
 | A6 | Supabase GitHub integration cannot apply migrations (§0a O3) | **Open: BLOCKER** | **Owner-dash** | scheduling |
-| A7 | Backup method and a rehearsed restore drill (§0a O4) | **Open: BLOCKER** | **Owner-dash** (+ own Linux/WSL with PostgreSQL 17) | scheduling |
+| A7 | Backup method and a rehearsed restore drill (§0a O4) | **Open: BLOCKER** | **Owner-dash** (+ own macOS with Homebrew `postgresql@17`, or Linux/WSL, with PostgreSQL 17) | scheduling |
 | D1 | Approve and schedule the window | Open | Owner | the window |
 | D2 | Wallet corrections: `dfca505f` −₦1,000 (ledger); `91b0afb4` +₦200 (ledger); the ₦32,350 (keep with entries / debit) | Open | Owner, then Admins via 0206 | after the window |
 | D3 | Build the adjustment action | **Done** (0206, not applied) | — | — |

@@ -9,13 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MIG="$REPO_ROOT/supabase/migrations"
 SRC_DB="vents_local_pg_backup_src"
-SOCKET_DIR="/var/run/postgresql"
-[ -S "$SOCKET_DIR/.s.PGSQL.5432" ] || { echo "REFUSING TO RUN: no local PostgreSQL socket" >&2; exit 2; }
-pg() { sudo -u postgres env -i PATH="/usr/bin:/bin" psql -h "$SOCKET_DIR" -p 5432 -v ON_ERROR_STOP=1 "$@"; }
-server_check="$(pg -d postgres -tA -c "SELECT (inet_server_addr() IS NULL)::text || '/' || (NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin'))::text;" | tail -n1)"
-[ "$server_check" = "true/true" ] || { echo "REFUSING TO RUN: not a local, non-Supabase server" >&2; exit 2; }
+# Linux or macOS (Homebrew) local server: see scripts/ops/_local_pg.sh.
+. "$REPO_ROOT/scripts/ops/_local_pg.sh" || { echo "REFUSING TO RUN: scripts/ops/_local_pg.sh missing" >&2; exit 2; }
+vents_require_local_server
+pg() { pgtool psql -X -h "$SOCKET_DIR" -p 5432 -v ON_ERROR_STOP=1 "$@"; }
 
-TMP=$(mktemp -d); chmod 755 "$TMP"
+TMP="$(vents_mktemp)"
 cleanup() { rm -rf "$TMP"; pg -d postgres -q -c "DROP DATABASE IF EXISTS $SRC_DB;" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 PASSES=0; FAILS=0
@@ -33,7 +32,7 @@ done
 # The production pre-apply state of all 19 functions.
 pg -d "$SRC_DB" -q -1 -c "SET check_function_bodies = off; SET vents.rollback_confirm = 'restore-pre-0201-0203';" \
   -f - <"$REPO_ROOT/supabase/rollback/pre_0201_0203_functions.sql" >/dev/null
-sudo -u postgres env -i PATH="/usr/bin:/bin" pg_dump -h "$SOCKET_DIR" -p 5432 -Fc -d "$SRC_DB" > "$TMP/good.dump"
+pgtool pg_dump -h "$SOCKET_DIR" -p 5432 -Fc -d "$SRC_DB" > "$TMP/good.dump"
 
 OUT=$(bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/good.dump" 2>&1); RC=$?
 if [ $RC -eq 0 ] && [[ "$OUT" == *"Functions matching: 19/19"* ]]; then pass "a backup holding the pre-apply functions verifies 19/19"
@@ -42,7 +41,7 @@ if [[ "$OUT" == *"Public tables restored: "* ]] && [[ "$OUT" != *"NOT RESTORED"*
 if [[ "$OUT" == *"organizer_withdrawal_requests"* ]]; then pass "the drill reports the money-table counts"; else fail "no money-table counts"; fi
 
 pg -d "$SRC_DB" -q -c "CREATE OR REPLACE FUNCTION public.get_event_analytics(p_event_id uuid) RETURNS jsonb LANGUAGE sql AS \$\$ SELECT '{}'::jsonb \$\$;" >/dev/null
-sudo -u postgres env -i PATH="/usr/bin:/bin" pg_dump -h "$SOCKET_DIR" -p 5432 -Fc -d "$SRC_DB" > "$TMP/drifted.dump"
+pgtool pg_dump -h "$SOCKET_DIR" -p 5432 -Fc -d "$SRC_DB" > "$TMP/drifted.dump"
 OUT=$(bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/drifted.dump" 2>&1); RC=$?
 if [ $RC -ne 0 ] && [[ "$OUT" == *"MISMATCH  get_event_analytics"* ]] && [[ "$OUT" == *"Functions matching: 18/19"* ]]; then
   pass "a backup with a drifted function fails and names it"
@@ -55,7 +54,7 @@ if [[ "$OUT" == *"NOT RESTORED"* ]]; then fail "drifted backup reported a lost t
 pg -d "$SRC_DB" -q -1 -c "SET check_function_bodies = off; SET vents.rollback_confirm = 'restore-pre-0201-0203';" \
   -f - <"$REPO_ROOT/supabase/rollback/pre_0201_0203_functions.sql" >/dev/null
 pg -d "$SRC_DB" -q -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE TABLE public.selftest_lost_table (id int, email citext); INSERT INTO public.selftest_lost_table VALUES (1, 'x');" >/dev/null
-sudo -u postgres env -i PATH="/usr/bin:/bin" pg_dump -h "$SOCKET_DIR" -p 5432 -d "$SRC_DB" | grep -v '^CREATE EXTENSION IF NOT EXISTS citext' > "$TMP/lost.sql"
+pgtool pg_dump -h "$SOCKET_DIR" -p 5432 -d "$SRC_DB" | grep -v '^CREATE EXTENSION IF NOT EXISTS citext' > "$TMP/lost.sql"
 OUT=$(bash "$REPO_ROOT/scripts/ops/verify-backup-restore.sh" "$TMP/lost.sql" 2>&1); RC=$?
 if [ $RC -ne 0 ] && [[ "$OUT" == *"Functions matching: 19/19"* ]] && [[ "$OUT" == *"NOT RESTORED  selftest_lost_table"* ]]; then
   pass "a backup whose public table fails to restore fails the drill, even at 19/19"
