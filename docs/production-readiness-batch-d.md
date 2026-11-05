@@ -1504,7 +1504,7 @@ Exactly two, both in the dashboard:
    - store the dump encrypted, outside the repository.
 4. **W3, preflight:**
    - **P1**: all 8 checks true (no 0192 and no 0201–0207 objects);
-   - **P3**: 18 md5s match;
+   - **P3**: all 19 md5s match (18 production-captured, plus `invite_recruiter_partnership` = `32fbfa3f…` by provenance);
    - **P4**: all 0, including `in_flight_payouts`.
 
    Any mismatch: stop.
