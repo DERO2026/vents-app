@@ -1262,8 +1262,8 @@ Each is exercised by its suite: state machine (R1a), earnings adjustment (R1b, p
 | A3 | Pause purchases and payouts for the window | open |
 | A4 | Name the requesting and approving admins | open (D6; a second super admin advised, O1) |
 | A5 | The 5 pending withdrawals | partly decided (D4, D5); D4a payees and D5a open |
-| A6 | Supabase "Deploy to production" / "Automatic branching" **off** | open, **blocker** (O3) |
-| A7 | Backup method | open, **blocker** (O4: Pro, or a verified manual dump in W2) |
+| A6 | Supabase "Deploy to production" / "Automatic branching" **off** | **done** (O3; owner-reported 2026-11-06) |
+| A7 | Backup method | open, **blocker**. Local toolchain validated 2026-11-06 (owner-reported: PostgreSQL 17.11, self-test 7/7, preflight 11 ok / 0 stop); the production rehearsal dump and restore drill are still to do |
 
 **Owner decisions:**
 - **D1:** approve the window.
@@ -1444,8 +1444,8 @@ Status: **Done**, **Decided**, **Open**. Who acts: **Owner-dash** (Supabase/GitH
 | A3 | Pause purchases and payouts for the window | Open | Owner (Admin → System, in W1) | the window |
 | A4 | Name the requester and the approver admins | Open | Owner | payouts after the window |
 | A5 | The 5 pending withdrawals | Decided in part (D4, D5); D4a payees and D5a open | Owner | payouts after the window |
-| A6 | Supabase GitHub integration cannot apply migrations (§0a O3) | **Open: BLOCKER** | **Owner-dash** | scheduling |
-| A7 | Backup method and a rehearsed restore drill (§0a O4) | **Open: BLOCKER** | **Owner-dash** (+ own macOS with Homebrew `postgresql@17`, or Linux/WSL, with PostgreSQL 17) | scheduling |
+| A6 | Supabase GitHub integration cannot apply migrations (§0a O3) | **Done** (owner-reported 2026-11-06) | **Owner-dash** | scheduling |
+| A7 | Backup method and a rehearsed restore drill (§0a O4) | **Open: BLOCKER** (local toolchain validated 2026-11-06; production rehearsal dump and drill pending) | **Owner-dash** (+ own macOS with Homebrew `postgresql@17`, or Linux/WSL, with PostgreSQL 17) | scheduling |
 | D1 | Approve and schedule the window | Open | Owner | the window |
 | D2 | Wallet corrections: `dfca505f` −₦1,000 (ledger); `91b0afb4` +₦200 (ledger); the ₦32,350 (keep with entries / debit) | Open | Owner, then Admins via 0206 | after the window |
 | D3 | Build the adjustment action | **Done** (0206, not applied) | — | — |
