@@ -82,6 +82,10 @@ import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
 import { RepresentativesScreen } from './components/RepresentativesScreen';
+import { VentsWorkScreen } from './components/work/VentsWorkScreen';
+import { VentsEarningsScreen } from './components/work/VentsEarningsScreen';
+import { RepresentativeRewardsScreen } from './components/work/RepresentativeRewardsScreen';
+import { RepresentativeDashboardScreen } from './components/work/RepresentativeDashboardScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
@@ -1198,6 +1202,15 @@ export default function App() {
   // catalog is being managed -- set right before navigating to
   // 'manage-provider-services' from ServiceProviderSetupScreen.
   const [manageServicesProviderId, setManageServicesProviderId] = useState<string | null>(null);
+  // VENTS Work: open the caller's own provider bookings (the existing
+  // ServiceBookingsScreen, provider mode), resolving their provider id.
+  const openProviderBookings = async () => {
+    if (!currentUser?.id) return;
+    const { data } = await supabase.from('service_providers').select('id').eq('user_id', currentUser.id).maybeSingle();
+    if (!data?.id) return;
+    setManageServicesProviderId(data.id);
+    navigateTo('provider-service-bookings');
+  };
   // Single shared discovery-country state for both Home and Services (Stage
   // B) -- previously each screen kept its own local country state
   // (HomeScreen's own `countryFilter`, and this `discoveryCountryIso` for
@@ -2309,6 +2322,20 @@ export default function App() {
     navigateTo(target as Screen);
   }, [handleTabChange, navigateTo]);
 
+  // Switches an ALREADY-organizer/admin account into the organizer view.
+  // Never grants the capability: not an organizer yet -> do nothing.
+  // Reaching organizer status only ever happens via admin approval of an
+  // organizer_requests application (is_organizer,
+  // 0121_organizer_capability_independent_of_role.sql -- the DB is the only
+  // source of truth here now, no localStorage workaround).
+  const openCreatorStudio = useCallback(() => {
+    if (!currentUser || !(currentUser.isOrganizer || currentUser.role === 'admin')) return;
+    setUserRole('organizer');
+    setOrgTab('home');
+    setActiveTab('home');
+    setScreen('home');
+  }, [currentUser]);
+
   const handleOrgNavigate = useCallback((target: string) => {
     // A generic "Create Event" entry point (not the edit flow's own
     // onOpenEdit, which sets editingEventId itself) — always start fresh.
@@ -3283,19 +3310,7 @@ export default function App() {
               // the role.
               setActiveView={(view) => {
                 if (view === 'organizer') {
-                  if (!currentUser || !(currentUser.isOrganizer || currentUser.role === 'admin')) {
-                    // Not actually an organizer yet -- do nothing. Reaching
-                    // organizer status only ever happens via admin approval
-                    // of an organizer_requests application (is_organizer,
-                    // 0121_organizer_capability_independent_of_role.sql --
-                    // the DB is the only source of truth here now, no
-                    // localStorage workaround).
-                    return;
-                  }
-                  setUserRole('organizer');
-                  setOrgTab('home');
-                  setActiveTab('home');
-                  setScreen('home');
+                  openCreatorStudio();
                 } else {
                   setUserRole('attendee');
                   setActiveTab('home');
@@ -3824,16 +3839,36 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               showEarningsTab={
-                !!currentUser?.isOrganizer ||
+                !!currentUser?.isOrganizer || currentUser?.is_service_provider === true ||
                 currentUser?.role === 'admin' || currentUser?.role === 'sub-admin'
               }
               onOpenEarnings={() => navigateTo('wallet')}
             />
           )}
 
+          {/* ── VENTS WORK (hub), VENTS EARN (earnings), REPRESENTATIVE REWARDS ── */}
+          {screen === 'vents-work' && (
+            <VentsWorkScreen
+              currentUser={currentUser}
+              onBack={goBack}
+              onNavigate={(target) => navigateTo(target as Screen)}
+              onOpenCreatorStudio={openCreatorStudio}
+              onOpenProviderBookings={openProviderBookings}
+            />
+          )}
+          {screen === 'representative-dashboard' && (
+            <RepresentativeDashboardScreen currentUser={currentUser} onBack={goBack} onNavigate={(target) => navigateTo(target as Screen)} />
+          )}
+          {screen === 'vents-earnings' && (
+            <VentsEarningsScreen currentUser={currentUser} onBack={goBack} onNavigate={(target) => navigateTo(target as Screen)} />
+          )}
+          {screen === 'representative-rewards' && (
+            <RepresentativeRewardsScreen currentUser={currentUser} onBack={goBack} onNavigate={(target) => navigateTo(target as Screen)} />
+          )}
+
           {/* ── VENTS REPRESENTATIVES (recruiter partnership frontend) ── */}
           {screen === 'representatives' && (
-            <RepresentativesScreen onBack={goBack} currentUser={currentUser} focusPartnership={representativesFocus} />
+            <RepresentativesScreen onBack={goBack} currentUser={currentUser} focusPartnership={representativesFocus} onOpenRewards={() => navigateTo('representative-dashboard')} />
           )}
 
           {/* ── TICKET REFUND (attendee side) ── */}

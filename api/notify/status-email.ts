@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail, sendPayoutDecisionEmail, sendVerifyAccountEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -169,6 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'email/SMS notification')) return;
 
   // ── Verify-account companion email (unauthenticated) ───────────────────────
   // Fires during signup/resend, before the user has a session — called

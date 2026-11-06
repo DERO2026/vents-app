@@ -1,0 +1,76 @@
+import { formatNaira } from '../../../lib/workRoles';
+import { useRepresentativeData, RewardsPanel, ExpensesPanel } from './representativePanels';
+import { workPage, workScroll, WorkBar, MCard, Row, Ico, Pill, Tiles, Tile, NoteBand, ErrorNote, Loading } from './workUi';
+
+// Representative rewards: referred organizers, the ₦50,000 reward for each
+// qualifying organizer, and transport/support expenses. Every rule is
+// enforced server-side (migration 0201); this screen only shows state and
+// calls the representative's own RPCs.
+export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }: {
+  currentUser: { id: string } | null;
+  onBack: () => void;
+  onNavigate: (screen: string) => void;
+}) {
+  const rep = useRepresentativeData(currentUser?.id);
+  const data = rep.rewards;
+
+  return (
+    <div data-testid="representative-rewards-screen" style={workPage}>
+      <WorkBar title="Rewards" sub="₦50,000 per qualifying organizer" onBack={onBack} />
+      <div style={workScroll}>
+        {rep.error && <ErrorNote>{rep.error}</ErrorNote>}
+        {rep.loading && <Loading />}
+        {!rep.loading && rep.rewardsUnavailable && <RewardsNotLive />}
+        {data && !data.representative && (
+          <MCard>
+            <Row icon={<Ico tone="p">⇄</Ico>} title="Join as a Representative" sub="Bring organizers to VENTS" right={<Pill tone="off">Join</Pill>}
+              onClick={() => onNavigate('representatives')} />
+          </MCard>
+        )}
+        {data?.representative && (
+          <>
+            <Tiles>
+              <Tile testId="rewards-tile-month" k="This month" v={data.qualifying_this_month}
+                s={`Qualifying organizers · ${data.rate_review_threshold}+ can earn a higher rate`} />
+              <Tile testId="rewards-tile-rate" k="Your rate" v={formatNaira(data.current_rate_kobo)} s="Per qualifying organizer" />
+            </Tiles>
+            <RewardRulesNote programmeOpen={data.programme_open} payoutsEnabled={data.payouts_enabled}
+              holdDays={rep.performance?.settlement_hold_days} />
+            <RewardsPanel rewards={data} totals={rep.performance?.lifecycle} reload={rep.reload} onNavigate={onNavigate} />
+            <ExpensesPanel reload={rep.reload} totals={rep.performance?.expenses} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The hold length is an admin setting (0–120 days), so it is shown from the
+// backend; when it isn't known the note doesn't guess a number.
+export function RewardRulesNote({ programmeOpen, payoutsEnabled, holdDays }: { programmeOpen: boolean; payoutsEnabled: boolean; holdDays?: number | null }) {
+  const hold = typeof holdDays === 'number' ? `${holdDays}-day settlement` : 'settlement hold';
+  return (
+    <NoteBand>
+      You can earn one reward per organizer you referred, ever. They qualify after hosting an event created after they
+      accepted your partnership. The event must have ended, not be cancelled and have finished its{' '}{hold}; a free event counts
+      only if VENTS confirms it was genuine. The organizer must be verified and confirm you referred them, then two
+      VENTS admins review it. Approved rewards are funded from VENTS ticket profit; once funded and payouts are on,
+      you add them to your earnings wallet and can withdraw them.
+      {!programmeOpen && ' Rewards open once VENTS finishes moving representatives off the old commission plan.'}
+      {programmeOpen && !payoutsEnabled && ' Wallet payouts have not started yet.'}
+    </NoteBand>
+  );
+}
+
+// The 0201 functions are not deployed (or the read-only Preview refuses
+// them): say so plainly, never show invented figures.
+export function RewardsNotLive() {
+  return (
+    <div data-testid="rewards-not-live">
+      <NoteBand>
+        Representative rewards are not switched on yet, so there are no reward figures to show. Your invitations and team
+        are live.
+      </NoteBand>
+    </div>
+  );
+}

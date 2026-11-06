@@ -23,14 +23,14 @@
 # Usage:
 #   scripts/local-pg-test/run-rollback-verification.sh [migration_file]
 #
-# Defaults to supabase/migrations/0192_platform_fee_accounting_foundation.sql
+# Defaults to supabase/migrations/_superseded/0192_platform_fee_accounting_foundation.sql
 # if no argument is given. Exits non-zero on any unexpected SQL error or
 # failed assertion.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MIGRATION_FILE="${1:-$REPO_ROOT/supabase/migrations/0192_platform_fee_accounting_foundation.sql}"
+MIGRATION_FILE="${1:-$REPO_ROOT/supabase/migrations/_superseded/0192_platform_fee_accounting_foundation.sql}"
 DB_NAME="vents_local_pg_test"
 PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DB_NAME")
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Regression/structure tests for 0191_admin_send_announcement.sql -- the
@@ -310,14 +310,26 @@ describe('0191: Everyone audience includes every non-admin role (Sub-Admins, Org
     expect(everyoneBranch).not.toMatch(/is_service_provider/);
   });
 
-  it('sub-admin is not role=\'admin\' (confirmed live: is_admin_or_root/is_super_admin check role = \'admin\' specifically, sub-admin is a separate literal), so the everyone filter includes Sub-Admins', () => {
-    // Mirrors the exact live semantics already confirmed in this session:
-    // is_super_admin() == is_root() OR role = 'admin'; role = 'sub-admin'
-    // is a distinct value that role <> 'admin' does not exclude.
-    const role = 'sub-admin';
-    expect(role).not.toBe('admin');
-    const includedInEveryone = role !== 'admin';
-    expect(includedInEveryone).toBe(true);
+  it('sub-admin is an allowed users.role distinct from admin, and the everyone filter excludes only admin, so Sub-Admins are included', () => {
+    // Derived from the migrations themselves (users_role_check and the
+    // 0191 everyone branch), not from a hardcoded literal compared with
+    // another literal.
+    const dir = join(__dirname, '..', '..', 'supabase', 'migrations');
+    const definitions = readdirSync(dir).filter((f) => f.endsWith('.sql'))
+      .filter((f) => /ADD CONSTRAINT users_role_check/.test(readFileSync(join(dir, f), 'utf8')));
+    // Defined once; nothing later redefines the allowed roles.
+    expect(definitions).toEqual(['0005_primary_unique_check_constraints.sql']);
+    const check = readFileSync(join(dir, definitions[0]), 'utf8').match(/users_role_check CHECK \(\(role = ANY \(ARRAY\[([^\]]+)\]/)?.[1] ?? '';
+    const allowedRoles = [...check.matchAll(/'([^']+)'::text/g)].map((m) => m[1]);
+    expect(allowedRoles).toContain('admin');
+    expect(allowedRoles).toContain('sub-admin');
+
+    const everyoneBranch = fnBody(m0191).match(/WHEN 'everyone' THEN[\s\S]*?(?=WHEN 'organizers')/)?.[0] ?? '';
+    const excludedRoles = [...everyoneBranch.matchAll(/u\.role <> '([^']+)'/g)].map((m) => m[1]);
+    expect(excludedRoles).toEqual(['admin']);
+    const includedRoles = allowedRoles.filter((r) => !excludedRoles.includes(r));
+    expect(includedRoles).toContain('sub-admin');
+    expect(includedRoles).not.toContain('admin');
   });
 });
 

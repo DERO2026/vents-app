@@ -3,6 +3,7 @@ import { verifyInsforgeSession, enforceRateLimit, isAiDisabled } from './_lib/ve
 import { applyCors } from './_lib/cors.js';
 import { handleAiAssistant } from './_lib/aiAssistantHandler.js';
 import { newAiRequestId, recordAiUsageEvent } from './_lib/aiTelemetry.js';
+import { refuseInPreview } from './_lib/previewGuard.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res, 'GET, POST, OPTIONS');
@@ -19,6 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ configured: !!process.env.ANTHROPIC_API_KEY });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'AI request')) return;
 
   // VENTS AI routing: an explicit, unambiguous discriminator on the request
   // body -- { mode: 'ai_assistant', ... } -- checked first, before any

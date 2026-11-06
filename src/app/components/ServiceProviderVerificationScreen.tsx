@@ -3,6 +3,7 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ChevronLeft, Clock, Upload, MessageSquare } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase } from '../../lib/supabase';
+import { PREVIEW_READ_ONLY_MESSAGE } from '../../lib/previewReadOnly';
 import { COUNTRY_CODES, DEFAULT_COUNTRY } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
@@ -35,6 +36,8 @@ function validateDocFile(file: File): string | null {
 }
 
 function uploadVerificationDoc(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
+  // Direct upload, outside the Supabase client: refuse it on a read-only Preview.
+  if (__VENTS_PREVIEW_READ_ONLY__) return Promise.reject(new Error(PREVIEW_READ_ONLY_MESSAGE));
   return new Promise((resolve, reject) => {
     const key = `${crypto.randomUUID()}-${file.name}`;
     const xhr = new XMLHttpRequest();

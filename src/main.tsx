@@ -12,7 +12,12 @@ import { initAnalytics } from './lib/analytics';
 import { hideNativeSplash } from './lib/native';
 
 initSentry();
-initAnalytics(import.meta.env.VITE_POSTHOG_KEY || '');
+// Preview deployments never send analytics (the constant is `false` in
+// production builds, so production is unchanged).
+if (!__VENTS_VERCEL_PREVIEW__) initAnalytics(import.meta.env.VITE_POSTHOG_KEY || '');
+if (__VENTS_PREVIEW_READ_ONLY__) {
+  void import('./lib/previewBanner').then((m) => m.mountPreviewReadOnlyBanner());
+}
 // Best-effort early hide of the native launch screen (no-ops on web) — the
 // guaranteed dismissal now comes from capacitor.config.ts's launchAutoHide,
 // this just makes the handoff to the WebView as fast as possible when it
