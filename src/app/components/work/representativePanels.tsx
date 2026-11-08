@@ -16,6 +16,14 @@ export interface Attribution {
   // A reward that is not rejected already exists for this organizer.
   claimed: boolean;
   events: { event_id: string; title: string; eligibility: Eligibility }[];
+  // 0209: how the organizer was referred and where they are now.
+  source?: 'invite' | 'referral_link' | null;
+  is_organizer?: boolean;
+  verification_status?: 'pending' | 'approved' | 'rejected' | null;
+  organizer_verified?: boolean;
+  reward_status?: ClaimStatus | null;
+  reward_amount_kobo?: number | null;
+  reward_credited_at?: string | null;
 }
 export interface Claim {
   id: string; organizer_id: string; organizer_name: string | null; event_title: string;
@@ -164,7 +172,7 @@ export function useRepHistory<T extends { id: string }>(kind: HistoryKind, statu
   return { items, loading, loadingMore, hasMore: !!next, error, loadMore, reset };
 }
 
-function MoreButton({ h, testId, label }: { h: History<any>; testId: string; label: string }) {
+export function MoreButton({ h, testId, label }: { h: History<any>; testId: string; label: string }) {
   if (!h.hasMore) return null;
   return (
     <WorkButton ghost testId={testId} disabled={h.loadingMore} onClick={() => h.loadMore()}>
@@ -173,7 +181,7 @@ function MoreButton({ h, testId, label }: { h: History<any>; testId: string; lab
   );
 }
 
-function ListError({ h, testId }: { h: History<any>; testId: string }) {
+export function ListError({ h, testId }: { h: History<any>; testId: string }) {
   if (!h.error) return null;
   return (
     <div data-testid={testId} style={{ display: 'grid', gap: 6 }}>

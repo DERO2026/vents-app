@@ -542,3 +542,63 @@ describe('Earnings: held earnings and refunds owed (0203)', () => {
     expect(byTestId('earn-tile-on-hold')).toBeNull();
   });
 });
+
+describe('Representative referrals (0209)', () => {
+  beforeEach(() => {
+    rpcs.get_my_representative_performance = { data: perf(), error: null };
+    rpcs.get_my_representative_rewards = { data: rewards(), error: null };
+    rpcs.get_my_representative_history = historyRpc;
+    rpcs.get_my_representative_referral = { data: { code: 'ABCD2345', path: '/?rep=ABCD2345' }, error: null };
+    historyFail = null;
+    history = {
+      claims: [], expenses: [],
+      attributions: [
+        { id: 'r1', at: at(0), organizer_id: 'o1', organizer_name: 'Ada Events', attributed_at: at(0), claimed: false, events: [],
+          source: 'referral_link', is_organizer: false, verification_status: null, organizer_verified: false, reward_status: null },
+        { id: 'r2', at: at(1), organizer_id: 'o2', organizer_name: 'Bayo Live', attributed_at: at(1), claimed: true,
+          events: [{ event_id: 'e1', title: 'Lagos Jam', eligibility: { eligible: true, reasons: [] } }],
+          source: 'invite', is_organizer: true, verification_status: 'approved', organizer_verified: true,
+          reward_status: 'credited', reward_amount_kobo: 5000000, reward_credited_at: at(1) },
+        { id: 'r3', at: at(2), organizer_id: 'o3', organizer_name: 'Chi Free', attributed_at: at(2), claimed: false,
+          events: [{ event_id: 'e2', title: 'Free meetup', eligibility: { eligible: false, reasons: ['free_event'] } }],
+          source: 'referral_link', is_organizer: true, verification_status: 'pending', organizer_verified: false, reward_status: null },
+      ],
+    };
+  });
+
+  it('shows the server-issued code and link, with copy and share', async () => {
+    await dash('referrals');
+    expect(byTestId('referral-code')?.textContent).toBe('ABCD2345');
+    expect(byTestId('referral-link')?.textContent).toBe('https://getvents.com/?rep=ABCD2345');
+    expect(byTestId('referral-copy-link')).not.toBeNull();
+    expect(byTestId('referral-share')).not.toBeNull();
+    expect(byTestId('referral-copy-code')).not.toBeNull();
+    expect(rpcCalls.some((c) => c.name === 'get_my_representative_referral')).toBe(true);
+  });
+
+  it('lists referred organizers with registration, verification, qualifying event and reward status', async () => {
+    await dash('referrals');
+    expect(byTestId('referred-o1')?.textContent).toContain('Joined through your link');
+    expect(byTestId('referred-o1')?.textContent).toContain('Registered');
+    expect(byTestId('referred-o2')?.textContent).toContain('Verified organizer');
+    expect(byTestId('referred-qualifying-o2')?.textContent).toBe('Qualifying event: Lagos Jam');
+    expect(byTestId('referred-reward-o2')?.textContent).toBe('₦50,000 · credited to your earnings wallet');
+    expect(byTestId('referred-o3')?.textContent).toContain('Verification pending');
+    expect(byTestId('referred-qualifying-o3')?.textContent).toBe('Only free events so far (free events do not qualify)');
+  });
+
+  it('a paused representative gets no link', async () => {
+    rpcs.get_my_representative_performance = { data: perf({ representative: { status: 'suspended', created_at: '2026-10-03T09:00:00Z' } }), error: null };
+    rpcs.get_my_representative_rewards = { data: rewards({ representative: { status: 'suspended' } }), error: null };
+    await dash('referrals');
+    expect(byTestId('referrals-inactive')).not.toBeNull();
+    expect(byTestId('referral-code')).toBeNull();
+    expect(rpcCalls.some((c) => c.name === 'get_my_representative_referral')).toBe(false);
+  });
+
+  it('before 0209 is deployed it says so instead of failing', async () => {
+    rpcs.get_my_representative_referral = { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+    await dash('referrals');
+    expect(byTestId('referrals-not-live')).not.toBeNull();
+  });
+});

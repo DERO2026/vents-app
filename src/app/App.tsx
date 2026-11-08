@@ -83,6 +83,7 @@ import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
 import { RepresentativesScreen } from './components/RepresentativesScreen';
 import { VentsWorkScreen } from './components/work/VentsWorkScreen';
+import { captureRepReferral, claimPendingRepReferral } from '../lib/representativeReferral';
 import { VentsEarningsScreen } from './components/work/VentsEarningsScreen';
 import { RepresentativeRewardsScreen } from './components/work/RepresentativeRewardsScreen';
 import { RepresentativeDashboardScreen } from './components/work/RepresentativeDashboardScreen';
@@ -284,6 +285,14 @@ export default function App() {
   const screenStackRef = useRef(screenStack);
   const goBackRef = useRef<() => void>(() => {});
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; is_service_provider?: boolean; country?: string } | null>(null);
+  // A user who opened a representative's organizer referral link (?rep=)
+  // is attributed once they are signed in -- right after registration, or on
+  // the next load if that call failed. The server refuses anything but a new
+  // account (0209: claim_representative_referral).
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    void claimPendingRepReferral((fn, args) => supabase.rpc(fn as any, args as any));
+  }, [currentUser?.id]);
   // See handleSignOut / the onAuthStateChange listener below: distinguishes
   // a sign-out this app itself initiated (handleSignOut already does the
   // correct, more specific navigation) from a session ended some other way
@@ -694,6 +703,13 @@ export default function App() {
           setViewingPaymentRequestRef(paymentRequestRef);
           setScreenStack([]);
           setScreen('payment-request');
+        }
+
+        // VENTS Representative organizer referral (?rep=CODE, migration 0209):
+        // remembered until the user registers, then claimed server-side.
+        if (captureRepReferral(params)) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
         }
 
         // Store referral code from ?ref= so it can be claimed after signup

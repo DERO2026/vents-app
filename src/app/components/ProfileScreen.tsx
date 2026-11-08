@@ -1,3 +1,4 @@
+import { RepresentativeBadge } from './RepresentativeBadge';
 import { useState, useEffect, useRef } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
@@ -371,6 +372,9 @@ export function ProfileScreen({
                   <BadgeCheck size={16} color={ventsColors.info} style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
                 </span>
               )}
+            </div>
+            <div style={{ marginTop: '6px', display: 'flex' }}>
+              <RepresentativeBadge userId={currentUser?.id} />
             </div>
             {currentUser?.state ? (
               <div className="flex items-center gap-1" style={{ marginTop: '4px' }}>

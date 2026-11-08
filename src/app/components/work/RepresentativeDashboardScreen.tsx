@@ -4,13 +4,15 @@ import { ventsColors } from '../../../lib/ventsDesignTokens';
 import { formatNaira, REWARD_STAGES } from '../../../lib/workRoles';
 import { useRepresentativeData, RewardsPanel, ExpensesPanel, type Performance, type RepresentativeData } from './representativePanels';
 import { RewardRulesNote, RewardsNotLive } from './RepresentativeRewardsScreen';
+import { ReferralsPanel } from './representativeReferrals';
 import {
   workPage, workScroll, WorkBar, MLabel, MCard, Row, Ico, Pill, Tiles, Tile, WorkButton, ErrorNote, Loading, NoteBand,
 } from './workUi';
 
-export type RepTab = 'overview' | 'monthly' | 'rewards' | 'team' | 'expenses';
+export type RepTab = 'overview' | 'referrals' | 'monthly' | 'rewards' | 'team' | 'expenses';
 const TABS: { id: RepTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'referrals', label: 'Referrals' },
   { id: 'monthly', label: 'Monthly' },
   { id: 'rewards', label: 'Rewards' },
   { id: 'team', label: 'Team' },
@@ -65,6 +67,7 @@ export function RepresentativeDashboardScreen({ currentUser, onBack, onNavigate,
         )}
 
         {tab === 'overview' && !rep.loading && <Overview rep={rep} perf={perf} onNavigate={onNavigate} goTab={setTab} />}
+        {tab === 'referrals' && !rep.loading && isRep && <ReferralsPanel active={status === 'active'} />}
         {tab === 'monthly' && perf?.representative && <Monthly perf={perf} />}
         {tab === 'monthly' && !rep.loading && !perf && rep.rewards?.representative && (
           <div data-testid="monthly-unavailable"><NoteBand>Monthly figures are not available yet.</NoteBand></div>

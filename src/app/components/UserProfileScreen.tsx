@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
+import { RepresentativeBadge } from './RepresentativeBadge';
 import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Link as LinkIcon, Ban } from 'lucide-react';
 import { UserProfile } from './types';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -387,6 +388,9 @@ export function UserProfileScreen({
               <BadgeCheck size={18} color="#3B82F6" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
             </span>
           )}
+        </div>
+        <div style={{ marginTop: '6px', display: 'flex' }}>
+          <RepresentativeBadge userId={user.id} />
         </div>
         {isOrganizerProfile ? (
           isVerified && (

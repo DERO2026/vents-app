@@ -170,6 +170,7 @@ const ELIGIBILITY_REASON_TEXT: Record<string, string> = {
   event_deleted: 'Event was deleted',
   event_hidden_by_admin: 'Event was taken down',
   event_not_found: 'Event not found',
+  free_event: 'Free events do not qualify for rewards',
 };
 
 export function eligibilityReasonText(reason: string): string {
