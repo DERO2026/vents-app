@@ -31,19 +31,24 @@ describe('validateWalletDepositAmountKobo', () => {
   });
 });
 
-describe('computeTicketWalletChargeKobo', () => {
-  it('charges subtotal + 4% VENTS service fee with no promo (0203)', () => {
-    // NGN 1,000 subtotal -> buyer pays 1,040.00 -> 104000 kobo
-    expect(computeTicketWalletChargeKobo(1000, 0)).toBe(104_000);
+describe('computeTicketWalletChargeKobo (fee model v3_15_35, 0208)', () => {
+  it('charges face + 1.5% VENTS service fee per ticket, times the quantity', () => {
+    expect(computeTicketWalletChargeKobo(1000, 1)).toBe(101_500);       // NGN 1,015.00
+    expect(computeTicketWalletChargeKobo(10_000, 3)).toBe(3_045_000);   // 3 x NGN 10,150
   });
 
-  it('applies a promo discount to the fee-inclusive rate, matching the SQL formula', () => {
-    // round(1000 * (1.04 - 10/100) * 100) = round(1000*0.94*100) = 94000
-    expect(computeTicketWalletChargeKobo(1000, 10)).toBe(94_000);
+  it('rounds the fee per ticket half-up, like ticket_fee_buyer_charge_kobo', () => {
+    // NGN 1,001: 100100 + round(1501.5) = 101602 per ticket
+    expect(computeTicketWalletChargeKobo(1001, 3)).toBe(304_806);
+  });
+
+  it('applies a promo to the face value, fee unchanged, matching the SQL', () => {
+    // 1,000,000 + 15,000 - 100,000
+    expect(computeTicketWalletChargeKobo(10_000, 1, 10)).toBe(915_000);
   });
 
   it('never charges a fee on a free ticket', () => {
-    expect(computeTicketWalletChargeKobo(0, 0)).toBe(0);
+    expect(computeTicketWalletChargeKobo(0, 2)).toBe(0);
   });
 });
 

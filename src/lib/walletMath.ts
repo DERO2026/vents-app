@@ -1,4 +1,4 @@
-import { TICKET_BUYER_MULTIPLIER } from './ticketFees';
+import { ticketCheckoutKobo } from './ticketFees';
 
 // Pure, client-side mirrors of the money math the deployed Postgres
 // functions are the real authority on (initiate_wallet_deposit,
@@ -19,16 +19,14 @@ export function validateWalletDepositAmountKobo(amountKobo: number): string | nu
   return null;
 }
 
-// Mirrors confirm_ticket_payment_via_wallet's v_expected_kobo for a ticket
-// bought now (fee model v2_4_5, migration 0203):
-//   round(total_amount * (1.04 - discount_pct/100) * 100)
-// where total_amount is the Naira subtotal (unit price * quantity) BEFORE
-// the 4% VENTS service fee, and discount_pct is a promo code's
-// percentage-off applied to the fee-inclusive rate. The organizer is
-// settled face - 5% commission separately (see ticketFees.ts) -- this
-// function only computes what the buyer's wallet is charged.
-export function computeTicketWalletChargeKobo(subtotalNaira: number, discountPct = 0): number {
-  return Math.round(subtotalNaira * (TICKET_BUYER_MULTIPLIER - discountPct / 100) * 100);
+// Mirrors confirm_ticket_payment_via_wallet's expected amount for a ticket
+// bought now (fee model v3_15_35, migration 0208): per ticket in kobo,
+//   face + round(face * 1.5%) - round(face * promo%), times the quantity
+// (public.ticket_fee_buyer_charge_kobo). The organizer is settled
+// face - 3.5% separately (see ticketFees.ts) -- this function only computes
+// what the attendee's wallet is charged.
+export function computeTicketWalletChargeKobo(unitPriceNaira: number, quantity: number, discountPct = 0): number {
+  return ticketCheckoutKobo(unitPriceNaira, quantity, discountPct).totalKobo;
 }
 
 export function hasSufficientBalance(balanceKobo: number, chargeKobo: number): boolean {
