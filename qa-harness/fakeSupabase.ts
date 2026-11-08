@@ -402,6 +402,9 @@ export async function getAuthToken(): Promise<string> {
 }
 
 const RPC_FIXTURES: Record<string, any> = {
+  // 0209: organizer referral link and the Representative badge.
+  get_my_representative_referral: { code: 'K7Q2M9XA', path: '/?rep=K7Q2M9XA' },
+  get_representative_badges: [{ user_id: 'user-2' }, { user_id: 'qa-fake-user' }],
   // Drives the real ManageEventsScreen / useOrganizerEvents.ts data layer
   // (DT1 desktop table) -- rows in the same raw shape the real RPC returns,
   // mapped by mapRow() in useOrganizerEvents.ts, not a hand-shaped UI object.
@@ -540,11 +543,14 @@ const REP_HISTORY: Record<string, any[]> = {
     })),
   ].map((r) => ({ ...r, at: r.created_at })),
   attributions: [
-    { id: 'at-1', at: '2026-10-09T09:00:00Z', organizer_id: 'user-4', organizer_name: 'Ada Chukwu', attributed_at: '2026-10-09T09:00:00Z', claimed: false, events: [] },
+    { id: 'at-1', at: '2026-10-09T09:00:00Z', organizer_id: 'user-4', organizer_name: 'Ada Chukwu', attributed_at: '2026-10-09T09:00:00Z', claimed: false, events: [],
+      source: 'referral_link', is_organizer: false, verification_status: null, organizer_verified: false, reward_status: null },
     { id: 'at-2', at: '2026-10-08T09:00:00Z', organizer_id: 'user-2', organizer_name: 'Priya Nair', attributed_at: '2026-10-08T09:00:00Z', claimed: false,
-      events: [{ event_id: 'evt-x2', title: 'Lekki Art Walk', eligibility: { eligible: false, reasons: ['settlement_hold'] } }] },
+      events: [{ event_id: 'evt-x2', title: 'Lekki Art Walk', eligibility: { eligible: false, reasons: ['settlement_hold'] } }],
+      source: 'referral_link', is_organizer: true, verification_status: 'pending', organizer_verified: false, reward_status: null },
     { id: 'at-3', at: '2026-10-05T09:00:00Z', organizer_id: 'user-3', organizer_name: 'Tobi Oyelaran', attributed_at: '2026-10-05T09:00:00Z', claimed: false,
-      events: [{ event_id: 'evt-x1', title: 'Abuja Comedy Night', eligibility: { eligible: true, reasons: [], is_free_event: false } }] },
+      events: [{ event_id: 'evt-x1', title: 'Abuja Comedy Night', eligibility: { eligible: true, reasons: [], is_free_event: false } }],
+      source: 'invite', is_organizer: true, verification_status: 'approved', organizer_verified: true, reward_status: 'credited', reward_amount_kobo: 5000000, reward_credited_at: '2026-10-28T09:00:00Z' },
   ],
   expenses: [
     { id: 'ex-1', at: '2026-10-21T09:00:00Z', category: 'transport', amount_kobo: 250000, description: 'Bus to Ikeja meeting', incurred_on: '2026-10-21', status: 'submitted', decision_reason: null, created_at: '2026-10-21T09:00:00Z' },

@@ -47,6 +47,7 @@ import { ImageCarousel } from './ImageCarousel';
 import { FlyerLightbox } from './FlyerLightbox';
 import { EventMap } from './EventMap';
 import { contactPhoneLinks } from '../../lib/contactPhone';
+import { ticketCheckoutKobo, formatKobo, TICKET_SERVICE_FEE_LABEL } from '../../lib/ticketFees';
 
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
@@ -308,6 +309,10 @@ export function EventDetailsScreen({
   // a visibility one).
   const hasEnded = hasEventEnded({ event_date: (event as any).event_date, end_date: (event as any).endDate });
   const canBook = !hasEnded && !!selectedTicket && selectedQty > 0;
+  // What the buyer will actually pay, fee included, with the same per-ticket
+  // arithmetic as checkout and the database (ticketFees.ts / 0208), so the
+  // event page never shows a lower amount than checkout charges.
+  const eventCheckout = ticketCheckoutKobo(selectedTicket?.price ?? 0, selectedQty);
   const [reviewText, setReviewText] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -1615,9 +1620,14 @@ export function EventDetailsScreen({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>Total</span>
             <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
-              {selectedTicket ? formatPrice(selectedTicket.price * selectedQty) : formatPrice(0)}
+              {selectedTicket ? formatKobo(eventCheckout.totalKobo) : formatPrice(0)}
             </span>
           </div>
+          {selectedTicket && eventCheckout.serviceFeeKobo > 0 && (
+            <div data-testid="event-total-fee-note" style={{ color: ventsColors.ink3, fontSize: '11.5px', marginTop: '-10px', marginBottom: '14px', textAlign: 'right' }}>
+              Includes {TICKET_SERVICE_FEE_LABEL.toLowerCase()}: {formatKobo(eventCheckout.serviceFeeKobo)}
+            </div>
+          )}
           <button
             onClick={() => {
               try {
@@ -1654,7 +1664,7 @@ export function EventDetailsScreen({
             {purchasesDisabled
               ? 'Purchases Paused'
               : canBook
-              ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+              ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatKobo(eventCheckout.totalKobo)}`)
               : 'Select tickets'}
           </button>
         </div>
@@ -1833,7 +1843,7 @@ export function EventDetailsScreen({
               {purchasesDisabled
                 ? 'Purchases Temporarily Paused'
                 : canBook
-                ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+                ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatKobo(eventCheckout.totalKobo)}`)
                 : 'Select tickets above'}
             </button>
           </>

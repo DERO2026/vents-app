@@ -147,7 +147,9 @@ const SCREENS: Record<string, () => JSX.Element> = {
     />
   ),
   'event-details': () => {
-    const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] };
+    const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
+      // Legacy save (digits after the +234 picker); see src/lib/contactPhone.ts.
+      show_phone: true, contact_phone: '9152579794' };
     const event = mapDbEventToFrontend(dbEvent);
     return (
       <EventDetailsScreen
@@ -255,7 +257,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
     <RepresentativesScreen onBack={() => {}} currentUser={{ id: 'rep-1', role: 'user', full_name: 'Adaeze Okonkwo', username: 'adaeze' }}
       onOpenRewards={() => {}} />
   ),
-  ...Object.fromEntries((['overview', 'monthly', 'rewards', 'team', 'expenses'] as RepTab[]).map((t) => [
+  ...Object.fromEntries((['overview', 'referrals', 'monthly', 'rewards', 'team', 'expenses'] as RepTab[]).map((t) => [
     `rep-${t}`, () => <RepresentativeDashboardScreen currentUser={{ id: 'rep-1' }} onBack={() => {}} onNavigate={nav} initialTab={t} />,
   ])),
   'vents-work-provider': () => (
@@ -306,7 +308,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
       <CheckoutScreen
         event={event}
         ticketType={ticketType}
-        quantity={1}
+        quantity={new URLSearchParams(window.location.search).get('qty') ? Number(new URLSearchParams(window.location.search).get('qty')) : 1}
         currentUser={FIXTURE_USER}
         onBack={() => {}}
         onSuccess={() => {}}
