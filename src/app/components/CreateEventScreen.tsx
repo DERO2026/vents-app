@@ -23,6 +23,7 @@ import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { pickImage } from '../../lib/pickImage';
 import { Sentry } from '../../lib/sentry';
 import { isSafeHttpsUrl } from '../../lib/externalLink';
+import { toE164ContactPhone, splitStoredContactPhone } from '../../lib/contactPhone';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; country?: string } | null;
@@ -296,7 +297,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setTicketTypes(tts);
         setIs18Plus(!!row.is_18_plus);
         setShowPhone(!!row.show_phone);
-        setContactPhone(row.show_phone && row.contact_phone ? row.contact_phone : '');
+        {
+          // Stored values may be E.164 (current saves) or the bare digits older
+          // saves kept; split back into the picker's dial code + national digits.
+          const parts = splitStoredContactPhone(row.show_phone ? row.contact_phone : '');
+          setContactPhoneCountryCode(parts.countryCode);
+          setContactPhone(parts.national);
+        }
         originalStatusRef.current = row.status || 'live';
         originalCreatedAtRef.current = row.created_at ? new Date(row.created_at).getTime() : Date.now();
       } catch (err: any) {
@@ -598,7 +605,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           ticketName: ticketTypes[0]?.name || 'Regular',
           ticketPrice: ticketTypes[0]?.price || '0',
           ticketQty: ticketTypes[0]?.quantity || '500',
-          contactPhone: showPhone ? contactPhone : '',
+          contactPhone: showPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : '',
           showPhone,
           status: eventStatus,
           createdAt: Date.now(),
@@ -644,7 +651,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               payout_account_id: payoutAccountId || null,
               status: eventStatus,
               is_18_plus: is18Plus,
-              contact_phone: showPhone ? contactPhone : null,
+              contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
               show_phone: showPhone,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
@@ -709,7 +716,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ticketName: ticketTypes[0]?.name || 'Regular',
         ticketPrice: ticketTypes[0]?.price || '0',
         ticketQty: ticketTypes[0]?.quantity || '500',
-        contactPhone: showPhone ? contactPhone : '',
+        contactPhone: showPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : '',
         showPhone,
         status: eventStatus,
         createdAt: Date.now(),
@@ -827,7 +834,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               categories: selectedCategories,
               ...(payoutAccountId ? { payout_account_id: payoutAccountId } : {}),
               is_18_plus: is18Plus,
-              contact_phone: showPhone ? contactPhone : null,
+              contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
               show_phone: showPhone,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
@@ -868,7 +875,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ticketName: ticketTypes[0]?.name || 'Regular',
         ticketPrice: ticketTypes[0]?.price || '0',
         ticketQty: ticketTypes[0]?.quantity || '500',
-        contactPhone: showPhone ? contactPhone : '',
+        contactPhone: showPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : '',
         showPhone,
         status: originalStatusRef.current as any,
         createdAt: originalCreatedAtRef.current,
