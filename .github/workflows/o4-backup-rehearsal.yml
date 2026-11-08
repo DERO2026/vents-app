@@ -53,8 +53,11 @@ jobs:
     timeout-minutes: 45
     env:
       SCOPE: ${{ github.event.inputs.dump_scope || 'full' }}
-      WORK: ${{ runner.temp }}/o4
     steps:
+      # The runner context is not available in job-level env; set WORK here.
+      - name: Private work directory on this VM
+        run: echo "WORK=$RUNNER_TEMP/o4" >> "$GITHUB_ENV"
+
       - name: 'Check out the O4 scripts (PR #82 branch; no credentials kept)'
         uses: actions/checkout@v4
         with:
