@@ -8,7 +8,7 @@ export type PillTone = 'on' | 'wait' | 'off' | 'soon';
 
 export type RoleAction =
   | 'organizer-apply'      // opens the organizer application sheet (any state but active)
-  | 'organizer-verify'     // CAC verification
+  | 'organizer-verify'     // CAC verification (no role row uses it any more; kept for callers)
   | 'organizer-studio'     // switch into the organizer view
   | 'provider-verify'      // ServiceProviderVerificationScreen (apply / status)
   | 'provider-setup'       // ServiceProviderSetupScreen (create / edit listing)
@@ -51,7 +51,9 @@ export function organizerRole({ isOrganizer, isStaff, isVerified, request }: Org
     if (isVerified || isStaff) {
       return { ...base, subtitle: isStaff ? 'Organizer tools' : 'Verified Organizer', pill: { label: isStaff ? 'Active' : 'Verified', tone: 'on' }, chip: { label: 'Organizer', tone: 'on' }, action: 'organizer-studio' };
     }
-    return { ...base, subtitle: 'Get verified with CAC', pill: { label: 'Active', tone: 'on' }, chip: { label: 'Organizer', tone: 'on' }, action: 'organizer-verify' };
+    // Still Creator Studio: an existing organizer always opens Studio from
+    // here. CAC verification is offered separately (VENTS Work shortcut).
+    return { ...base, subtitle: 'Creator Studio · get verified with CAC', pill: { label: 'Active', tone: 'on' }, chip: { label: 'Organizer', tone: 'on' }, action: 'organizer-studio' };
   }
   if (request === 'pending') {
     return { ...base, subtitle: 'Application submitted', pill: { label: 'In review', tone: 'wait' }, chip: { label: 'Organizer · in review', tone: 'wait' }, action: 'organizer-apply' };

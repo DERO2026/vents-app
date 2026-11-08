@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, getAuthToken } from '../../lib/supabase';
+import { uploadAllowanceError } from '../../lib/uploadAllowance';
 import { PREVIEW_READ_ONLY_MESSAGE } from '../../lib/previewReadOnly';
 import { pickImage } from '../../lib/pickImage';
 import { openExternalUrl } from '../../lib/externalLink';
@@ -449,7 +450,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
       // checked before the XHR fires.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
       if (limitError) {
-        setError('Too many uploads. Please wait a bit before uploading more.');
+        setError(uploadAllowanceError(limitError).message);
         setSubmitting(false);
         return;
       }
@@ -891,7 +892,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
       // other upload path in this codebase uses (30/hr/user), called
       // before any compression/network work -- this path had none at all.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
+      if (limitError) throw uploadAllowanceError(limitError);
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
@@ -980,7 +981,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
       await getAuthToken();
       // Financial-hardening: same check as the avatar path above.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
+      if (limitError) throw uploadAllowanceError(limitError);
       const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;

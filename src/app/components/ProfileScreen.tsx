@@ -23,7 +23,7 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { AppVersionFooter } from './shared/AppVersionFooter';
 import { useWorkStatus } from './work/useWorkStatus';
-import { HeroWork, Row, Chev, Chips, Pill } from './work/workUi';
+import { ProfileWorkCard, workIndicators } from './work/ProfileWorkCard';
 import { organizerRole, providerRole, representativeRole } from '../../lib/workRoles';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -249,13 +249,16 @@ export function ProfileScreen({
   // exclusive label. A plain account is a "User," never "Member".
   const roleLabel = isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'User';
   const isStaff = isAdmin || isSubAdmin;
-  // Only roles the person has engaged with get a chip (Start/Join rows
-  // live in the hub), so the card never advertises roles as held.
-  const workChips = work.loading ? [] : [
-    organizerRole({ isOrganizer: !!currentUser?.isOrganizer, isStaff, isVerified, request: work.organizerRequest }),
-    providerRole({ isProvider: currentUser?.is_service_provider === true, isStaff, request: work.providerRequest, profileStatus: work.providerProfileStatus }),
-    representativeRole(work.representative),
-  ].filter((r) => r.pill.tone !== 'off').map((r) => r.chip);
+  // All four VENTS Work indicators, always shown with their live state
+  // ("Start"/"Join" for roles not taken up yet), so the card never hides
+  // a role or claims one is held.
+  const workCardIndicators = workIndicators({
+    loading: work.loading,
+    organizer: organizerRole({ isOrganizer: !!currentUser?.isOrganizer, isStaff, isVerified, request: work.organizerRequest }),
+    provider: providerRole({ isProvider: currentUser?.is_service_provider === true, isStaff, request: work.providerRequest, profileStatus: work.providerProfileStatus }),
+    representative: representativeRole(work.representative),
+    vcSpendable: work.vcSpendable,
+  });
   
   const filteredMenuItems = menuItems.filter(item => {
     if (isOrganizer) {
@@ -473,22 +476,12 @@ export function ProfileScreen({
           </button>
         </div>
 
-        {/* VENTS Work card (approved mockup A) -- replaces the VENTS Cents
-            highlight card, the duplicate Vents Cents menu row and the two
-            "Become..." buttons. Chips show each role's live state; every
-            earning path opens from the VENTS Work hub. */}
+        {/* VENTS Work card -- replaces the VENTS Cents highlight card, the
+            duplicate Vents Cents menu row and the two "Become..." buttons.
+            The whole card opens the VENTS Work hub, where every earning
+            path lives. */}
         <div className="px-4" style={{ marginTop: '16px', marginBottom: '16px' }}>
-          <HeroWork testId="profile-vents-work-card" onClick={() => onNavigate('vents-work')}>
-            <Row
-              title={<span style={{ fontSize: 14 }}>VENTS Work</span>}
-              sub="Earn by running events, offering services and representing others"
-              right={<Chev />}
-            />
-            <Chips>
-              {workChips.map((c) => <Pill key={c.label} tone={c.tone}>{c.label}</Pill>)}
-              {work.vcSpendable !== null && <Pill tone="off">VC {work.vcSpendable.toLocaleString()}</Pill>}
-            </Chips>
-          </HeroWork>
+          <ProfileWorkCard indicators={workCardIndicators} onOpen={() => onNavigate('vents-work')} />
         </div>
 
         {/* Menu items */}

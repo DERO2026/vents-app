@@ -53,12 +53,15 @@ describe('ConversationScreen sendImageMessage: upload hardening', () => {
     const fn = fnBody('sendImageMessage');
     // No bare "fail open" catch left -- every branch of the rate-limit
     // check (an RPC error field, or an exception thrown reaching the
-    // catch block) must flash the limit message and return.
+    // catch block) must flash a message and return. The message now says
+    // what actually failed (uploadAllowanceError) instead of always
+    // claiming "Too many uploads".
     expect(fn).not.toMatch(/fail open/i);
-    const catchIdx = fn.indexOf('} catch {');
+    const catchIdx = fn.indexOf('} catch (thrown) {');
+    expect(catchIdx).toBeGreaterThan(-1);
     const catchBlockEnd = fn.indexOf('}', fn.indexOf('return;', catchIdx));
     const catchBlock = fn.slice(catchIdx, catchBlockEnd + 1);
-    expect(catchBlock).toMatch(/flash\(.*too many uploads/i);
+    expect(catchBlock).toMatch(/flash\(uploadAllowanceError\(thrown\)\.message\)/);
     expect(catchBlock).toMatch(/return;/);
   });
 });

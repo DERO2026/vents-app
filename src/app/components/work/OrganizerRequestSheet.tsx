@@ -9,19 +9,31 @@ import type { RequestStatus } from '../../../lib/workRoles';
 // Inserting into organizer_requests is the only client step; a Super Admin
 // decides it through admin_decide_organizer_request, which is the only
 // path that grants organizer capability.
-export function OrganizerRequestSheet({ userId, status, adminNote, submittedReason, onClose, onSubmitted }: {
+export function OrganizerRequestSheet({ userId, status, adminNote, submittedReason, onClose, onSubmitted, onOpenCreatorStudio }: {
   userId: string;
   status: RequestStatus;
   adminNote: string | null;
   submittedReason: string | null;
   onClose: () => void;
   onSubmitted: () => void;
+  // Shown once the application is approved, so the person goes straight
+  // into Creator Studio instead of seeing the application form again.
+  onOpenCreatorStudio?: () => void;
 }) {
   const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'pending' | 'rejected' | 'approved'>(
     status === 'none' ? 'idle' : status,
   );
   const [orgRequestReason, setOrgRequestReason] = useState(status === 'pending' ? submittedReason ?? '' : '');
   const [orgRequestError, setOrgRequestError] = useState('');
+
+  // The sheet can open before the request status has loaded (Creator
+  // Studio opens it straight away for non-organizers). Follow the loaded
+  // status so an approved or pending application is never shown the
+  // blank form.
+  useEffect(() => {
+    setOrgRequestStatus((cur) => (cur === 'sending' ? cur : status === 'none' ? (cur === 'pending' ? cur : 'idle') : status));
+    if (status === 'pending' && submittedReason) setOrgRequestReason(submittedReason);
+  }, [status, submittedReason]);
 
   // Draft persistence: unsent text survives closing the sheet (per-user
   // key). Nothing reaches the database until Submit.
@@ -72,7 +84,23 @@ export function OrganizerRequestSheet({ userId, status, adminNote, submittedReas
       onClick={onClose}>
       <div role="dialog" aria-modal="true" style={{ background: ventsColors.surface, borderRadius: '24px 24px 0 0', padding: '24px 20px calc(32px + env(safe-area-inset-bottom))', width: '100%', maxWidth: '430px', boxSizing: 'border-box' }}
         onClick={(e) => e.stopPropagation()}>
-        {orgRequestStatus === 'pending' ? (
+        {orgRequestStatus === 'approved' ? (
+          <>
+            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>You&apos;re an approved Organizer</h3>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Your application was approved. Create and manage your events in Creator Studio.
+            </p>
+            {onOpenCreatorStudio && (
+              <button
+                data-testid="org-sheet-open-studio"
+                onClick={onOpenCreatorStudio}
+                style={{ width: '100%', height: '48px', borderRadius: '14px', background: ventsColors.accentStrong, border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Open Creator Studio
+              </button>
+            )}
+          </>
+        ) : orgRequestStatus === 'pending' ? (
           <>
             <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Application Submitted</h3>
             <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>

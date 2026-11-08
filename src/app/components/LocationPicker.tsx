@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader, WifiOff } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { loadGoogleMaps } from '../../lib/googleMaps';
+import { loadGoogleMaps, onGoogleMapsAuthFailure } from '../../lib/googleMaps';
 import { matchNigeriaState } from '../../lib/nigeriaLocations';
 import { isOnline } from '../../lib/isOnline';
 import { Sentry } from '../../lib/sentry';
@@ -79,10 +79,16 @@ export function LocationPicker({
   value,
   onChange,
   placeholder = 'Search for an address, venue, or landmark',
+  regionCode,
 }: {
   value: LocationValue;
   onChange: (v: LocationValue) => void;
   placeholder?: string;
+  // ISO 3166-1 alpha-2 country to search in (e.g. a provider's selected
+  // country). Defaults to Nigeria, where events are created. Suggestions
+  // used to be hard-limited to Nigeria, so a provider registering in any
+  // other country could never find their address.
+  regionCode?: string;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
@@ -183,6 +189,9 @@ export function LocationPicker({
           setStatus('ready');
         })
         .catch(async (e) => {
+          // A stale map from a previous attempt must not stay mounted.
+          mapRef.current = null;
+          markerRef.current = null;
           console.error('Location search unavailable:', e);
           Sentry.captureException(e);
           if (cancelled) return;
@@ -260,6 +269,22 @@ export function LocationPicker({
     });
     return () => { cancelled = true; unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useEmbed]);
+
+  // A key rejection reported after load (see googleMaps.ts) turns the
+  // picker into the manual-entry fallback instead of leaving Google's error
+  // box where the map was.
+  useEffect(() => {
+    if (useEmbed) return;
+    return onGoogleMapsAuthFailure(() => {
+      if (!isMountedRef.current) return;
+      mapRef.current = null;
+      markerRef.current = null;
+      setSuggestions([]);
+      setDropdownOpen(false);
+      setSearching(false);
+      setStatus('unavailable');
+    });
   }, [useEmbed]);
 
   useEffect(() => {
@@ -371,7 +396,7 @@ export function LocationPicker({
 
       const response = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: query,
-        includedRegionCodes: ['ng'],
+        includedRegionCodes: [(regionCode || 'ng').toLowerCase()],
         sessionToken: sessionTokenRef.current,
       });
       const raw = response?.suggestions;
@@ -543,8 +568,16 @@ export function LocationPicker({
         </p>
       )}
       {status === 'unavailable' && (
-        <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>
-          Location search is unavailable right now — you can still type the address manually.
+        <p data-testid="location-unavailable" style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>
+          Location search is unavailable right now — you can still type the address manually.{' '}
+          <button
+            type="button"
+            data-testid="location-retry"
+            onClick={() => { setStatus('loading'); setRetryKey((k) => k + 1); }}
+            style={{ background: 'none', border: 'none', padding: 0, color: '#A78BFA', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Try again
+          </button>
         </p>
       )}
 

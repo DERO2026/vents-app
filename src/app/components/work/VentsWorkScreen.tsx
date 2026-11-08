@@ -18,13 +18,16 @@ interface Confirmation { id: string; status: string; representative_name: string
 // VENTS Work hub (approved mockup B): earnings first, then roles, then
 // opportunities. Every role row opens that role's existing flow in
 // whatever state the person is in; nothing here grants a capability.
-export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreatorStudio, onOpenProviderBookings }: {
+export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreatorStudio, onOpenProviderBookings, openOrganizerApplicationSignal = 0 }: {
   currentUser: (WorkUser & { full_name?: string | null; email?: string }) | null;
   onBack: () => void;
   onNavigate: (screen: string) => void;
   onOpenCreatorStudio: () => void;
   // Opens the caller's own provider bookings (resolves their provider id).
   onOpenProviderBookings?: () => void;
+  // Bumped by App when a non-organizer selects Creator Studio: open the
+  // organizer application straight away instead of leaving them to find it.
+  openOrganizerApplicationSignal?: number;
 }) {
   const status = useWorkStatus(currentUser);
   const [withdrawableKobo, setWithdrawableKobo] = useState<number | null>(null);
@@ -34,6 +37,10 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
   const [actionError, setActionError] = useState<string | null>(null);
   const [showOrgSheet, setShowOrgSheet] = useState(false);
   const [showCac, setShowCac] = useState(false);
+
+  useEffect(() => {
+    if (openOrganizerApplicationSignal > 0) setShowOrgSheet(true);
+  }, [openOrganizerApplicationSignal]);
 
   const loadMoney = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -154,6 +161,12 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
                 <>
                   <Row testId="shortcut-studio" icon={<Ico tone="p">★</Ico>} title="Creator Studio" sub="Create and manage your events" right={<Chev />} onClick={onOpenCreatorStudio} />
                   <Row testId="shortcut-events" icon={<Ico tone="p">☰</Ico>} title="Manage events" sub="Edit, sales and attendees" right={<Chev />} onClick={() => onNavigate('manage-events')} />
+                  {/* CAC verification used to be what the Organizer row
+                      opened for unverified organizers, which kept them out
+                      of Creator Studio. It is its own entry now. */}
+                  {!isVerified && !isStaff && (
+                    <Row testId="shortcut-cac" icon={<Ico tone="y">✓</Ico>} title="Get verified" sub="Verify your organizer account with CAC" right={<Chev />} onClick={() => setShowCac(true)} />
+                  )}
                 </>
               )}
               {isProviderActive && (
@@ -186,6 +199,7 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
           submittedReason={status.organizerReason}
           onClose={() => setShowOrgSheet(false)}
           onSubmitted={() => status.refresh()}
+          onOpenCreatorStudio={() => { setShowOrgSheet(false); onOpenCreatorStudio(); }}
         />
       )}
     </div>

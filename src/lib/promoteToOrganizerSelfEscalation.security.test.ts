@@ -46,13 +46,20 @@ describe('Become an Organizer: no instant self-promotion path', () => {
   it('setActiveView passed to ProfileScreen never grants the organizer role itself -- it only switches nav state for an account that already has it', () => {
     const wiring = appTsxSrc.match(/setActiveView=\{\(view\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? '';
     expect(wiring).not.toMatch(/promote_to_organizer/);
-    expect(wiring).toMatch(/if \(view === 'organizer'\) \{\s*openCreatorStudio\(\);/);
-    // openCreatorStudio (shared with VENTS Work) guards against switching
-    // the view to 'organizer' for an account that holds neither the
-    // independent Organizer capability (isOrganizer) nor the admin role.
-    const studio = appTsxSrc.match(/const openCreatorStudio = useCallback\(\(\) => \{[\s\S]*?\}, \[currentUser\]\);/)?.[0] ?? '';
+    expect(wiring).toMatch(/if \(view === 'organizer'\) \{\s*void openCreatorStudio\(\);/);
+    // openCreatorStudio (shared with VENTS Work and Home's "+") only opens
+    // Creator Studio for an account decideCreatorStudioDestination confirms
+    // holds organizer capability -- locally, or by re-reading users.
+    // is_organizer/role from the database. Anyone else is sent to the
+    // organizer application. It never calls an RPC or writes anything.
+    const studio = appTsxSrc.match(/const openCreatorStudio = useCallback\(async \(\) => \{[\s\S]*?\}, \[currentUser, screen, navigateTo\]\);/)?.[0] ?? '';
+    expect(studio).not.toBe('');
     expect(studio).not.toMatch(/promote_to_organizer/);
-    expect(studio).toMatch(/if \(!currentUser \|\| !\(currentUser\.isOrganizer \|\| currentUser\.role === 'admin'\)\) return;/);
+    expect(studio).not.toMatch(/\.rpc\(|\.insert\(|\.update\(|\.upsert\(/);
+    expect(studio).toMatch(/decideCreatorStudioDestination\(currentUser,/);
+    expect(studio).toMatch(/\.select\('is_organizer, role'\)/);
+    // The local flag is only set from a confirmed database read.
+    expect(studio).toMatch(/if \(decision\.confirmedOrganizer\) \{\s*setCurrentUser\(prev => prev \? \{ \.\.\.prev, isOrganizer: true \} : prev\);/);
   });
 
   it('"Become an Organizer" (VENTS Work) submits an application to organizer_requests, reviewed elsewhere', () => {

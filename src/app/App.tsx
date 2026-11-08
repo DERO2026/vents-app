@@ -15,6 +15,7 @@ import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken, clearTicketTokenCache } from '../lib/ticketToken';
 import { invalidateVcBalanceCache } from '../lib/vcBalanceCache';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
+import { decideCreatorStudioDestination } from '../lib/creatorStudioRouting';
 import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 import { useSwipeBack } from '../lib/useSwipeBack';
 
@@ -2344,13 +2345,36 @@ export default function App() {
   // organizer_requests application (is_organizer,
   // 0121_organizer_capability_independent_of_role.sql -- the DB is the only
   // source of truth here now, no localStorage workaround).
-  const openCreatorStudio = useCallback(() => {
-    if (!currentUser || !(currentUser.isOrganizer || currentUser.role === 'admin')) return;
-    setUserRole('organizer');
-    setOrgTab('home');
-    setActiveTab('home');
-    setScreen('home');
-  }, [currentUser]);
+  //
+  // Organizers go to Creator Studio ('org-dashboard', the same screen Home's
+  // "+" opens). This previously set screen 'home', which always renders the
+  // attendee HomeScreen, so organizers were sent to Home. Non-organizers go
+  // to the organizer application in VENTS Work. See
+  // src/lib/creatorStudioRouting.ts.
+  const [organizerApplicationSignal, setOrganizerApplicationSignal] = useState(0);
+  const openCreatorStudio = useCallback(async () => {
+    if (!currentUser) return;
+    const decision = await decideCreatorStudioDestination(currentUser, async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('is_organizer, role')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    });
+    if (decision.destination === 'creator-studio') {
+      if (decision.confirmedOrganizer) {
+        setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : prev);
+      }
+      setUserRole('organizer');
+      setOrgTab('home');
+      if (screen !== 'org-dashboard') navigateTo('org-dashboard');
+      return;
+    }
+    setOrganizerApplicationSignal((n) => n + 1);
+    if (screen !== 'vents-work') navigateTo('vents-work');
+  }, [currentUser, screen, navigateTo]);
 
   const handleOrgNavigate = useCallback((target: string) => {
     // A generic "Create Event" entry point (not the edit flow's own
@@ -3229,7 +3253,7 @@ export default function App() {
               onSearchPress={() => handleTabChange('explore')}
               onNotificationsPress={() => navigateTo('notifications')}
               onProfilePress={() => handleTabChange('profile')}
-              onCreatePress={() => navigateTo('org-dashboard')}
+              onCreatePress={() => void openCreatorStudio()}
               onUserPress={async (u) => {
                 const { data } = await supabase
                   .from('public_profiles')
@@ -3326,7 +3350,7 @@ export default function App() {
               // the role.
               setActiveView={(view) => {
                 if (view === 'organizer') {
-                  openCreatorStudio();
+                  void openCreatorStudio();
                 } else {
                   setUserRole('attendee');
                   setActiveTab('home');
@@ -3868,8 +3892,9 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               onNavigate={(target) => navigateTo(target as Screen)}
-              onOpenCreatorStudio={openCreatorStudio}
+              onOpenCreatorStudio={() => void openCreatorStudio()}
               onOpenProviderBookings={openProviderBookings}
+              openOrganizerApplicationSignal={organizerApplicationSignal}
             />
           )}
           {screen === 'representative-dashboard' && (
