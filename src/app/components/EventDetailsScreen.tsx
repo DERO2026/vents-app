@@ -46,6 +46,7 @@ import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
 import { FlyerLightbox } from './FlyerLightbox';
 import { EventMap } from './EventMap';
+import { contactPhoneLinks } from '../../lib/contactPhone';
 
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
@@ -262,6 +263,7 @@ export function EventDetailsScreen({
   onAskVentsAi,
 }: EventDetailsScreenProps) {
   const isEventOwner = !!currentUserId && !!event.organizer_id && currentUserId === event.organizer_id;
+  const contactPhone = contactPhoneLinks(event.contactPhone);
   const isSubAdmin = currentUserRole === 'sub-admin';
   const isRootAdmin = currentUserId === ROOT_UID;
   const isPlatformAdmin = currentUserRole === 'admin';
@@ -1317,8 +1319,10 @@ export function EventDetailsScreen({
           </div>
         </div>
 
-        {/* Contact number (if organizer chose to show it) */}
-        {event.contactPhone && (
+        {/* Contact number (if organizer chose to show it). Nigerian numbers show in
+            local format (0XXXXXXXXXX); call and WhatsApp always use +234 (see
+            src/lib/contactPhone.ts). */}
+        {contactPhone && (
           <div
             style={{
               background: 'rgba(168,85,247,0.06)',
@@ -1334,18 +1338,21 @@ export function EventDetailsScreen({
                 ORGANISER CONTACT
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em' }}>
-                  {event.contactPhone}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ minWidth: 0 }}>
+                <p data-testid="organizer-contact-phone" style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+                  {contactPhone.display}
                 </p>
                 <p style={{ color: ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
                   For event enquiries only
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                {contactPhone.telHref && (
                 <a
-                  href={`tel:${event.contactPhone}`}
+                  href={contactPhone.telHref}
+                  data-testid="organizer-contact-call"
+                  aria-label={`Call organiser on ${contactPhone.display}`}
                   style={{
                     width: '40px',
                     height: '40px',
@@ -1360,8 +1367,13 @@ export function EventDetailsScreen({
                 >
                   <Phone size={16} color={ventsColors.accent} />
                 </a>
+                )}
+                {contactPhone.whatsappNumber && (
                 <button
-                  onClick={() => openExternalUrl(`https://wa.me/${event.contactPhone!.replace(/\D/g, '')}`)}
+                  type="button"
+                  data-testid="organizer-contact-whatsapp"
+                  aria-label="Message organiser on WhatsApp"
+                  onClick={() => openExternalUrl(`https://wa.me/${contactPhone.whatsappNumber}`)}
                   style={{
                     width: '40px',
                     height: '40px',
@@ -1376,6 +1388,7 @@ export function EventDetailsScreen({
                 >
                   <MessageCircle size={16} color="#25D366" />
                 </button>
+                )}
               </div>
             </div>
           </div>
