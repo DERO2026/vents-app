@@ -606,6 +606,16 @@ export const supabase = {
       return { data: null, error: { code: 'PGRST202', message: `Could not find the function public.${fn}` } };
     }
     if (fn === 'get_my_representative_history') return { data: repHistoryPage(args), error: null };
+    // QA-only stand-in for public.ticket_fee_quote (0208); the real numbers are
+    // proven against the database by run-fee-model-0208-verification.sh.
+    if (fn === 'ticket_fee_quote') {
+      const qty = Math.max(1, Number(args?.p_quantity) || 1);
+      const face = Math.round(Number(args?.p_unit_price || 0) * 100);
+      const fee = Math.round(face * 15 / 1000), comm = Math.round(face * 35 / 1000), disc = Math.round(face * Number(args?.p_discount_pct || 0) / 100);
+      return { data: { fee_model: 'v3_15_35', quantity: qty, unit_face_kobo: face, face_kobo: face * qty, service_fee_kobo: fee * qty,
+        discount_kobo: disc * qty, total_kobo: qty * (face + fee - disc), organizer_commission_kobo: comm * qty, organizer_net_kobo: (face - comm) * qty,
+        vents_revenue_kobo: qty * (fee - disc + comm), service_fee_bps: 150, organizer_commission_bps: 350 }, error: null };
+    }
     // QA-only: verify_entry_pass keyed off a magic p_ticket_id prefix so
     // the real scanner UI's own dev simulator input can drive every real
     // ScanOutcome branch (ticketValidation.ts) without a live backend.

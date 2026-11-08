@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateWalletDepositAmountKobo,
-  computeTicketWalletChargeKobo,
   hasSufficientBalance,
   isWalletCredit,
   walletTxnLabel,
@@ -28,27 +27,6 @@ describe('validateWalletDepositAmountKobo', () => {
 
   it('accepts a normal deposit amount', () => {
     expect(validateWalletDepositAmountKobo(500_000)).toBeNull(); // NGN 5,000
-  });
-});
-
-describe('computeTicketWalletChargeKobo (fee model v3_15_35, 0208)', () => {
-  it('charges face + 1.5% VENTS service fee per ticket, times the quantity', () => {
-    expect(computeTicketWalletChargeKobo(1000, 1)).toBe(101_500);       // NGN 1,015.00
-    expect(computeTicketWalletChargeKobo(10_000, 3)).toBe(3_045_000);   // 3 x NGN 10,150
-  });
-
-  it('rounds the fee per ticket half-up, like ticket_fee_buyer_charge_kobo', () => {
-    // NGN 1,001: 100100 + round(1501.5) = 101602 per ticket
-    expect(computeTicketWalletChargeKobo(1001, 3)).toBe(304_806);
-  });
-
-  it('applies a promo to the face value, fee unchanged, matching the SQL', () => {
-    // 1,000,000 + 15,000 - 100,000
-    expect(computeTicketWalletChargeKobo(10_000, 1, 10)).toBe(915_000);
-  });
-
-  it('never charges a fee on a free ticket', () => {
-    expect(computeTicketWalletChargeKobo(0, 2)).toBe(0);
   });
 });
 

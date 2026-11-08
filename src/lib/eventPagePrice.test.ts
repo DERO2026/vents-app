@@ -1,21 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ticketCheckoutKobo, formatKobo } from './ticketFees';
 
-// The event page's "Pay ₦X" button and total must equal what checkout charges
-// (fee included), never the bare ticket price (it used to say ₦15,000 for a
-// ₦15,000 ticket while checkout charged more).
+// The event page's "Pay ₦X" and total are the database's quote (fee included),
+// never the bare ticket price and never a client-side rate.
 const src = readFileSync(join(__dirname, '..', 'app', 'components', 'EventDetailsScreen.tsx'), 'utf8');
+const sel = readFileSync(join(__dirname, '..', 'app', 'components', 'TicketSelectScreen.tsx'), 'utf8');
 
-describe('event page price = checkout charge', () => {
-  it('uses the shared per-ticket checkout arithmetic for the button and the total', () => {
-    expect(src).toMatch(/const eventCheckout = ticketCheckoutKobo\(selectedTicket\?\.price \?\? 0, selectedQty\);/);
-    expect(src.match(/`Pay \$\{formatKobo\(eventCheckout\.totalKobo\)\}`/g)?.length).toBe(2);
-    expect(src).not.toMatch(/`Pay \$\{formatPrice\(selectedTicket!\.price \* selectedQty\)\}`/);
+describe('event page and ticket selection show the server quote', () => {
+  it('event page', () => {
+    expect(src).toMatch(/useTicketQuote\(selectedTicket && Number\(selectedTicket\.price\) > 0 \? selectedTicket\.price : null, selectedQty\)/);
+    expect(src.match(/`Pay \$\{eventPayText\}`/g)?.length).toBe(2);
   });
-  it('a ₦15,000 ticket shows Pay ₦15,225; three show ₦45,675', () => {
-    expect(formatKobo(ticketCheckoutKobo(15000, 1).totalKobo)).toBe('₦15,225');
-    expect(formatKobo(ticketCheckoutKobo(15000, 3).totalKobo)).toBe('₦45,675');
+  it('ticket selection', () => {
+    expect(sel).toMatch(/useTicketQuote\(selected && Number\(selected\.price\) > 0 \? selected\.price : null, qty\)/);
   });
 });
