@@ -1,0 +1,210 @@
+# O4: production backup and restore rehearsal (TEMPORARY; delete after O4).
+#
+# Runbook docs/deploy-runbook-0201-0203.md §0a O4, run in the cloud instead of
+# on the owner's Mac. What it does, on a throwaway GitHub-hosted VM:
+#   1. installs PostgreSQL 17 locally and runs scripts/ops/o4-preflight.sh;
+#   2. reads 5 row counts from production (READ ONLY transaction);
+#   3. pg_dump of production (pg_dump runs in a READ ONLY transaction), streamed
+#      straight into AES-256 encryption with a one-time key that exists only on
+#      this VM -- the plain dump is never written to disk;
+#   4. reads the 5 counts again;
+#   5. decrypts into a private directory and runs scripts/ops/verify-backup-
+#      restore.sh, which restores ONLY into a local throwaway database (it
+#      refuses any hosted server) and checks every public table, the money
+#      tables and the 19 function fingerprints;
+#   6. shreds the dump, the key and the restored database.
+# Production is only ever read. Nothing is uploaded: no artifact, no cache.
+#
+# The repository is PUBLIC, so the log is public: it prints only pass/fail
+# lines -- never the dump, row data, counts or the connection string (GitHub
+# also masks the secret).
+#
+# Secret: O4_DATABASE_URL, an ENVIRONMENT secret of the 'o4-backup'
+# environment (required reviewer: the owner; deployment branch:
+# claude/o4-cloud-rehearsal only), so it is released only after the owner
+# approves the run, and only to this branch.
+#
+# Trigger: change .github/o4/run-request on this branch (a commit), or
+# "Re-run all jobs" on an earlier run. It is not on main, so nothing here
+# deploys or changes the app.
+name: O4 backup rehearsal (temporary)
+
+on:
+  push:
+    branches: [claude/o4-cloud-rehearsal]
+    paths: ['.github/o4/run-request']
+  workflow_dispatch:
+    inputs:
+      dump_scope:
+        description: 'full | public_auth_storage | public (use a narrower scope only if a full dump hits permission denied)'
+        default: full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: o4-backup-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-24.04
+    environment: o4-backup
+    timeout-minutes: 45
+    env:
+      SCOPE: ${{ github.event.inputs.dump_scope || 'full' }}
+      WORK: ${{ runner.temp }}/o4
+    steps:
+      - name: 'Check out the O4 scripts (PR #82 branch; no credentials kept)'
+        uses: actions/checkout@v4
+        with:
+          ref: claude/vents-work-earn
+          path: vents
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 on this VM (local server on port 5432)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-17 postgresql-client-17 postgresql-contrib-17 >/dev/null
+          # Only a version 17 cluster may hold port 5432 (the drill uses 5432).
+          pg_lsclusters --no-header | while read -r ver name port _; do
+            if [ "$ver" != "17" ]; then sudo pg_dropcluster --stop "$ver" "$name"; fi
+          done
+          if ! pg_lsclusters --no-header | grep -q '^17 *main'; then sudo pg_createcluster 17 main --port 5432; fi
+          sudo sed -i 's/^#\?port = .*/port = 5432/' /etc/postgresql/17/main/postgresql.conf
+          sudo pg_ctlcluster 17 main restart
+          pg_lsclusters
+
+      - name: Preflight (local only)
+        working-directory: vents
+        run: bash scripts/ops/o4-preflight.sh
+
+      - name: Check the secret's shape (never printed)
+        env:
+          O4_DATABASE_URL: ${{ secrets.O4_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${O4_DATABASE_URL:-}" ]; then echo "STOP: O4_DATABASE_URL is not set in the o4-backup environment"; exit 1; fi
+          if ! printf '%s' "$O4_DATABASE_URL" | grep -qE '^postgres(ql)?://postgres\.slrtjxtzhowhwhebjprv:[^@]+@[a-z0-9.-]+\.pooler\.supabase\.com:5432/postgres\?sslmode=require$'; then
+            echo "STOP: O4_DATABASE_URL must be the Session pooler URI (port 5432), user postgres.slrtjxtzhowhwhebjprv, with the password filled in and ?sslmode=require at the end"
+            exit 1
+          fi
+          echo "ok: session pooler, project slrtjxtzhowhwhebjprv, SSL required"
+
+      - name: Counts before (production, read only)
+        env:
+          O4_DATABASE_URL: ${{ secrets.O4_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          umask 077; mkdir -p "$WORK"
+          psql "$O4_DATABASE_URL" -X -q -At -F ' ' -v ON_ERROR_STOP=1 >"$WORK/before.txt" 2>"$WORK/psql.err" <<'SQL' || { echo "STOP: could not read counts"; sed -E 's/postgres(ql)?:\/\/[^ ]*/<uri>/g' "$WORK/psql.err" | tail -3; exit 1; }
+          BEGIN READ ONLY;
+          SELECT 'organizer_wallets', count(*) FROM public.organizer_wallets
+          UNION ALL SELECT 'organizer_transactions', count(*) FROM public.organizer_transactions
+          UNION ALL SELECT 'organizer_withdrawal_requests', count(*) FROM public.organizer_withdrawal_requests
+          UNION ALL SELECT 'tickets', count(*) FROM public.tickets
+          UNION ALL SELECT 'service_bookings', count(*) FROM public.service_bookings;
+          ROLLBACK;
+          SQL
+          echo "ok: 5 counts read ($(grep -c . "$WORK/before.txt") rows; values kept on this VM only)"
+
+      - name: Encrypted pg_dump (production, read only; plain dump never on disk)
+        env:
+          O4_DATABASE_URL: ${{ secrets.O4_DATABASE_URL }}
+        run: |
+          set -uo pipefail
+          umask 077
+          openssl rand -hex 32 > "$WORK/key"
+          echo "::add-mask::$(cat "$WORK/key")"
+          case "$SCOPE" in
+            full) SCOPE_ARGS=() ;;
+            public_auth_storage) SCOPE_ARGS=(-n public -n auth -n storage) ;;
+            public) SCOPE_ARGS=(-n public) ;;
+            *) echo "STOP: unknown dump_scope '$SCOPE'"; exit 1 ;;
+          esac
+          # No --no-owner/--no-privileges: ownership and every GRANT/REVOKE are kept.
+          pg_dump "$O4_DATABASE_URL" -Fc "${SCOPE_ARGS[@]}" 2>"$WORK/dump.err" \
+            | gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-file "$WORK/key" \
+                  --symmetric --cipher-algo AES256 -o "$WORK/backup.dump.gpg"
+          rc=("${PIPESTATUS[@]}")
+          echo "pg_dump=${rc[0]} gpg=${rc[1]} scope=$SCOPE"
+          if [ "${rc[0]}" != 0 ] || [ "${rc[1]}" != 0 ]; then
+            echo "STOP: dump failed. pg_dump said (connection details removed):"
+            sed -E 's/postgres(ql)?:\/\/[^ ]*/<uri>/g' "$WORK/dump.err" | tail -5
+            if grep -q 'permission denied' "$WORK/dump.err"; then
+              echo "Re-run with dump_scope=public_auth_storage (Actions > this workflow > Run workflow). Never GRANT anything on production."
+            fi
+            shred -u "$WORK/backup.dump.gpg" 2>/dev/null || true
+            exit 1
+          fi
+          echo "ok: encrypted backup $(du -h "$WORK/backup.dump.gpg" | cut -f1), sha256 $(sha256sum "$WORK/backup.dump.gpg" | cut -c1-16)…"
+
+      - name: Counts after (production, read only)
+        env:
+          O4_DATABASE_URL: ${{ secrets.O4_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          psql "$O4_DATABASE_URL" -X -q -At -F ' ' -v ON_ERROR_STOP=1 >"$WORK/after.txt" 2>"$WORK/psql.err" <<'SQL' || { echo "STOP: could not read counts"; exit 1; }
+          BEGIN READ ONLY;
+          SELECT 'organizer_wallets', count(*) FROM public.organizer_wallets
+          UNION ALL SELECT 'organizer_transactions', count(*) FROM public.organizer_transactions
+          UNION ALL SELECT 'organizer_withdrawal_requests', count(*) FROM public.organizer_withdrawal_requests
+          UNION ALL SELECT 'tickets', count(*) FROM public.tickets
+          UNION ALL SELECT 'service_bookings', count(*) FROM public.service_bookings;
+          ROLLBACK;
+          SQL
+          echo "ok: counts read again"
+
+      - name: Restore drill into the local throwaway database (never production)
+        working-directory: vents
+        run: |
+          set -uo pipefail
+          umask 077
+          mkdir -m 700 "$WORK/plain"
+          gpg --batch --quiet --pinentry-mode loopback --passphrase-file "$WORK/key" \
+              -o "$WORK/plain/check.dump" -d "$WORK/backup.dump.gpg" || { echo "STOP: decryption failed"; exit 1; }
+          echo "ok: decrypted with the one-time key"
+          bash scripts/ops/verify-backup-restore.sh "$WORK/plain/check.dump" >"$WORK/drill.txt" 2>"$WORK/drill.err"
+          echo "$?" > "$WORK/drill.rc"
+          shred -u "$WORK/plain/check.dump"; rmdir "$WORK/plain"
+          echo "ok: plain dump shredded"
+
+      - name: Verdict (pass/fail lines only)
+        run: |
+          set -uo pipefail
+          fail=0
+          rc=$(cat "$WORK/drill.rc")
+          tables=$(grep -E '^== Public tables restored: ' "$WORK/drill.txt" | sed -E 's/^== (.*) ==$/\1/')
+          funcs=$(grep -E '^Functions matching: ' "$WORK/drill.txt")
+          echo "${tables:-Public tables restored: (missing)}"
+          echo "${funcs:-Functions matching: (missing)}"
+          echo "drill exit=$rc"
+          [ "$rc" = 0 ] || fail=1
+          echo "$funcs" | grep -qx 'Functions matching: 19/19' || { echo "FAIL: functions are not 19/19"; fail=1; }
+          echo "$tables" | grep -qE '^Public tables restored: ([0-9]+)/\1$' || { echo "FAIL: not every public table restored"; fail=1; }
+          [ "$(grep -c '^  NOT RESTORED' "$WORK/drill.txt")" = 0 ] || { echo "FAIL: $(grep -c '^  NOT RESTORED' "$WORK/drill.txt") table(s) not restored"; fail=1; }
+          [ "$(grep -c '^  MISMATCH' "$WORK/drill.txt")" = 0 ] || { echo "FAIL: function fingerprint mismatch: $(grep '^  MISMATCH' "$WORK/drill.txt" | awk '{print $2}' | tr '\n' ' ')"; fail=1; }
+          for t in organizer_wallets organizer_transactions organizer_withdrawal_requests tickets service_bookings; do
+            b=$(awk -v t="$t" '$1==t {print $2}' "$WORK/before.txt")
+            a=$(awk -v t="$t" '$1==t {print $2}' "$WORK/after.txt")
+            d=$(awk -v t="$t" '$1==t {print $2}' "$WORK/drill.txt")
+            lo=$(( b < a ? b : a )); hi=$(( b > a ? b : a ))
+            if [[ "$d" =~ ^[0-9]+$ ]] && [ "$d" -ge "$lo" ] && [ "$d" -le "$hi" ]; then echo "ok    $t count within before/after"
+            else echo "FAIL  $t count outside before/after (or missing)"; fail=1; fi
+          done
+          if [ "$fail" = 0 ]; then echo "O4 REHEARSAL PASSED"; else echo "O4 REHEARSAL FAILED"; exit 1; fi
+
+      - name: Clean up (always)
+        if: always()
+        run: |
+          for f in "$WORK"/backup.dump.gpg "$WORK"/key "$WORK"/plain/check.dump; do [ -f "$f" ] && shred -u "$f"; done
+          rm -rf "$WORK"
+          sudo -u postgres psql -X -h /var/run/postgresql -p 5432 -d postgres -qtAc \
+            "SELECT datname FROM pg_database WHERE datname LIKE 'vents_local_pg%'" 2>/dev/null | while read -r db; do
+              [ -n "$db" ] && sudo -u postgres psql -X -h /var/run/postgresql -p 5432 -d postgres -qc "DROP DATABASE IF EXISTS \"$db\";"
+          done
+          echo "cleanup done: dump, key, plain copy and local databases removed; this VM is destroyed when the job ends"
