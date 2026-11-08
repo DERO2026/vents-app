@@ -13,12 +13,33 @@ re-check them in step P3.
 | # | Approval | Who | Why |
 |---|---|---|---|
 | A1 | Apply **0201 → 0202 → 0203 → 0205 → 0206 → 0207 → 0208 → 0209** to production, in that order, each in its own transaction (W4–W6e) | Owner | Changes fees, settlement, payouts and rewards, and adds the payout state machine, the earnings adjustment and the withdrawal reassignment. 0204 (PR #83) is **not** part of this approval (W10) |
-| A2 | Merge PR #82 to `main` (production frontend), immediately after W6e (0209) | Owner | Production deploy; shows the 1.5% attendee fee and the 3.5% organizer commission, adds the two-admin payout, adjustment and reassignment steps |
+| A2 | **Promote** the latest `main` production deployment in Vercel (PR #82 is already merged; production is held on the rolled-back build, see §0b), immediately after W6e (0209) | Owner | Production deploy; shows the 1.5% attendee fee and the 3.5% organizer commission, adds the two-admin payout, adjustment and reassignment steps |
 | A3 | Pause purchases and payouts for the window (`disable_purchases`, `disable_payouts`) | Owner | Stops checkouts and payouts while the database and frontend disagree |
 | A4 | The two admins for withdrawal authorization: one may request; a **different super admin** approves; **neither** may own a withdrawal they act on | Owner names them | 0203 enforces this; with fewer than two eligible admins, no withdrawal can be paid |
 | A5 | What to do with the 5 pending withdrawals (section 6) | Owner | Each is real money leaving VENTS. **Decided in part:** D4 (both ₦20,000 kept) and D5 (root's ₦5,000 to be rejected through an authorized process). Still open: D4a payees (O2) and D5a (who rejects) |
 | A6 | Confirm the Supabase dashboard GitHub integration / branching does **not** auto-apply migrations on merge (**exact steps: §0a O3**) | Owner (dashboard) | **Branching is enabled on the production project** (default branch created 2026-09-13). The repo has no CI or `config.toml`, but "Deploy to production" would apply `supabase/migrations` on merge. Turn it off (Batch D §10.13 O3) |
 | A7 | Backup method (**exact steps: §0a O4**) | Owner (dashboard) | **The organization is on the Free plan: no daily backups, no PITR.** Pro upgrade, or a verified manual dump in W2 (D8) |
+
+## 0b. Incident 2026-11-08: frontend live before its migrations
+
+PR #82 was merged to `main` at 22:34 UTC and Vercel deployed it to
+getvents.com (`dpl_63R6JZbs…`, `9115982`) while production still had none
+of 0201–0209. Checkout showed a 1.5% service fee but `create_pending_purchase`
+charged 5%, and the Paystack popup charged the database amount. At about
+22:52 UTC production was rolled back (Vercel Instant Rollback) to
+`dpl_By69ggy9…` (`1bef75e`, PR #85), whose checkout shows 5% and matches the
+database. While rolled back, Vercel does **not** move getvents.com to new
+`main` builds; only a **promote** does (W7).
+
+Follow-up (needs owner authorization for a read-only query): list paid
+ticket purchases created between 22:34 and 22:53 UTC; each was shown 1.5%
+and charged 5%, and any refund of the difference is the owner's decision.
+
+Fix so it cannot recur (release-recovery PR): checkout, ticket selection,
+the event page and Create Event display only the database's quote
+(`ticket_fee_quote`, 0208); checkout refuses to charge if the server's amount
+differs from the quote it showed, and cannot pay at all without a quote.
+No fee rate remains in the app code.
 
 ## 0a. Owner steps in the Supabase dashboard before the window can be scheduled (O3, O4)
 
@@ -244,10 +265,10 @@ ROLLBACK;
 | W6c | Apply **0207** (`0207_withdrawal_bank_reassignment.sql`, its own transaction). It adds the audited two-admin withdrawal bank-account reassignment (D4a) and a guard that lets a withdrawal's destination change only through it. It moves no money and changes no withdrawal | `SELECT to_regclass('public.withdrawal_bank_reassignments') IS NOT NULL, EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'organizer_withdrawal_destination_guard'), position('execute_withdrawal_bank_reassignment' IN pg_get_functiondef('public.approve_admin_action(uuid)'::regprocedure)) > 0;` = true/true/true; `SELECT count(*) FROM public.withdrawal_bank_reassignments;` = 0 | error → R1; 0201–0206 stay valid without it. **No reassignment is filed in the window** |
 | W6d | Apply **0208** (`0208_ticket_fee_1_5_3_5.sql`, its own transaction). Owner instruction 2026-11-08: attendee service fee **1.5%**, organizer commission **3.5%**, per ticket in kobo times the quantity (fee model `v3_15_35`). It replaces 0203's 4% + 5% before any ticket is sold on it (purchases are paused since W1). It changes no recorded amount or balance | `SELECT column_default FROM information_schema.columns WHERE table_name='tickets' AND column_name='fee_model';` mentions `v3_15_35`; `SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'v3_15_35'), public.ticket_fee_commission_kobo(1000000, 'v3_15_35');` = 1015000 / 35000; `SELECT count(*) FROM pg_proc WHERE prosrc LIKE '%[0208]%';` = 6 | error → R1d; 0201–0207 stay valid without it (sales would then be on 4% + 5%: keep `disable_purchases` set until 0208 is in) |
 | W6e | Apply **0209** (`0209_representative_referral_links.sql`, its own transaction). Owner instruction 2026-11-08: each active representative gets an organizer referral code and link; a user who registers through it is attributed once (reusing 0201's attribution, through an accepted 0% partnership marked `referral_link`); free events never qualify for a reward; the Representative badge reads the active status. It moves no money and changes no reward amount | `SELECT to_regprocedure('public.claim_representative_referral(text)') IS NOT NULL, to_regprocedure('public.get_representative_badges(uuid[])') IS NOT NULL, (SELECT count(*) FROM pg_proc WHERE prosrc LIKE '%[0209]%');` = true/true/2; `SELECT count(*) FROM public.recruiter_partnerships WHERE source = 'referral_link';` = 0 | error → R1e; 0201–0208 stay valid without it |
-| W7 | Merge PR #82 (A2); wait for the Vercel production deployment to be **Ready** | production `/` serves the new bundle; checkout shows "Service fee (1.5%)" and Create Event shows the 3.5% commission notice; Admin → Payouts shows the authorize step | build fails → R2 |
+| W7 | **Promote** the newest `main` production deployment in Vercel (A2): Deployments → the latest `main` build → Promote (this also undoes the rollback). Wait for it to serve getvents.com | production `/` serves that build; checkout shows "Service fee (1.5%)" from `ticket_fee_quote`; Create Event shows the 3.5% notice; Admin → Payouts shows the authorize step | build fails or a screen disagrees with the database → Instant Rollback to `dpl_By69ggy9…` (R2) |
 | W8 | Clear `disable_purchases` only. One ₦100 live purchase by the owner (PAY-4) | charged ₦101.50; the organizer's `on_hold_kobo` rises by ₦96.50; `get_earnings_holds()` (run as in §3a with the organizer's id as `sub`) shows a 48 h release | any other amount → set `disable_purchases` again, R3 |
 | W9 | **First** confirm D11: the Paystack LIVE webhook URL is the production `/api/webhook/paystack` (Paystack dashboard → Settings → API Keys & Webhooks). Then clear `disable_payouts`. Watch Sentry and webhook logs for 30 minutes. The first real payout must reach `completed` from the webhook alone (no Reconcile) | no new errors; first payout completed by webhook | webhook URL not confirmed → keep `disable_payouts`; errors → R3 |
-| W10 | **After** the window and only once W9 is green: PR #83 → retarget to `main` (if not automatic) → CI green → owner merges #83 → apply **0204** alone (`0204_search_recruiter_invite_targets.sql`, its own transaction). 0204 touches no payout or earnings object, so it is not part of W4–W6c | `SELECT pg_get_functiondef('public.search_recruiter_invite_targets(text)'::regprocedure) IS NOT NULL;` | error → drop the function; the app falls back to the old search |
+| W10 | **After** the window and only once W9 is green: apply **0204** alone. (PR #83 was merged into this branch on 2026-11-08, `9e0276b`, so its frontend ships with W7; until 0204 is applied its representative search falls back to the old user search, `src/lib/recruiterSearch.ts`.) (`0204_search_recruiter_invite_targets.sql`, its own transaction). 0204 touches no payout or earnings object, so it is not part of W4–W6c | `SELECT pg_get_functiondef('public.search_recruiter_invite_targets(text)'::regprocedure) IS NOT NULL;` | error → drop the function; the app falls back to the old search |
 
 ## 5. Go / no-go after W9
 

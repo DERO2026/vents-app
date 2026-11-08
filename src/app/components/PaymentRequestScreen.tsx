@@ -5,7 +5,7 @@ import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
-import { TICKET_BUYER_MULTIPLIER, TICKET_SERVICE_FEE_LABEL, formatKobo } from '../../lib/ticketFees';
+import { formatKobo } from '../../lib/ticketFees';
 
 interface PaymentRequestDetails {
   event_title: string;
@@ -184,19 +184,11 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
 
   const isRequester = details?.viewer_is_requester === true;
 
-  // The 1.5% VENTS service fee is baked server-side into amount_kobo
-  // (create_pending_purchase after 0208: per ticket, face + 1.5%). The
-  // details view does not expose the unit price, quantity or promo, so the
-  // subtotal/fee split here is reconstructed as amount / 1.015 (exact to
-  // within a kobo per ticket when no promo was applied). The amount charged
-  // is always the server's amount_kobo, shown as the total.
-  const feeBreakdown = details
-    ? (() => {
-        const total = details.amount_kobo;
-        const subtotal = Math.round(total / TICKET_BUYER_MULTIPLIER);
-        return { subtotal, fee: total - subtotal, total };
-      })()
-    : null;
+  // The server's amount_kobo is the whole charge (ticket price plus the VENTS
+  // service fee, computed by the database). This view does not have the unit
+  // price, quantity or promo, so it shows the total as charged and never
+  // re-derives a fee split from a rate (no fee rate lives in the app).
+  const feeBreakdown = details ? { total: details.amount_kobo } : null;
 
   const otherPartyName = isRequester ? (details?.payer_name || 'the payer') : (details?.recipient_name || '');
   const otherPartyInitials = otherPartyName.split(' ').map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?';
@@ -259,17 +251,12 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
             </div>
 
             {/* Fee breakdown, matching C4's subtotal/service-fee/total card
-                -- derived from the real 1.5% fee already baked server-side
-                into amount_kobo (see feeBreakdown comment above). */}
+                -- the server's total (see feeBreakdown comment above). */}
             {feeBreakdown && (
               <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', color: ventsColors.ink2 }}>
-                  <span>Subtotal</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatKobo(feeBreakdown.subtotal)}</span>
+                <div style={{ fontSize: '12.5px', padding: '4px 0 8px', color: ventsColors.ink2 }}>
+                  Includes the ticket price and the VENTS service fee.
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', color: ventsColors.ink2 }}>
-                  <span>VENTS {TICKET_SERVICE_FEE_LABEL.toLowerCase()}</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatKobo(feeBreakdown.fee)}</span>
-                </div>
-                <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14.5px', padding: '4px 0' }}>
                   <span style={{ fontWeight: 700, color: ventsColors.white }}>Total</span><span style={{ fontWeight: 800, color: ventsColors.accentSoft }}>{formatKobo(feeBreakdown.total)}</span>
                 </div>

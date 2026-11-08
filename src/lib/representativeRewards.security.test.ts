@@ -221,9 +221,9 @@ describe('retired 10% commission model: only the fixed reward is active', () => 
   it('no app or API code sends, reads or computes a commission split', () => {
     const files = [...sourceFiles(join(root, 'src')), ...sourceFiles(join(root, 'api'))];
     const offenders = files.filter((p) =>
-      // organizer_commission_kobo / ticket_fee_commission_kobo are the approved 5% VENTS ticket commission
-      // (0203), recorded on the organizer's own sale -- not a representative split.
-      /commission_split_bps|commissionSplitBps|COMMISSION_BPS|commission_rate|(?<!organizer_|ticket_fee_)commission_kobo/i.test(readFileSync(p, 'utf8')));
+      // organizer_commission_kobo / ticket_fee_commission_kobo / organizer_commission_bps are the VENTS
+      // ticket commission (3.5%, 0208), recorded on the organizer's own sale -- not a representative split.
+      /commission_split_bps|commissionSplitBps|(?<!organizer_)COMMISSION_BPS|commission_rate|(?<!organizer_|ticket_fee_)commission_kobo/i.test(readFileSync(p, 'utf8')));
     expect(offenders).toEqual([]);
   });
 

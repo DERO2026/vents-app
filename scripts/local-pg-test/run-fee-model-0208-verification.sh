@@ -214,9 +214,21 @@ expect_value "legacy and v2 models keep their original formulas" \
   "$(val "SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'legacy_5') || '/' || public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'v2_4_5') || '/' || public.ticket_fee_commission_kobo(1000000, 'legacy_5');")" "1050000/1040000/0"
 expect_value "refund nominal fee (VENTS revenue given up) is 5% for v3" "$(val "SELECT public.earn_ticket_nominal_fee_kobo(10000, 'v3_15_35');")" "50000"
 
+echo "== The one fee quote every screen displays =="
+q() { val "SET ROLE anon; SELECT public.ticket_fee_quote($1)->>'$2';"; }
+expect_value "anyone (anon) can get a quote: ₦10,000 -> fee 15,000, total 1,015,000, organizer net 965,000, VENTS 50,000" \
+  "$(q "10000, 1, 0" service_fee_kobo)/$(q "10000, 1, 0" total_kobo)/$(q "10000, 1, 0" organizer_net_kobo)/$(q "10000, 1, 0" vents_revenue_kobo)" "15000/1015000/965000/50000"
+expect_value "rates come from the helpers, not restated: 150 bps and 350 bps" "$(q "10000, 1, 0" service_fee_bps)/$(q "10000, 1, 0" organizer_commission_bps)" "150/350"
+expect_value "3 x ₦1,001 quote equals the charge create_pending_purchase will make (304806)" "$(q "1001, 3, 0" total_kobo)" "304806"
+expect_value "a 10% promo: discount 100,000, total 915,000, organizer still 965,000" \
+  "$(q "10000, 1, 10" discount_kobo)/$(q "10000, 1, 10" total_kobo)/$(q "10000, 1, 10" organizer_net_kobo)" "100000/915000/965000"
+expect_value "free tickets quote zero" "$(q "0, 2, 0" total_kobo)/$(q "0, 2, 0" service_fee_kobo)" "0/0"
+expect_error "nonsense input is refused" "Invalid quantity" "SET ROLE anon; SELECT public.ticket_fee_quote(1000, 0, 0);"
+
 echo "== Paystack checkout =="
 R3=$(buy "$BUYER" "$E_R2" 3)
 expect_value "3 x ₦10,000 checkout: ₦30,450 (₦150 fee per ticket)" "$(amount_of "$R3")" "3045000"
+expect_value "the checkout charge equals the quote the screen showed" "$(amount_of "$R3")" "$(q "10000, 3, 0" total_kobo)"
 expect_value "the pending purchase is v3_15_35" "$(val "SELECT fee_model FROM public.pending_purchases WHERE payment_ref = '$R3';")" "v3_15_35"
 expect_value "underpayment by 1 kobo is refused" "$(confirm "$R3" 3044999)" "amount_mismatch:3045000:3044999"
 expect_value "exact payment confirms" "$(confirm "$R3" 3045000)" "confirmed"

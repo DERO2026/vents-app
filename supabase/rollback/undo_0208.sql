@@ -138,5 +138,6 @@ ALTER TABLE public.tickets DROP CONSTRAINT IF EXISTS tickets_fee_model_check;
 ALTER TABLE public.tickets ADD CONSTRAINT tickets_fee_model_check CHECK (fee_model IN ('legacy_5', 'v2_4_5'));
 ALTER TABLE public.pending_purchases DROP CONSTRAINT IF EXISTS pending_purchases_fee_model_check;
 ALTER TABLE public.pending_purchases ADD CONSTRAINT pending_purchases_fee_model_check CHECK (fee_model IN ('legacy_5', 'v2_4_5'));
+DROP FUNCTION IF EXISTS public.ticket_fee_quote(numeric, integer, numeric);
 DROP FUNCTION IF EXISTS public.ticket_fee_buyer_charge_kobo(numeric, integer, numeric, text);
 DROP FUNCTION IF EXISTS public.ticket_fee_commission_total_kobo(numeric, integer, text);

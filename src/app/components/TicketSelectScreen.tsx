@@ -5,7 +5,8 @@ import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { ventsColors } from '../../lib/ventsDesignTokens';
-import { TICKET_SERVICE_FEE_LABEL, ticketCheckoutKobo, formatKobo } from '../../lib/ticketFees';
+import { formatKobo } from '../../lib/ticketFees';
+import { useTicketQuote, serviceFeeLabel } from '../../lib/ticketQuote';
 
 interface TicketSelectScreenProps {
   event: Event;
@@ -56,8 +57,17 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
 
   const selected = ticketTypes.find((t) => t.id === selectedId);
   const qty = selectedId ? quantities[selectedId] ?? 0 : 0;
-  // Same per-ticket kobo arithmetic as checkout and the database (0208).
-  const breakdown = ticketCheckoutKobo(selected ? selected.price : 0, qty);
+  // The database's own quote (ticket_fee_quote, 0208): the same numbers checkout charges.
+  const quoteState = useTicketQuote(selected && Number(selected.price) > 0 ? selected.price : null, qty);
+  const q = quoteState.quote;
+  const isFree = !!selected && !(Number(selected.price) > 0);
+  const breakdown = {
+    faceKobo: q?.face_kobo ?? (selected ? Math.round(Number(selected.price || 0) * 100) * qty : 0),
+    serviceFeeKobo: q?.service_fee_kobo ?? 0,
+    totalKobo: isFree ? 0 : (q?.total_kobo ?? 0),
+  };
+  const ready = isFree || !!q;
+  const money = (kobo: number) => (ready ? formatKobo(kobo) : '…');
 
   const changeQty = (id: string, delta: number) => {
     setQuantities((prev) => {
@@ -371,13 +381,13 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                   {selected?.name} × {qty}
                 </span>
                 <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatKobo(breakdown.faceKobo)}
+                  {money(breakdown.faceKobo)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{TICKET_SERVICE_FEE_LABEL}</span>
+                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{q ? serviceFeeLabel(q) : 'Service fee'}</span>
                 <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatKobo(breakdown.serviceFeeKobo)}
+                  {money(breakdown.serviceFeeKobo)}
                 </span>
               </div>
               <div
@@ -390,7 +400,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>Total</span>
                 <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatKobo(breakdown.totalKobo)}
+                  {money(breakdown.totalKobo)}
                 </span>
               </div>
             </div>
@@ -431,7 +441,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             transition: 'all 0.2s ease',
           }}
         >
-          {canContinue ? `Continue · ${formatKobo(breakdown.totalKobo)}` : 'Select a ticket type'}
+          {canContinue ? `Continue · ${money(breakdown.totalKobo)}` : 'Select a ticket type'}
         </button>
       </div>
     </div>

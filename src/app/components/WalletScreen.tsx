@@ -1154,10 +1154,9 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       dateLabel = fmtDateTime(t.created_at);
       const gross = meta.gross_kobo ?? t.amount_kobo;
       const buyerFee = meta.buyer_fee_kobo;
-      // Sales from 0208 on carry the 3.5% organizer commission (fee model
-      // v3_15_35); older sales are shown as recorded, at their own rate.
+      // The commission is the amount the database recorded on this sale
+      // (metadata.organizer_commission_kobo); older sales had none.
       const commission = meta.organizer_commission_kobo;
-      const commissionRate = meta.fee_model === 'v2_4_5' ? '5%' : '3.5%';
       rows = [
         { label: 'Gross amount', value: fmt(gross) },
         {
@@ -1166,7 +1165,7 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
           muted: true,
         },
         ...(commission != null && commission > 0
-          ? [{ label: `VENTS commission (${commissionRate})`, value: `-${fmt(commission)}` }]
+          ? [{ label: 'VENTS commission', value: `-${fmt(commission)}` }]
           : []),
         { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
         { label: 'Currency', value: 'NGN (₦)' },

@@ -159,6 +159,61 @@ AS $function$
   SELECT GREATEST(0, ceil(COALESCE(p_amount, 0) * CASE WHEN p_fee_model = 'v2_4_5' THEN 9 ELSE 5 END))::bigint;
 $function$;
 
+-- The ONE fee quote every screen displays (checkout, ticket selection, the
+-- event page, Create Event's "you earn"): the same helpers that charge,
+-- settle and refund, so a displayed amount can never differ from a charged
+-- one. Rates are derived from the helpers, not restated. Read-only; callable
+-- by anyone (ticket prices are public).
+CREATE OR REPLACE FUNCTION public.ticket_fee_quote(p_unit_price numeric, p_quantity integer DEFAULT 1, p_discount_pct numeric DEFAULT 0)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_model constant text := 'v3_15_35';
+  v_qty integer := COALESCE(p_quantity, 1);
+  v_disc numeric := COALESCE(p_discount_pct, 0);
+  v_unit_face bigint;
+  v_face bigint;
+  v_gross bigint;
+  v_total bigint;
+  v_comm bigint;
+BEGIN
+  IF p_unit_price IS NULL OR p_unit_price < 0 OR p_unit_price > 100000000 THEN
+    RAISE EXCEPTION 'Invalid ticket price';
+  END IF;
+  IF v_qty < 1 OR v_qty > 100 THEN
+    RAISE EXCEPTION 'Invalid quantity';
+  END IF;
+  IF v_disc < 0 OR v_disc > 100 THEN
+    RAISE EXCEPTION 'Invalid discount';
+  END IF;
+  v_unit_face := round(p_unit_price * 100)::bigint;
+  v_face      := v_unit_face * v_qty;
+  v_gross     := public.ticket_fee_buyer_charge_kobo(p_unit_price * v_qty, v_qty, 0, v_model);
+  v_total     := public.ticket_fee_buyer_charge_kobo(p_unit_price * v_qty, v_qty, v_disc, v_model);
+  v_comm      := public.ticket_fee_commission_total_kobo(p_unit_price * v_qty, v_qty, v_model);
+  RETURN jsonb_build_object(
+    'fee_model',                 v_model,
+    'quantity',                  v_qty,
+    'unit_face_kobo',            v_unit_face,
+    'face_kobo',                 v_face,
+    'service_fee_kobo',          v_gross - v_face,
+    'discount_kobo',             v_gross - v_total,
+    'total_kobo',                v_total,
+    'organizer_commission_kobo', v_comm,
+    'organizer_net_kobo',        v_face - v_comm,
+    'vents_revenue_kobo',        v_total - (v_face - v_comm),
+    -- Rates in basis points, measured on a NGN 10,000 ticket by the same helpers.
+    'service_fee_bps',           (public.ticket_fee_buyer_charge_kobo(10000, 1, 0, v_model) - 1000000) / 100,
+    'organizer_commission_bps',  public.ticket_fee_commission_kobo(1000000, v_model) / 100);
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.ticket_fee_quote(numeric, integer, numeric) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.ticket_fee_quote(numeric, integer, numeric) TO anon, authenticated;
+
 REVOKE ALL ON FUNCTION public.ticket_fee_buyer_charge_kobo(numeric, integer, numeric, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.ticket_fee_commission_total_kobo(numeric, integer, text) FROM PUBLIC, anon, authenticated;
 

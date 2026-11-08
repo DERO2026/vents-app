@@ -1,4 +1,3 @@
-import { ticketCheckoutKobo } from './ticketFees';
 
 // Pure, client-side mirrors of the money math the deployed Postgres
 // functions are the real authority on (initiate_wallet_deposit,
@@ -19,15 +18,9 @@ export function validateWalletDepositAmountKobo(amountKobo: number): string | nu
   return null;
 }
 
-// Mirrors confirm_ticket_payment_via_wallet's expected amount for a ticket
-// bought now (fee model v3_15_35, migration 0208): per ticket in kobo,
-//   face + round(face * 1.5%) - round(face * promo%), times the quantity
-// (public.ticket_fee_buyer_charge_kobo). The organizer is settled
-// face - 3.5% separately (see ticketFees.ts) -- this function only computes
-// what the attendee's wallet is charged.
-export function computeTicketWalletChargeKobo(unitPriceNaira: number, quantity: number, discountPct = 0): number {
-  return ticketCheckoutKobo(unitPriceNaira, quantity, discountPct).totalKobo;
-}
+// Ticket charges are not computed here: checkout displays the database's
+// quote (src/lib/ticketQuote.ts, ticket_fee_quote) and the server charges
+// exactly that amount.
 
 export function hasSufficientBalance(balanceKobo: number, chargeKobo: number): boolean {
   return balanceKobo >= chargeKobo;
