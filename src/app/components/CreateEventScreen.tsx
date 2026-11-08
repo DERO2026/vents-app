@@ -23,6 +23,8 @@ import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { pickImage } from '../../lib/pickImage';
 import { Sentry } from '../../lib/sentry';
 import { isSafeHttpsUrl } from '../../lib/externalLink';
+import { OrganizerCommissionNotice, TicketNetEarnings } from './OrganizerCommissionNotice';
+import { ticketFaceKobo, organizerNetKobo, formatKobo } from '../../lib/ticketFees';
 import { toE164ContactPhone, splitStoredContactPhone } from '../../lib/contactPhone';
 
 interface CreateEventScreenProps {
@@ -1650,6 +1652,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         {!loadingEdit && step === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
+            <OrganizerCommissionNotice />
 
             {ticketTypes.map((ticket, index) => (
               <div
@@ -1743,6 +1746,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       />
                     </div>
                   </div>
+                  <TicketNetEarnings price={ticket.price} />
                   <div>
                     <Label>Description</Label>
                     <input
@@ -1944,9 +1948,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               {
                 label: 'Tickets',
                 value: ticketTypes.length > 0
-                  ? ticketTypes.map(t => `${t.name || 'Standard'} (₦${Number(t.price || 0).toLocaleString()})`).join(', ')
+                  ? ticketTypes.map(t => {
+                      const face = ticketFaceKobo(Number(t.price || 0));
+                      return face > 0
+                        ? `${t.name || 'Standard'} (${formatKobo(face)}; you earn ${formatKobo(organizerNetKobo(face))})`
+                        : `${t.name || 'Standard'} (Free)`;
+                    }).join(', ')
                   : '(not set)'
               },
+              { label: 'VENTS commission', value: '3.5% of every ticket sold, deducted automatically' },
               { label: 'Contact Number', value: showPhone && contactPhone ? `${contactPhoneCountryCode} ${contactPhone}` : 'Not shown' },
             ].map(({ label, value }) => (
               <div

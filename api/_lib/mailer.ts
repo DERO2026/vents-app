@@ -4,9 +4,16 @@
 // Vite inlines VITE_-prefixed vars into the client bundle, which would leak
 // the secret key publicly.
 
+import { previewBlockReason } from './previewGuard.js';
+
 const FROM = 'Vents <support@getvents.com>';
 
 async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+  // A Preview sharing production data never emails real users.
+  if (previewBlockReason()) {
+    console.warn('[mailer] Preview read-only -- skipping email:', subject);
+    return false;
+  }
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn('[mailer] RESEND_API_KEY not set — skipping email:', subject, 'to', to);

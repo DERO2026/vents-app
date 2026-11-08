@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // ─── Native push send (Firebase Cloud Messaging HTTP v1) ─────────────────────
 // Three request shapes, sharing this file to stay under the Hobby plan's
@@ -86,6 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'push send')) return;
 
   // Mode 0: the database trigger. Checked first and independently of any
   // Supabase session, since a Postgres trigger has none to present --

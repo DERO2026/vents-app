@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, getAuthToken } from '../../lib/supabase';
+import { uploadAllowanceError } from '../../lib/uploadAllowance';
+import { PREVIEW_READ_ONLY_MESSAGE } from '../../lib/previewReadOnly';
 import { pickImage } from '../../lib/pickImage';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
@@ -236,6 +238,8 @@ function validateCacFile(file: File): string | null {
 // (see the Admin Console's Verification screen), not a
 // directly-fetchable public URL.
 function uploadVerificationCertificate(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
+  // Direct upload, outside the Supabase client: refuse it on a read-only Preview.
+  if (__VENTS_PREVIEW_READ_ONLY__) return Promise.reject(new Error(PREVIEW_READ_ONLY_MESSAGE));
   return new Promise((resolve, reject) => {
     const key = `${crypto.randomUUID()}-${file.name}`;
     const xhr = new XMLHttpRequest();
@@ -446,7 +450,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
       // checked before the XHR fires.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
       if (limitError) {
-        setError('Too many uploads. Please wait a bit before uploading more.');
+        setError(uploadAllowanceError(limitError).message);
         setSubmitting(false);
         return;
       }
@@ -888,7 +892,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
       // other upload path in this codebase uses (30/hr/user), called
       // before any compression/network work -- this path had none at all.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
+      if (limitError) throw uploadAllowanceError(limitError);
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
@@ -977,7 +981,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
       await getAuthToken();
       // Financial-hardening: same check as the avatar path above.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
+      if (limitError) throw uploadAllowanceError(limitError);
       const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
@@ -2003,8 +2007,8 @@ export function SettingsScreen({
           <Divider />
           {/* Moved out of PAYMENTS: Representatives is a role/identity
               a user takes on (recruiter), not a payment destination --
-              nothing here involves money yet (commission computation and
-              payout are intentionally unbuilt). Account-level placement
+              rewards are claimed and withdrawn from VENTS Work / the
+              earnings wallet, not from here. Account-level placement
               also makes it visible to someone who has never registered as
               a Representative before, same as every other row in this
               section. */}

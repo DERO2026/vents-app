@@ -5,6 +5,7 @@ import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { ventsColors } from '../../lib/ventsDesignTokens';
+import { TICKET_SERVICE_FEE_LABEL, ticketCheckoutKobo, formatKobo } from '../../lib/ticketFees';
 
 interface TicketSelectScreenProps {
   event: Event;
@@ -55,10 +56,8 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
 
   const selected = ticketTypes.find((t) => t.id === selectedId);
   const qty = selectedId ? quantities[selectedId] ?? 0 : 0;
-  const subtotal = selected ? selected.price * qty : 0;
-  const SERVICE_FEE_PCT = 0.05;
-  const serviceFee = Math.round(subtotal * SERVICE_FEE_PCT);
-  const total = subtotal + serviceFee;
+  // Same per-ticket kobo arithmetic as checkout and the database (0208).
+  const breakdown = ticketCheckoutKobo(selected ? selected.price : 0, qty);
 
   const changeQty = (id: string, delta: number) => {
     setQuantities((prev) => {
@@ -372,13 +371,13 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                   {selected?.name} × {qty}
                 </span>
                 <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatPrice(subtotal)}
+                  {formatKobo(breakdown.faceKobo)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Service fee (5%)</span>
+                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{TICKET_SERVICE_FEE_LABEL}</span>
                 <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatPrice(serviceFee)}
+                  {formatKobo(breakdown.serviceFeeKobo)}
                 </span>
               </div>
               <div
@@ -391,7 +390,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>Total</span>
                 <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatPrice(total)}
+                  {formatKobo(breakdown.totalKobo)}
                 </span>
               </div>
             </div>
@@ -432,7 +431,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             transition: 'all 0.2s ease',
           }}
         >
-          {canContinue ? `Continue · ${formatPrice(total)}` : 'Select a ticket type'}
+          {canContinue ? `Continue · ${formatKobo(breakdown.totalKobo)}` : 'Select a ticket type'}
         </button>
       </div>
     </div>

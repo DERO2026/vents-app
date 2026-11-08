@@ -1,12 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'bank account lookup')) return;
 
   // Require the caller to be a signed-in Vents user — this endpoint spends
   // a Paystack API call per request. A non-empty header alone proves

@@ -9,6 +9,7 @@
  * Amounts must be in KOBO (Naira × 100).
  */
 import PaystackPop from '@paystack/inline-js';
+import { PREVIEW_READ_ONLY_MESSAGE } from './previewReadOnly';
 import { Capacitor } from '@capacitor/core';
 
 export interface PaystackSuccessResponse {
@@ -94,6 +95,11 @@ function getPaystackInstance(): PaystackPop {
  * Requires VITE_PAYSTACK_PUBLIC_KEY in vercel.json env.
  */
 export function openPaystackPopup(opts: OpenPaystackOptions): void {
+  // No checkout on a Preview that shares production data.
+  if (__VENTS_PREVIEW_READ_ONLY__) {
+    (opts.onError || opts.onClose)(PREVIEW_READ_ONLY_MESSAGE);
+    return;
+  }
   const rawKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined) || '';
   const publicKey = rawKey.replace(/^﻿/, '').trim();
 

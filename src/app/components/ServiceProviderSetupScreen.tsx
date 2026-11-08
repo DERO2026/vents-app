@@ -4,13 +4,14 @@ import {
   ArrowLeft, Search, Camera, X, Plus,
 } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
+import { uploadAllowanceError, UploadAllowanceError } from '../../lib/uploadAllowance';
 import { pickImage } from '../../lib/pickImage';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { ImageCropperModal } from './ImageCropperModal';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
-import { CURRENCIES, CurrencyOption, servicesPayableCurrencyForCountry } from '../../lib/currencies';
+import { CURRENCIES, CurrencyOption, servicesPayableCurrencyForCountry, formatServiceAmount } from '../../lib/currencies';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
   CATEGORY_SPECIALTY_SUGGESTIONS,
@@ -67,7 +68,13 @@ function ToggleRow({ label, sub, on, onChange }: { label: string; sub: string; o
         <p style={{ color: servicesColors.textSecondary, fontSize: '12px', margin: '2px 0 0' }}>{sub}</p>
       </div>
       <div
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        tabIndex={0}
+        data-testid={`toggle-${label}`}
         onClick={() => onChange(!on)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onChange(!on); } }}
         style={{ width: '44px', height: '26px', borderRadius: '13px', background: on ? ventsColors.accent : ventsColors.elevated, cursor: 'pointer', position: 'relative', transition: 'background 0.25s ease', flexShrink: 0 }}
       >
         <div style={{ position: 'absolute', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', top: '3px', left: on ? '21px' : '3px', transition: 'left 0.25s ease', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
@@ -181,10 +188,38 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const uploadingRef = useRef(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Save/load errors (shown above the CTA). Photo upload problems have
+  // their own state, shown in the Photos section, so an upload error from
+  // the Details step can never reappear on the Review step.
   const [error, setError] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  // Set while the hourly upload limit is reached; cleared automatically
+  // when the window resets, so the message never outlives the restriction.
+  const [uploadBlockedUntil, setUploadBlockedUntil] = useState<Date | null>(null);
+  // The last cropped photo whose upload failed: Retry re-sends it without
+  // making the person pick and crop it again.
+  const failedCropRef = useRef<Blob | null>(null);
+  const [canRetryPhoto, setCanRetryPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!uploadBlockedUntil) return;
+    const ms = uploadBlockedUntil.getTime() - Date.now();
+    const clear = () => { setUploadBlockedUntil(null); setPhotoError(null); };
+    if (ms <= 0) { clear(); return; }
+    const t = setTimeout(clear, ms);
+    return () => clearTimeout(t);
+  }, [uploadBlockedUntil]);
+
+  // Each step shows only its own messages: a failure on one step is not
+  // carried onto the next.
+  const goToStep = (next: WizardStep) => {
+    setError(null);
+    setStep(next);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -233,22 +268,23 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
 
   const handleCountrySelect = (country: CountryOption) => {
     setCountryIso(country.iso);
-    // Only re-default the currency if the provider hasn't already picked
-    // one explicitly different from the previous country's default --
-    // simplest correct behavior for v1: re-defaulting on every country
-    // change is fine since the provider can still change it afterward.
-    setCurrencyCode(servicesPayableCurrencyForCountry(country.iso));
+    // Default the currency only when none is set. This used to overwrite
+    // the provider's own currency choice on every country change, so a
+    // price entered in one currency silently switched to another.
+    setCurrencyCode((cur) => cur || servicesPayableCurrencyForCountry(country.iso));
   };
 
   const processPhotoFile = (file: File) => {
     if (photos.length >= MAX_PHOTOS) return;
-    if (file.size > 15 * 1024 * 1024) { setError('Photo must be under 15MB.'); return; }
-    setError(null);
+    if (file.size > 15 * 1024 * 1024) { setPhotoError('Photo must be under 15MB.'); setCanRetryPhoto(false); return; }
+    setPhotoError(null);
+    setCanRetryPhoto(false);
+    failedCropRef.current = null;
     setCropSrc(URL.createObjectURL(file));
   };
 
   const openPhotoPicker = async () => {
-    if (photos.length >= MAX_PHOTOS) return;
+    if (photos.length >= MAX_PHOTOS || uploading || uploadBlockedUntil) return;
     const native = await pickImage();
     if (native) { processPhotoFile(native); return; }
     fileInputRef.current?.click();
@@ -261,9 +297,14 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
   };
 
   const handleCropComplete = async (croppedBlob: Blob) => {
+    // One upload at a time: a second Done/Retry while one is in flight
+    // must not send a duplicate request (each spends upload allowance).
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
     setCropSrc(null);
     setUploading(true);
-    setError(null);
+    setPhotoError(null);
+    setCanRetryPhoto(false);
     try {
       await getAuthToken();
       // Financial-hardening: this upload used to go straight to Storage
@@ -271,7 +312,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       // rate_limit RPC ConversationScreen/mediaPipeline already use (30/hr/
       // user), called before any compression/network work.
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
+      if (limitError) throw uploadAllowanceError(limitError);
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const file = new File([compressed], `photo.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
@@ -284,11 +325,31 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       if (urlData?.publicUrl) {
         setPhotos((prev) => [...prev, urlData.publicUrl].slice(0, MAX_PHOTOS));
       }
+      failedCropRef.current = null;
     } catch (err: any) {
-      setError(err?.message || 'Failed to upload photo.');
+      if (err instanceof UploadAllowanceError) {
+        setPhotoError(err.message);
+        if (err.kind === 'rate_limited' && err.retryAt) setUploadBlockedUntil(err.retryAt);
+        // Retrying cannot help in Preview; it can after a rate limit (once
+        // the window resets), a lost session (after signing in) or a
+        // network failure.
+        failedCropRef.current = err.kind === 'preview' ? null : croppedBlob;
+        setCanRetryPhoto(err.kind !== 'preview');
+      } else {
+        setPhotoError(err?.message || 'Failed to upload photo.');
+        failedCropRef.current = croppedBlob;
+        setCanRetryPhoto(true);
+      }
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
     }
+  };
+
+  const retryPhotoUpload = () => {
+    const blob = failedCropRef.current;
+    if (!blob || uploadBlockedUntil) return;
+    void handleCropComplete(blob);
   };
 
   const removePhoto = (index: number) => {
@@ -343,7 +404,9 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
   // past Details with an invalid price, exactly as the single-page form
   // already required before saving.
   const canContinueFromCategory = categories.length > 0;
-  const canContinueFromDetails = !!businessName.trim() && !!countryIso
+  // Not while a photo is still uploading: the Review step would otherwise
+  // show a photo count that changes after the person has checked it.
+  const canContinueFromDetails = !uploading && !!businessName.trim() && !!countryIso
     && (!startingPrice.trim() || (!!currencyCode && !Number.isNaN(priceValue) && (priceValue as number) >= 0));
 
   const handleSave = async () => {
@@ -463,7 +526,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           reg wizard. */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
         <button
-          onClick={() => (step > 0 ? setStep((s) => (s - 1) as WizardStep) : onBack())}
+          onClick={() => (step > 0 ? goToStep((step - 1) as WizardStep) : onBack())}
           style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '14px' }}
         >
           <ArrowLeft size={16} color={ventsColors.ink2} />
@@ -509,8 +572,9 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           ))}
           {photos.length < MAX_PHOTOS && (
             <button
+              data-testid="add-photo"
               onClick={openPhotoPicker}
-              disabled={uploading}
+              disabled={uploading || !!uploadBlockedUntil}
               style={{ aspectRatio: '1 / 1', borderRadius: servicesRadii.sm, background: servicesColors.cardBg, border: `1px dashed ${servicesColors.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: uploading ? 'wait' : 'pointer' }}
             >
               {uploading ? (
@@ -524,6 +588,22 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             </button>
           )}
         </div>
+
+        {photoError && (
+          <div data-testid="photo-error" role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: `-${servicesSpacing.md}px 0 ${servicesSpacing.xl}px` }}>
+            <p style={{ color: servicesColors.error, fontSize: '12px', margin: 0, flex: 1 }}>{photoError}</p>
+            {canRetryPhoto && (
+              <button
+                data-testid="photo-retry"
+                onClick={retryPhotoUpload}
+                disabled={uploading || !!uploadBlockedUntil}
+                style={{ flexShrink: 0, padding: '6px 12px', borderRadius: servicesRadii.pill, background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, color: (uploading || uploadBlockedUntil) ? servicesColors.textTertiary : servicesColors.textPrimary, fontSize: '12px', fontWeight: 700, cursor: (uploading || uploadBlockedUntil) ? 'not-allowed' : 'pointer' }}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Business name */}
         <SectionLabel>Business Name</SectionLabel>
@@ -609,6 +689,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
               setLongitude(v.lng);
             }}
             placeholder="e.g. Lekki, Lagos"
+            regionCode={countryIso || undefined}
           />
         </div>
 
@@ -717,23 +798,42 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             prototype's own note that none is shown until VENTS verifies
             a provider -- this app has no such field either. */}
         {step === 3 && (
-          <div style={{ padding: '16px', borderRadius: '20px', background: '#100d1a', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: servicesSpacing.xl }}>
-            <div style={{ font: "800 20px 'Manrope', sans-serif", color: servicesColors.textPrimary }}>{businessName || 'Untitled listing'}</div>
-            {servicesOffered.length > 0 && (
-              <div style={{ fontSize: '14px', color: '#c4b5fd' }}>{servicesOffered.join(', ')}</div>
+          <div data-testid="review-card" style={{ padding: '16px', borderRadius: '20px', background: '#100d1a', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: servicesSpacing.xl }}>
+            {/* The photos that will be published -- previously only a count. */}
+            {photos.length > 0 ? (
+              <div data-testid="review-photos" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '4px' }}>
+                {photos.map((url, i) => (
+                  <div key={url} style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden', background: servicesColors.cardBg }}>
+                    <img src={url} alt={i === 0 ? 'Cover photo' : `Photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {i === 0 && (
+                      <span style={{ position: 'absolute', bottom: '3px', left: '3px', fontSize: '8px', fontWeight: 700, padding: '1px 5px', borderRadius: servicesRadii.pill, background: 'rgba(0,0,0,0.65)', color: '#fff' }}>Cover</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div data-testid="review-no-photos" style={{ fontSize: '12px', color: servicesColors.textTertiary }}>No photos added</div>
             )}
-            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
-              {categories.join(', ') || 'No category selected'}{location ? ` · ${location}` : ''}
+            <div style={{ font: "800 20px 'Manrope', sans-serif", color: servicesColors.textPrimary, overflowWrap: 'anywhere' }}>{businessName.trim() || 'Untitled listing'}</div>
+            {servicesOffered.length > 0 && (
+              <div data-testid="review-services" style={{ fontSize: '14px', color: '#c4b5fd' }}>{servicesOffered.join(', ')}</div>
+            )}
+            <div data-testid="review-category" style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {categories.join(', ') || 'No category selected'}
+            </div>
+            <div data-testid="review-location" style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {[location.trim(), selectedCountry?.name].filter(Boolean).join(' · ') || 'No location set'}
+              {latitude != null && longitude != null ? ' · pinned on map' : ''}
             </div>
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)' }} />
-            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
-              {startingPrice.trim() ? `From ${currencyCode} ${startingPrice}` : 'No starting price set'}
+            <div data-testid="review-price" style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {priceValue != null && !Number.isNaN(priceValue) ? `From ${formatServiceAmount(priceValue, currencyCode)}` : 'No starting price set'}
             </div>
-            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
-              {description || 'No description added'}
+            <div style={{ fontSize: '13px', color: servicesColors.textSecondary, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {description.trim() || 'No description added'}
             </div>
-            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
-              {photos.length} photo{photos.length === 1 ? '' : 's'} · {[
+            <div data-testid="review-offerings" style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {[
                 offersHomeService && 'Home service',
                 offersDelivery && 'Delivery',
                 offersSameDay && 'Same-day',
@@ -742,7 +842,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           </div>
         )}
 
-        {error && <p style={{ color: servicesColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        {error && <p data-testid="setup-error" role="alert" style={{ color: servicesColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
       </div>
 
       {/* Sticky CTA -- Back/Continue through the wizard, Save & Publish
@@ -753,7 +853,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: '#020005', display: 'flex', gap: servicesSpacing.sm }}>
         {step > 0 && (
           <button
-            onClick={() => setStep((s) => (s - 1) as WizardStep)}
+            onClick={() => goToStep((step - 1) as WizardStep)}
             style={{ flex: 1, padding: '16px', borderRadius: servicesRadii.md, border: `1px solid ${servicesColors.border}`, background: 'transparent', color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
           >
             Back
@@ -761,7 +861,8 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         )}
         {step < 3 ? (
           <button
-            onClick={() => setStep((s) => (s + 1) as WizardStep)}
+            data-testid="wizard-continue"
+            onClick={() => goToStep((step + 1) as WizardStep)}
             disabled={step === 0 ? !canContinueFromCategory : step === 2 ? !canContinueFromDetails : false}
             style={{
               flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',

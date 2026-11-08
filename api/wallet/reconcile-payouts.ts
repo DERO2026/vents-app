@@ -2,6 +2,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
 import { callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
+import { lookupTransferByReference, finalTransferStatus } from '../_lib/paystackTransfers.js';
+
+// A processing request with no transfer on Paystack is put back in the queue
+// only after this long, so an approval still waiting on Paystack is never
+// released underneath it.
+const RELEASE_AFTER_MS = 15 * 60 * 1000;
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -26,6 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'payout reconciliation')) return;
 
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
@@ -47,6 +55,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // supabase/migrations/0021_project_admin_login.sql for why a plain
   // service API key/JWT isn't an option on this project).
   const adminHeaders = { 'Content-Type': 'application/json', Authorization: authHeader, apikey: anonKey };
+
+  // mode 'exceptions': report-only. Lists every payout exception -- a
+  // request that ended cancelled/failed/rejected while holding a Paystack
+  // transfer code, or a recorded paid-after-final-state exception (0202) --
+  // and asks Paystack for each transfer's real status. It calls no money
+  // function and changes no record: the 2026-07 incident (four NGN 100
+  // transfers paid by Paystack, then cancelled in VENTS) is resolved by two
+  // admins through the documented plan, never automatically.
+  if ((req.body as any)?.mode === 'exceptions') {
+    try {
+      const exRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_list_payout_exceptions`, {
+        method: 'POST',
+        headers: adminHeaders,
+        body: JSON.stringify({}),
+      });
+      if (!exRes.ok) {
+        const errJson = await exRes.json().catch(() => null);
+        return res.status(exRes.status).json({ error: errJson?.message || 'Admin access required' });
+      }
+      const exJson = await exRes.json();
+      const allEx: any[] = Array.isArray(exJson) ? exJson : exJson ? [exJson] : [];
+      const exRows = allEx.slice(0, 50);
+      const report: any[] = [];
+      for (const row of exRows) {
+        const base = { request_id: row.request_id, request_status: row.request_status, amount_kobo: row.amount_kobo, exception_kind: row.exception_kind };
+        if (!row.transfer_code) {
+          report.push({ ...base, paystack_status: null, finding: 'no_transfer_code' });
+          continue;
+        }
+        const tr = await fetch(`https://api.paystack.co/transfer/${encodeURIComponent(row.transfer_code)}`, {
+          headers: { Authorization: `Bearer ${secret}` },
+        }).catch(() => null);
+        const trJson = tr ? await tr.json().catch(() => null) : null;
+        if (!tr || !tr.ok || !trJson?.data) {
+          report.push({ ...base, paystack_status: null, finding: 'paystack_lookup_failed', detail: trJson?.message });
+          continue;
+        }
+        const final = finalTransferStatus(String(trJson.data.status || ''));
+        report.push({
+          ...base,
+          paystack_status: trJson.data.status,
+          paystack_reference: trJson.data.reference ?? null,
+          // 'paid_not_recorded': Paystack paid; VENTS shows no payout. Needs
+          // the documented two-admin resolution.
+          finding: final === 'success' ? 'paid_not_recorded'
+            : final === 'failed' || final === 'reversed' ? 'not_paid_consistent'
+            : 'still_pending_on_paystack',
+        });
+      }
+      return res.status(200).json({ mode: 'exceptions', checked: exRows.length, deferred_count: Math.max(0, allEx.length - exRows.length), changed: 0, report });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Exception check failed' });
+    }
+  }
 
   try {
     // is_admin() is enforced inside this RPC — a non-admin caller gets a
@@ -86,28 +148,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const results: any[] = [];
     for (const row of rows) {
-      if (!row.transfer_code) {
-        results.push({ request_id: row.request_id, outcome: 'skipped_no_transfer_code' });
-        continue;
-      }
       try {
-        const transferRes = await fetch(`https://api.paystack.co/transfer/${row.transfer_code}`, {
-          headers: { Authorization: `Bearer ${secret}` },
-        });
-        const transferJson = await transferRes.json();
-        if (!transferRes.ok || !transferJson.data) {
-          results.push({ request_id: row.request_id, outcome: 'paystack_lookup_failed', detail: transferJson.message });
+        // Ask Paystack by transfer code, or by the request's fixed reference
+        // when the code was never recorded (0202).
+        let pstStatus: string | null = null;
+        let lookupKey: string = row.transfer_code || row.paystack_reference;
+        if (row.transfer_code) {
+          const transferRes = await fetch(`https://api.paystack.co/transfer/${row.transfer_code}`, {
+            headers: { Authorization: `Bearer ${secret}` },
+          });
+          const transferJson = await transferRes.json().catch(() => null);
+          if (!transferRes.ok || !transferJson?.data) {
+            results.push({ request_id: row.request_id, outcome: 'paystack_lookup_failed', detail: transferJson?.message });
+            continue;
+          }
+          pstStatus = String(transferJson.data.status || '');
+        } else if (row.paystack_reference) {
+          const lookup = await lookupTransferByReference(secret, row.paystack_reference);
+          if (lookup.state === 'unknown') {
+            results.push({ request_id: row.request_id, outcome: 'paystack_lookup_failed', detail: lookup.detail });
+            continue;
+          }
+          if (lookup.state === 'not_found') {
+            // Paystack confirms no transfer exists. Put it back in the queue
+            // once it has been stuck long enough that no call is still in flight;
+            // the reference is kept, so approving again cannot pay twice.
+            const ageMs = Date.now() - new Date(row.updated_at).getTime();
+            if (!(ageMs > RELEASE_AFTER_MS)) {
+              results.push({ request_id: row.request_id, outcome: 'not_on_paystack_yet' });
+              continue;
+            }
+            const rel = await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
+              method: 'POST',
+              headers: adminHeaders,
+              body: JSON.stringify({ p_request_id: row.request_id, p_reason: 'Reconcile: no transfer exists on Paystack' }),
+            });
+            results.push({ request_id: row.request_id, outcome: rel.ok ? 'released_to_pending' : 'release_failed' });
+            continue;
+          }
+          pstStatus = lookup.status;
+          lookupKey = row.paystack_reference;
+        } else {
+          results.push({ request_id: row.request_id, outcome: 'skipped_no_transfer_reference' });
           continue;
         }
-        const pstStatus = transferJson.data.status; // 'success' | 'failed' | 'reversed' | 'pending' | 'otp' | ...
-        if (pstStatus !== 'success' && pstStatus !== 'failed' && pstStatus !== 'reversed') {
+
+        const final = finalTransferStatus(pstStatus || '');
+        if (!final) {
           results.push({ request_id: row.request_id, outcome: 'still_pending_on_paystack', paystack_status: pstStatus });
           continue;
         }
 
-        const rpcRows = pstStatus === 'success'
-          ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [row.transfer_code])
-          : await callProjectAdminTableRpc<any>('fail_organizer_payout', [row.transfer_code, `Reconciled from Paystack status: ${pstStatus}`]);
+        const reason = `Reconciled from Paystack status: ${final}`;
+        const rpcRows = final === 'success'
+          ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [lookupKey])
+          : final === 'reversed'
+            ? await callProjectAdminTableRpc<any>('reverse_organizer_payout', [lookupKey, reason])
+            : await callProjectAdminTableRpc<any>('fail_organizer_payout', [lookupKey, reason]);
         const rpcRow = rpcRows[0];
 
         if (rpcRow?.organizer_email && (rpcRow.status === 'completed' || rpcRow.status === 'failed')) {
@@ -116,11 +213,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             name: rpcRow.organizer_name || 'there',
             amountNaira: fmtNaira(Number(rpcRow.amount_kobo) || 0),
             decision: rpcRow.status,
-            reason: rpcRow.status === 'failed' ? `Reconciled from Paystack status: ${pstStatus}` : undefined,
+            reason: rpcRow.status === 'failed' ? reason : undefined,
           }).catch(() => {});
         }
 
-        results.push({ request_id: row.request_id, outcome: rpcRow?.status || 'resolved', paystack_status: pstStatus });
+        const pstStatusOut = final;
+        results.push({ request_id: row.request_id, outcome: rpcRow?.status || 'resolved', paystack_status: pstStatusOut });
       } catch (err: any) {
         results.push({ request_id: row.request_id, outcome: 'error', detail: err?.message });
       }

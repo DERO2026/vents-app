@@ -71,7 +71,10 @@ export function TermsScreen() {
               <Li>Organizers must provide accurate event information including date, venue, capacity, and description</Li>
               <Li>Organizers are responsible for delivering the event as advertised</Li>
               <Li>Vents charges a 5% platform fee on all paid ticket sales, deducted before payout</Li>
-              <Li>Organizer payouts are processed within 1–3 business days after the event concludes</Li>
+              <Li>Ticket earnings become withdrawable 48 hours after the event ends. Service-provider earnings become withdrawable 48 hours after the booking is marked completed, or 48 hours after its scheduled time if that is later; a provider cannot mark a booking completed before its scheduled time</Li>
+              <Li>A customer may report a problem with a completed service booking during those 48 hours. The provider's earnings for that booking stay on hold until VENTS reviews the report</Li>
+              <Li>Earnings also stay on hold while a refund for that order or booking is being processed, while a payment dispute about it is open, or while VENTS is reviewing it. Any refund an organizer's or service provider's balance could not cover is deducted from their later earnings</Li>
+              <Li>Each withdrawal is approved by two VENTS administrators before it is sent to your bank. After it is sent, the time it takes to arrive depends on our payment provider and your bank</Li>
               <Li>Organizers are responsible for the accuracy of the bank/payout details they provide, and for door check-in of their own events</Li>
               <Li>Organizers must comply with all applicable Nigerian laws, regulations, and venue requirements</Li>
               <Li>Organizers must clearly state their refund policy on their event listing</Li>
