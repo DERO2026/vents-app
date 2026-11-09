@@ -65,8 +65,8 @@ interface TxnMetadata {
   quantity?: number;
   gross_kobo?: number;
   buyer_fee_kobo?: number;
-  // 0203: VENTS organizer commission and the net actually credited.
-  organizer_commission_kobo?: number;
+  // 0203/0208: the organizer platform deduction and the net actually credited.
+  organizer_deduction_kobo?: number;
   net_kobo?: number;
   fee_model?: string;
   paystack_reference?: string;
@@ -1154,9 +1154,9 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       dateLabel = fmtDateTime(t.created_at);
       const gross = meta.gross_kobo ?? t.amount_kobo;
       const buyerFee = meta.buyer_fee_kobo;
-      // The commission is the amount the database recorded on this sale
-      // (metadata.organizer_commission_kobo); older sales had none.
-      const commission = meta.organizer_commission_kobo;
+      // The deduction is the amount the database recorded on this sale
+      // (metadata.organizer_deduction_kobo); older sales had none.
+      const deduction = meta.organizer_deduction_kobo;
       rows = [
         { label: 'Gross amount', value: fmt(gross) },
         {
@@ -1164,8 +1164,8 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
           value: buyerFee != null ? `${fmt(buyerFee)} (paid by buyer, not deducted)` : 'Not available for this transaction',
           muted: true,
         },
-        ...(commission != null && commission > 0
-          ? [{ label: 'VENTS commission', value: `-${fmt(commission)}` }]
+        ...(deduction != null && deduction > 0
+          ? [{ label: 'Organizer platform deduction', value: `-${fmt(deduction)}` }]
           : []),
         { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
         { label: 'Currency', value: 'NGN (₦)' },

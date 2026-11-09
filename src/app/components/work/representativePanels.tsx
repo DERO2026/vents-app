@@ -13,6 +13,8 @@ import { MLabel, MCard, Row, Ico, Pill, NoteBand, WorkButton, ErrorNote, Chips, 
 export interface Eligibility { eligible: boolean; reasons: string[]; is_free_event?: boolean; ended_at?: string }
 export interface Attribution {
   id: string; organizer_id: string; organizer_name: string | null; attributed_at: string;
+  // The organizer's username from their account (0201 get_my_representative_history).
+  organizer_username?: string | null;
   // A reward that is not rejected already exists for this organizer.
   claimed: boolean;
   events: { event_id: string; title: string; eligibility: Eligibility }[];

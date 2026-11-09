@@ -4,26 +4,30 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import { formatKobo } from '../../lib/ticketFees';
 import { useTicketQuote, formatBps } from '../../lib/ticketQuote';
 
-// Shown in the ticket pricing step of Create / Edit Event, before publishing
-// (owner instruction 2026-11-08, item 2). Every number -- the commission rate
-// and the example -- comes from the database's own quote (ticket_fee_quote,
+// Shown in the ticket pricing step of Create / Edit Event, before publishing.
+// VENTS has two ticket platform fees: a 1.5% attendee service fee (added at
+// checkout, paid by the attendee) and a 3.5% organizer platform deduction
+// (taken from the organizer's ticket revenue). Both are VENTS platform fees;
+// neither is a commission and nobody else receives any part of them.
+// Every number here comes from the database's own quote (ticket_fee_quote,
 // 0208), the same functions that settle organizers. Nothing is restated here.
 
-export function organizerCommissionNoticeText(rateText: string, exampleNetText: string): string {
-  return `VENTS charges a ${rateText} commission on every ticket sold. Your earnings will automatically reflect this deduction. ` +
-    `For example, a ₦10,000 ticket earns you ${exampleNetText} before any other applicable adjustments.`;
+export function organizerDeductionNoticeText(rateText: string, exampleNetText: string): string {
+  return `VENTS deducts a ${rateText} platform fee from each ticket you sell. Your earnings automatically reflect this deduction. ` +
+    `For example, a ₦10,000 ticket earns you ${exampleNetText} before any other applicable adjustments. ` +
+    'Attendees separately pay a service fee at checkout; it is never taken from your earnings.';
 }
 
-export function OrganizerCommissionNotice() {
+export function OrganizerDeductionNotice() {
   const { status, quote } = useTicketQuote(10000, 1);
   const text = quote
-    ? organizerCommissionNoticeText(formatBps(quote.organizer_commission_bps), formatKobo(quote.organizer_net_kobo))
+    ? organizerDeductionNoticeText(formatBps(quote.organizer_deduction_bps), formatKobo(quote.organizer_net_kobo))
     : status === 'unavailable'
-      ? 'VENTS commission details could not be loaded. They will be shown here before you publish.'
-      : 'Loading VENTS commission…';
+      ? 'VENTS platform fee details could not be loaded. They will be shown here before you publish.'
+      : 'Loading VENTS platform fees…';
   return (
     <div
-      data-testid="organizer-commission-notice"
+      data-testid="organizer-deduction-notice"
       role="note"
       style={{
         display: 'flex', gap: '10px', alignItems: 'flex-start',
@@ -44,7 +48,7 @@ export function TicketNetEarnings({ price }: { price: string | number }) {
   if (!(value > 0)) {
     return (
       <p data-testid="ticket-net-earnings" style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>
-        Free ticket: no commission is charged.
+        Free ticket: no platform fee is deducted.
       </p>
     );
   }
@@ -54,13 +58,13 @@ export function TicketNetEarnings({ price }: { price: string | number }) {
   return (
     <p data-testid="ticket-net-earnings" style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0, fontVariantNumeric: 'tabular-nums' }}>
       You earn <span style={{ color: ventsColors.success, fontWeight: 700 }}>{formatKobo(quote.organizer_net_kobo)}</span> per ticket
-      {' '}({formatKobo(quote.face_kobo)} − {formatKobo(quote.organizer_commission_kobo)} VENTS commission).
+      {' '}({formatKobo(quote.face_kobo)} − {formatKobo(quote.organizer_deduction_kobo)} organizer platform deduction).
     </p>
   );
 }
 
-/** Commission row for the review step, from the server's rate. */
-export function useCommissionRateText(): string | null {
+/** Organizer platform deduction rate for the review step, from the server. */
+export function useOrganizerDeductionRateText(): string | null {
   const { quote } = useTicketQuote(10000, 1);
-  return quote ? formatBps(quote.organizer_commission_bps) : null;
+  return quote ? formatBps(quote.organizer_deduction_bps) : null;
 }

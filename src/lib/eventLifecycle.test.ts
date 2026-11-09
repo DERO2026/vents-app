@@ -150,7 +150,9 @@ describe('client-side discovery surfaces apply the same rule (requirements #1, #
   it('EventDetailsScreen shows "Event Ended" with no purchase CTA once the event has ended', () => {
     expect(eventDetailsSrc).toMatch(/const hasEnded = hasEventEnded/);
     expect(eventDetailsSrc).toMatch(/Event Ended/);
-    expect(eventDetailsSrc).toMatch(/const canBook = !hasEnded && !!selectedTicket && selectedQty > 0;/);
+    // Ended events can never be bought; a selection must also be valid
+    // (available category, quantity > 0 -- ticketSelection.selectionProblem).
+    expect(eventDetailsSrc).toMatch(/const canBook = !hasEnded && selectionIssue === null;/);
   });
 
   it('Related Events query excludes ended events', () => {

@@ -167,10 +167,12 @@ export function AdminEarnScreen() {
               {c.status === 'pending_review' && (
                 <button style={btn()} disabled={c.organizer_verified_now === false} title={c.organizer_verified_now === false ? 'The organizer needs an approved organizer verification first' : undefined} onClick={() => {
                   // Approved rule: the qualifying event must be verified by the approving admins.
-                  if (!window.confirm(`Confirm you verified "${c.event_title}" is a genuine event that took place as listed?`)) return;
+                  // Event occurrence confirmation: the event happened, its date has
+                  // passed and it was not cancelled. A second admin must approve.
+                  if (!window.confirm(`Event occurrence: confirm you verified "${c.event_title}" actually took place as listed (not cancelled, date passed). A second admin must still approve.`)) return;
                   if (c.is_free_event && !window.confirm('This is a free event. Confirm you verified it was a genuine event?')) return;
                   request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, event_verified: true, free_event_verified: c.is_free_event }, c.id);
-                }}>Request approval</button>
+                }}>Confirm event took place · request approval</button>
               )}
               {['pending_organizer', 'pending_review', 'approved'].includes(c.status) && (
                 <button style={btn(true)} onClick={() => { const reason = ask('Reason for rejecting:'); if (reason) request('earn_reject_reward', `Reject reward: ${c.organizer_name}`, { claim_id: c.id, reason }, c.id); }}>Request rejection</button>

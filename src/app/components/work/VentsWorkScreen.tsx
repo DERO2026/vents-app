@@ -6,6 +6,7 @@ import {
 } from '../../../lib/workRoles';
 import { CACVerificationScreen } from '../SettingsScreen';
 import { OrganizerRequestSheet } from './OrganizerRequestSheet';
+import { RepresentativeConnectionCard } from './representativeConnection';
 import { useWorkStatus, type WorkUser } from './useWorkStatus';
 import {
   workPage, workScroll, WorkBar, MLabel, MCard, Row, Ico, Pill, Tiles, Tile, ErrorNote, WorkButton, Chev,
@@ -140,6 +141,10 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
             </MCard>
           </>
         )}
+
+        {/* The organizer side of a representative referral: who invited
+            them, the connection's state and how the reward is earned. */}
+        <RepresentativeConnectionCard enabled={!status.loading && status.representative !== 'active'} onOpenInvitations={() => onNavigate('representatives')} />
 
         <MLabel>Your roles</MLabel>
         <MCard testId="work-roles">

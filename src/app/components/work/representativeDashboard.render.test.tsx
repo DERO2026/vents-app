@@ -548,12 +548,12 @@ describe('Representative referrals (0209)', () => {
     rpcs.get_my_representative_performance = { data: perf(), error: null };
     rpcs.get_my_representative_rewards = { data: rewards(), error: null };
     rpcs.get_my_representative_history = historyRpc;
-    rpcs.get_my_representative_referral = { data: { code: 'ABCD2345', path: '/?rep=ABCD2345' }, error: null };
+    rpcs.get_my_representative_referral = { data: { code: 'ABCD2345', path: '/?rep=ABCD2345', display_name: 'Rep One', username: 'rep_one' }, error: null };
     historyFail = null;
     history = {
       claims: [], expenses: [],
       attributions: [
-        { id: 'r1', at: at(0), organizer_id: 'o1', organizer_name: 'Ada Events', attributed_at: at(0), claimed: false, events: [],
+        { id: 'r1', at: at(0), organizer_id: 'o1', organizer_name: 'Ada Events', organizer_username: 'ada_events', attributed_at: at(0), claimed: false, events: [],
           source: 'referral_link', is_organizer: false, verification_status: null, organizer_verified: false, reward_status: null },
         { id: 'r2', at: at(1), organizer_id: 'o2', organizer_name: 'Bayo Live', attributed_at: at(1), claimed: true,
           events: [{ event_id: 'e1', title: 'Lagos Jam', eligibility: { eligible: true, reasons: [] } }],
@@ -574,6 +574,17 @@ describe('Representative referrals (0209)', () => {
     expect(byTestId('referral-share')).not.toBeNull();
     expect(byTestId('referral-copy-code')).not.toBeNull();
     expect(rpcCalls.some((c) => c.name === 'get_my_representative_referral')).toBe(true);
+  });
+
+  it('shows the identity organizers will see, the full reward steps, and organizer usernames', async () => {
+    await dash('referrals');
+    expect(byTestId('referral-identity')?.textContent).toBe('Organizers will see: Rep One · @rep_one');
+    const steps = byTestId('referral-steps-representative')?.textContent ?? '';
+    expect(steps).toMatch(/fixed reward from VENTS, not a commission or a share of ticket sales/);
+    expect(steps).toMatch(/earns nothing by itself/);
+    expect(steps).toMatch(/Event took place/);
+    expect(byTestId('referral-link-card')?.textContent).toMatch(/A click or a registration earns nothing by itself/);
+    expect(byTestId('referred-o1')?.textContent).toContain('Ada Events · @ada_events');
   });
 
   it('lists referred organizers with registration, verification, qualifying event and reward status', async () => {

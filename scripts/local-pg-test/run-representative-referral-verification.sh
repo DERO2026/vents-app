@@ -172,6 +172,9 @@ NEWU="00000000-0000-0000-0000-0000000009b1"; NEWU2="00000000-0000-0000-0000-0000
 RACE="00000000-0000-0000-0000-0000000009b4"; FREE_EV="00000000-0000-0000-0000-0000000009e1"
 "${PSQL[@]}" -q <<SQL
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+-- Production columns (0002) the referral screens show.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username text;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_url text;
 INSERT INTO public.users (id, role, is_organizer, full_name, email, created_at) VALUES
   ('$REP', 'user', false, 'Rep One', 'r1@example.test', now() - interval '90 days'),
   ('$REP_S', 'user', false, 'Rep Suspended', 'r2@example.test', now() - interval '90 days'),
@@ -214,9 +217,9 @@ expect_error "a client cannot set or change a code" "permission denied" "$(as "$
 echo "== Claiming at registration =="
 claim_ref() { val "$(as "$1" "SELECT public.claim_representative_referral('$2')->>'status';")"; }
 expect_value "a user registering through the link is attributed" "$(claim_ref "$NEWU" "$CODE")" "attributed"
-expect_value "to that representative, through an accepted 0% referral-link partnership" \
-  "$(val "SELECT a.representative_id || '/' || p.status || '/' || p.commission_split_bps || '/' || p.source FROM public.representative_attributions a JOIN public.recruiter_partnerships p ON p.id = a.partnership_id WHERE a.organizer_id = '$NEWU';")" \
-  "$REP/accepted/0/referral_link"
+expect_value "to that representative, through an accepted referral-link partnership with NO commission split" \
+  "$(val "SELECT a.representative_id || '/' || p.status || '/' || COALESCE(p.commission_split_bps::text, 'null') || '/' || p.source FROM public.representative_attributions a JOIN public.recruiter_partnerships p ON p.id = a.partnership_id WHERE a.organizer_id = '$NEWU';")" \
+  "$REP/accepted/null/referral_link"
 expect_value "the representative is notified" "$(val "SELECT count(*) FROM public.notifications WHERE user_id = '$REP' AND title = 'New organizer referred';")" "1"
 expect_value "lower-case and padded codes work (links get retyped)" "$(claim_ref "$NEWU2" " $(echo "$CODE" | tr 'A-Z' 'a-z') ")" "attributed"
 expect_value "the same link again changes nothing" "$(claim_ref "$NEWU" "$CODE")" "already_attributed"
@@ -264,6 +267,83 @@ expect_error "and a reward cannot be claimed for it (refused with reason free_ev
 expect_error "undo_0209 is refused once a referral was made" "attributed through referral links" \
   "SET vents.rollback_confirm = 'undo-0209'; $(cat "$REPO_ROOT/supabase/rollback/undo_0209.sql")"
 
+echo "== 0210: the organizer side of the referral, and no commission ever =="
+LEG="00000000-0000-0000-0000-0000000009b5"; PEND="00000000-0000-0000-0000-0000000009b6"; NOBODY="00000000-0000-0000-0000-0000000009b7"
+"${PSQL[@]}" -q <<SQL
+UPDATE public.users SET username = 'rep_one', avatar_url = 'https://x.test/r1.png' WHERE id = '$REP';
+UPDATE public.users SET username = 'rep_two' WHERE id = '$REP_B';
+UPDATE public.users SET username = 'new_org' WHERE id = '$NEWU';
+INSERT INTO public.users (id, role, is_organizer, full_name, email, created_at) VALUES
+  ('$LEG', 'user', true, 'Legacy Partner', 'l@example.test', now() - interval '60 days'),
+  ('$PEND', 'user', true, 'Pending Organizer', 'pe@example.test', now()),
+  ('$NOBODY', 'user', false, 'Nobody', 'nb@example.test', now());
+-- A partnership recorded under the retired 10% programme (before 0210).
+INSERT INTO public.recruiter_partnerships (recruiter_id, organizer_id, commission_split_bps, status) VALUES ('$REP_B', '$LEG', 10000, 'pending');
+SQL
+expect_value "the representative's own link call returns the identity organizers will see" \
+  "$(val "$(as "$REP" "SELECT (r->>'display_name') || '/' || (r->>'username') FROM (SELECT public.get_my_representative_referral() AS r) x;")")" "Rep One/rep_one"
+STATE10="SELECT md5(string_agg(p.proname || ':' || p.prosrc, '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT count(*) FROM pg_trigger WHERE tgname = 'recruiter_partnerships_no_commission') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
+PRE_0210=$(val "$STATE10")
+expect_ok "0210 applies on top of 0209" "$(cat "$MIG/0210_referral_connections.sql")"
+expect_ok "undo_0210 runs" "SET vents.rollback_confirm = 'undo-0210'; $(cat "$REPO_ROOT/supabase/rollback/undo_0210.sql")"
+expect_value "undo_0210 restores every function and trigger exactly" "$(val "$STATE10")" "$PRE_0210"
+expect_ok "0210 re-applies after the undo" "$(cat "$MIG/0210_referral_connections.sql")"
+expect_ok "0210 is idempotent (second run)" "$(cat "$MIG/0210_referral_connections.sql")"
+expect_error "undo_0210 refuses without the confirmation" "undo-0210" "$(cat "$REPO_ROOT/supabase/rollback/undo_0210.sql")"
+
+echo "-- no commission can ever be recorded"
+expect_error "a new partnership with any commission split is refused" "no representative commission" \
+  "INSERT INTO public.recruiter_partnerships (recruiter_id, organizer_id, commission_split_bps, status) VALUES ('$REP', '$PEND', 1000, 'pending');"
+expect_error "... even 0 (only NULL: there is no split at all)" "no representative commission" \
+  "INSERT INTO public.recruiter_partnerships (recruiter_id, organizer_id, commission_split_bps, status) VALUES ('$REP', '$PEND', 0, 'pending');"
+expect_error "the retired 10% value cannot be rewritten" "cannot be changed" \
+  "UPDATE public.recruiter_partnerships SET commission_split_bps = NULL WHERE organizer_id = '$LEG';"
+expect_ok "but that historical partnership can still be answered (history kept, no money)" \
+  "UPDATE public.recruiter_partnerships SET status = 'declined', responded_at = now(), responded_by = '$LEG' WHERE organizer_id = '$LEG';"
+expect_value "and its historical 10% value is preserved untouched" \
+  "$(val "SELECT commission_split_bps || '/' || status FROM public.recruiter_partnerships WHERE organizer_id = '$LEG';")" "10000/declined"
+expect_value "every partnership made since the fixed reward has no split (link and invitation)" \
+  "$(val "SELECT count(*) FROM public.recruiter_partnerships WHERE commission_split_bps IS NOT NULL AND organizer_id <> '$LEG';")" "0"
+expect_value "no function anywhere computes a percentage of ticket sales for a representative" \
+  "$(val "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prosrc ~* '(recruiter|representative)[a-z_]*\\s*:?=.*(amount|face|gross)[a-z_]*\\s*\\*\\s*[0-9.]+\\s*/\\s*100';")" "0"
+
+echo "-- the referral link shows who invited you (before registering)"
+preview() { val "$1 SELECT public.get_representative_referral_preview('$2')::text;"; }
+expect_value "a valid code shows the representative's name, username and avatar only" \
+  "$(val "SELECT (r->>'valid') || '/' || (r->'representative'->>'display_name') || '/' || (r->'representative'->>'username') || '/' || (r->'representative'->>'avatar_url') || '/' || (r->'representative' ? 'id')::text || '/' || (r ? 'email')::text FROM (SELECT public.get_representative_referral_preview(' $(echo "$CODE" | tr 'A-Z' 'a-z')') AS r) x;")" \
+  "true/Rep One/rep_one/https://x.test/r1.png/false/false"
+expect_value "signed-out visitors (the person opening the link) can preview it" \
+  "$(val "SET ROLE anon; SELECT public.get_representative_referral_preview('$CODE')->'representative'->>'username';")" "rep_one"
+expect_value "a suspended representative's code previews as invalid" "$(val "SET ROLE anon; SELECT public.get_representative_referral_preview('$CODE_S')->>'valid';")" "false"
+expect_value "an unknown code previews as invalid" "$(val "SET ROLE anon; SELECT public.get_representative_referral_preview('ZZZZZZZZ')->>'valid';")" "false"
+expect_value "a malformed code previews as invalid" "$(val "SET ROLE anon; SELECT public.get_representative_referral_preview('<script>')->>'valid';")" "false"
+
+echo "-- the organizer sees their own referral connection"
+conn() { val "$(as "$1" "SELECT $2 FROM (SELECT public.get_my_representative_connection() AS c) x;")"; }
+expect_value "an organizer who registered through the link: established, via the link, with the representative's name and username" \
+  "$(conn "$NEWU" "(c->>'status') || '/' || (c->'attribution'->>'source') || '/' || (c->'attribution'->'representative'->>'display_name') || '/' || (c->'attribution'->'representative'->>'username')")" \
+  "established/referral_link/Rep One/rep_one"
+expect_value "the organizer pays nothing for being referred; the reward is the fixed N50,000" \
+  "$(conn "$NEWU" "(c->>'organizer_pays_for_referral') || '/' || (c->>'reward_amount_kobo')")" "false/5000000"
+expect_value "their events show the qualification state (the free event: not eligible, reason free_event)" \
+  "$(conn "$NEWU" "(SELECT (e->>'eligible') || '/' || (e->'reasons' ? 'free_event')::text FROM jsonb_array_elements(c->'events') e WHERE e->>'event_id' = '$FREE_EV')")" "false/true"
+expect_value "and never any fee, profit or money figure for those events" \
+  "$(conn "$NEWU" "(SELECT count(*) FROM jsonb_array_elements(c->'events') e, jsonb_object_keys(e) k WHERE k ~ 'kobo|fee_|profit')")" "0"
+expect_value "the connection is the same on every call (it survives logout/login: it lives in the database)" \
+  "$(conn "$NEWU" "c->'attribution'->>'attributed_at'")" "$(val "SELECT to_jsonb(attributed_at)#>>'{}' FROM public.representative_attributions WHERE organizer_id = '$NEWU';")"
+expect_value "the representative sees that organizer's username in their list" \
+  "$(val "$(as "$REP" "SELECT i->>'organizer_username' FROM jsonb_array_elements(public.get_my_representative_history('attributions')->'items') i WHERE i->>'organizer_id' = '$NEWU';")")" "new_org"
+"${PSQL[@]}" -q -c "INSERT INTO public.recruiter_partnerships (recruiter_id, organizer_id, status) VALUES ('$REP_B', '$PEND', 'pending');"
+expect_value "an organizer with an unanswered invitation: pending, naming the inviting representative" \
+  "$(conn "$PEND" "(c->>'status') || '/' || (c->'pending_invitations'->0->'representative'->>'username') || '/' || COALESCE(c->>'attribution', 'null')")" "pending/rep_two/null"
+expect_value "accepting it establishes the connection with that representative" \
+  "$("${PSQL[@]}" -q -c "UPDATE public.recruiter_partnerships SET status = 'accepted', responded_at = now(), responded_by = '$PEND' WHERE organizer_id = '$PEND' AND status = 'pending';" >/dev/null 2>"$ERR"; conn "$PEND" "(c->>'status') || '/' || (c->'attribution'->>'source') || '/' || (c->'attribution'->'representative'->>'username')")" "established/invite/rep_two"
+expect_value "a user nobody referred: none" "$(conn "$NOBODY" "c->>'status'")" "none"
+expect_value "a representative is told they cannot be referred" "$(conn "$REP" "c->>'is_representative'")" "true"
+expect_error "signed-out callers cannot read a connection" "permission denied" "SET ROLE anon; SELECT public.get_my_representative_connection();"
+expect_value "each organizer only ever sees their own connection (no parameter can name another user)" \
+  "$(val "SELECT count(*) FROM pg_proc WHERE proname = 'get_my_representative_connection' AND pronargs = 0;")" "1"
+
 echo "== Representative badge =="
 badges() { val "$1 SELECT string_agg(user_id::text, ',' ORDER BY user_id) FROM public.get_representative_badges(ARRAY['$REP', '$REP_S', '$REP_B', '$NEWU']::uuid[]);"; }
 expect_value "only active representatives get the badge (suspended and non-representatives do not)" "$(badges "")" "$REP,$REP_B"
@@ -272,4 +352,4 @@ expect_value "the badge is visible to signed-out visitors too" "$(badges "SET RO
 expect_value "a deleted account loses the badge" "$(badges "")" "$REP"
 
 echo
-if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES REPRESENTATIVE REFERRAL 0209 CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi
+if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES REPRESENTATIVE REFERRAL 0209 + 0210 CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi

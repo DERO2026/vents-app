@@ -13,7 +13,7 @@
 --   item 5  a Representative badge from the authoritative status only.
 --
 -- Reuses 0193/0201: a referral creates an ACCEPTED recruiter_partnerships row
--- (commission_split_bps 0, source 'referral_link'; partnerships carry no
+-- (commission_split_bps NULL, source 'referral_link'; partnerships carry no
 -- money -- 0193 computes no commission and 0201 pays the fixed reward only)
 -- and 0201's earn_attribute_partnership() records the attribution with its
 -- existing self-referral and duplicate guards. No reward amount, rate,
@@ -94,7 +94,12 @@ BEGIN
       v_code := NULL;  -- collision: draw again
     END;
   END LOOP;
-  RETURN jsonb_build_object('code', v_code, 'path', '/?rep=' || v_code);
+  -- The representative's own identity, exactly as organizers will see it
+  -- (get_representative_referral_preview, 0210).
+  RETURN jsonb_build_object('code', v_code, 'path', '/?rep=' || v_code,
+    'display_name', (SELECT COALESCE(NULLIF(btrim(r.display_name), ''), NULLIF(btrim(u.full_name), ''), u.username)
+                       FROM public.recruiters r JOIN public.users u ON u.id = r.id WHERE r.id = v_uid),
+    'username', (SELECT u.username FROM public.users u WHERE u.id = v_uid));
 END;
 $function$;
 
@@ -166,7 +171,7 @@ BEGIN
 
   INSERT INTO public.recruiter_partnerships
     (recruiter_id, organizer_id, provider_id, commission_split_bps, status, responded_at, responded_by, source)
-  VALUES (v_rep.id, v_uid, NULL, 0, 'accepted', now(), v_uid, 'referral_link')
+  VALUES (v_rep.id, v_uid, NULL, NULL, 'accepted', now(), v_uid, 'referral_link')
   RETURNING id INTO v_partnership_id;
 
   PERFORM public.earn_attribute_partnership(v_partnership_id);

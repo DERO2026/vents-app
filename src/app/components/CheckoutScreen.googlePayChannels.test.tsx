@@ -45,8 +45,8 @@ beforeEach(() => {
     // purchase amount above, or checkout refuses to charge.
     if (name === 'ticket_fee_quote') {
       return Promise.resolve({ data: { fee_model: 'v3_15_35', quantity: 1, unit_face_kobo: 500000, face_kobo: 500000, service_fee_kobo: 25000,
-        discount_kobo: 0, total_kobo: 525000, organizer_commission_kobo: 0, organizer_net_kobo: 500000, vents_revenue_kobo: 25000,
-        service_fee_bps: 500, organizer_commission_bps: 0 }, error: null });
+        discount_kobo: 0, total_kobo: 525000, organizer_deduction_kobo: 0, organizer_net_kobo: 500000, vents_revenue_kobo: 25000,
+        service_fee_bps: 500, organizer_deduction_bps: 0 }, error: null });
     }
     if (name === 'get_my_wallet') {
       return Promise.resolve({ data: [{ balance_kobo: 0 }], error: null });
@@ -140,8 +140,8 @@ describe('CheckoutScreen real paid-ticket checkout: Paystack channels', () => {
     const base = mockRpc.getMockImplementation()!;
     mockRpc.mockImplementation((name: string, args: any) => name === 'ticket_fee_quote'
       ? Promise.resolve({ data: { fee_model: 'v3_15_35', quantity: 1, unit_face_kobo: 500000, face_kobo: 500000, service_fee_kobo: 7500,
-          discount_kobo: 0, total_kobo: 507500, organizer_commission_kobo: 17500, organizer_net_kobo: 482500, vents_revenue_kobo: 25000,
-          service_fee_bps: 150, organizer_commission_bps: 350 }, error: null })
+          discount_kobo: 0, total_kobo: 507500, organizer_deduction_kobo: 17500, organizer_net_kobo: 482500, vents_revenue_kobo: 25000,
+          service_fee_bps: 150, organizer_deduction_bps: 350 }, error: null })
       : base(name, args));
     await driveToPaystackCall();
     expect(getPayButton()?.textContent).toContain('₦5,075');

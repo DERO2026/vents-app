@@ -6,13 +6,14 @@ import { repReferralLink } from '../../../lib/representativeReferral';
 import { shareLink } from '../../../lib/shareLink';
 import { useRepHistory, MoreButton, ListError, type Attribution } from './representativePanels';
 import { MLabel, MCard, Row, Ico, Pill, WorkButton, ErrorNote, NoteBand, Loading } from './workUi';
+import { ReferralSteps } from './representativeConnection';
 
 // Organizer referral link and the organizers it brought (migration 0209).
 // The code comes from the server (get_my_representative_referral), which
 // issues one only to an ACTIVE representative; attribution and every reward
 // rule are enforced there too. Nothing here is computed on the client.
 
-type Referral = { code: string; link: string };
+type Referral = { code: string; link: string; displayName: string | null; username: string | null };
 
 async function copy(text: string): Promise<boolean> {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
@@ -59,7 +60,7 @@ export function ReferralsPanel({ active }: { active: boolean }) {
       if (isBackendUnavailable(e)) setUnavailable(true);
       else setError(e.message || 'Could not load your referral link.');
     } else if (data?.code) {
-      setReferral({ code: data.code, link: repReferralLink(data.code) });
+      setReferral({ code: data.code, link: repReferralLink(data.code), displayName: data.display_name ?? null, username: data.username ?? null });
     }
     setLoading(false);
   }, [active]);
@@ -89,9 +90,16 @@ export function ReferralsPanel({ active }: { active: boolean }) {
         {!loading && referral && (
           <>
             <p style={{ margin: 0, color: ventsColors.ink2, fontSize: 12, lineHeight: 1.5 }}>
-              Organizers who register through this link are added to your team automatically. You earn the
-              representative reward when they become verified and host a qualifying paid event. Free events do not qualify.
+              A new organizer who registers through this link is connected to you permanently and sees your name
+              when they open it. A click or a registration earns nothing by itself: the reward is paid only after
+              every step below, including their paid event taking place.
             </p>
+            {(referral.displayName || referral.username) && (
+              <div data-testid="referral-identity" style={{ color: ventsColors.ink1, fontSize: 12.5 }}>
+                Organizers will see: <strong>{referral.displayName || referral.username}</strong>
+                {referral.username && <span style={{ color: ventsColors.ink2 }}> · @{referral.username}</span>}
+              </div>
+            )}
             <div style={{ display: 'grid', gap: 4 }}>
               <span style={{ color: ventsColors.ink3, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>CODE</span>
               <span data-testid="referral-code" style={{ color: ventsColors.white, fontSize: 20, fontWeight: 800, letterSpacing: '0.12em', fontVariantNumeric: 'tabular-nums' }}>{referral.code}</span>
@@ -111,6 +119,11 @@ export function ReferralsPanel({ active }: { active: boolean }) {
         )}
       </MCard>
 
+      <MLabel>How the reward is earned</MLabel>
+      <MCard testId="referral-policy">
+        <ReferralSteps rewardKobo={null} audience="representative" />
+      </MCard>
+
       <MLabel>Organizers you referred</MLabel>
       <MCard testId="referred-organizers">
         {referred.loading && <Loading />}
@@ -122,7 +135,7 @@ export function ReferralsPanel({ active }: { active: boolean }) {
           const reg = registrationText(a);
           return (
             <Row key={a.id} testId={`referred-${a.organizer_id}`} icon={<Ico tone="p">{(a.organizer_name || 'O').slice(0, 1).toUpperCase()}</Ico>}
-              title={a.organizer_name || 'Organizer'}
+              title={<span>{a.organizer_name || 'Organizer'}{a.organizer_username && <span style={{ color: ventsColors.ink2, fontWeight: 600 }}> · @{a.organizer_username}</span>}</span>}
               sub={
                 <span style={{ display: 'grid', gap: 2 }}>
                   <span>{a.source === 'referral_link' ? 'Joined through your link' : 'Accepted your invitation'} · {new Date(a.attributed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>

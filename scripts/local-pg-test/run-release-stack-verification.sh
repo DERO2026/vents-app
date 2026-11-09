@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release-stack verification: the exact window order and the full rollback.
-#   apply  0201 -> 0202 -> 0203 -> 0205 -> 0206 -> 0207 -> 0208 -> 0209 (W4-W6e)
-#   undo   R1e (0209) -> R1d (0208) -> R1c (0207) -> R1b (0206) -> R1a (0205)
+#   apply  0201 -> 0202 -> 0203 -> 0205 -> 0206 -> 0207 -> 0208 -> 0209 -> 0210 (W4-W6f)
+#   undo   R1f (0210) -> R1e (0209) -> R1d (0208) -> R1c (0207) -> R1b (0206) -> R1a (0205)
 #          must return every function, constraint and column to the
 #          post-0203 state exactly; then the whole stack re-applies and a
 #          second run of each migration changes nothing.
@@ -160,7 +160,7 @@ INSERT INTO public.organizer_bank_accounts (id, organizer_id, bank_name, bank_co
 INSERT INTO public.service_providers (id, user_id) VALUES ('$SP_ID', '$PROV');
 SQL
 
-"${PSQL[@]}" -q -c "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();"
+"${PSQL[@]}" -q -c "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now(); ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username text; ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_url text;"
 STATE_SQL="SELECT md5(string_agg(p.oid::regprocedure::text || ':' || p.prosrc, '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT md5(string_agg(conrelid::regclass::text || conname || pg_get_constraintdef(oid), '|' ORDER BY conrelid::regclass::text, conname)) FROM pg_constraint WHERE connamespace = 'public'::regnamespace) || '/' || (SELECT md5(string_agg(table_name || '.' || column_name || COALESCE(column_default, ''), '|' ORDER BY table_name, column_name)) FROM information_schema.columns WHERE table_schema = 'public') || '/' || (SELECT md5(string_agg(tgrelid::regclass::text || tgname, '|' ORDER BY tgrelid::regclass::text, tgname)) FROM pg_trigger WHERE NOT tgisinternal) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
 apply() { expect_ok "$1 applies" "$(cat "$MIG/$1.sql")"; }
 undo() { expect_ok "undo_$1 ($2) runs" "SET vents.rollback_confirm = 'undo-$1'; $(cat "$REPO_ROOT/supabase/rollback/undo_$1.sql")"; }
@@ -173,27 +173,29 @@ apply 0206_earnings_adjustment
 apply 0207_withdrawal_bank_reassignment
 apply 0208_ticket_fee_1_5_3_5
 apply 0209_representative_referral_links
+apply 0210_referral_connections
 FULL=$(val "$STATE_SQL")
 expect_value "P1 after the window: every new object exists" \
-  "$(val "SELECT (to_regprocedure('public.get_my_representative_rewards()') IS NOT NULL AND to_regprocedure('public.admin_earnings_reconciliation()') IS NOT NULL AND to_regprocedure('public.earnings_release_delay()') IS NOT NULL AND to_regprocedure('public.organizer_withdrawal_requests_guard()') IS NOT NULL AND to_regclass('public.earnings_adjustments') IS NOT NULL AND to_regclass('public.withdrawal_bank_reassignments') IS NOT NULL AND to_regprocedure('public.ticket_fee_buyer_charge_kobo(numeric,integer,numeric,text)') IS NOT NULL AND to_regprocedure('public.claim_representative_referral(text)') IS NOT NULL)::text;")" "true"
+  "$(val "SELECT (to_regprocedure('public.get_my_representative_rewards()') IS NOT NULL AND to_regprocedure('public.admin_earnings_reconciliation()') IS NOT NULL AND to_regprocedure('public.earnings_release_delay()') IS NOT NULL AND to_regprocedure('public.organizer_withdrawal_requests_guard()') IS NOT NULL AND to_regclass('public.earnings_adjustments') IS NOT NULL AND to_regclass('public.withdrawal_bank_reassignments') IS NOT NULL AND to_regprocedure('public.ticket_fee_buyer_charge_kobo(numeric,integer,numeric,text)') IS NOT NULL AND to_regprocedure('public.claim_representative_referral(text)') IS NOT NULL AND to_regprocedure('public.get_my_representative_connection()') IS NOT NULL)::text;")" "true"
 expect_value "new tickets are sold at 1.5% + 3.5%" "$(val "SELECT column_default FROM information_schema.columns WHERE table_schema='public' AND table_name='tickets' AND column_name='fee_model';")" "'v3_15_35'::text"
 
 echo "== Every migration is idempotent on the full stack =="
-for m in 0203_earnings_policies 0205_payout_cancelled_transfer_safety 0206_earnings_adjustment 0207_withdrawal_bank_reassignment 0208_ticket_fee_1_5_3_5 0209_representative_referral_links; do
+for m in 0203_earnings_policies 0205_payout_cancelled_transfer_safety 0206_earnings_adjustment 0207_withdrawal_bank_reassignment 0208_ticket_fee_1_5_3_5 0209_representative_referral_links 0210_referral_connections; do
   "${PSQL[@]}" -q -c "$(cat "$MIG/$m.sql")" >/dev/null 2>"$ERR" || { fail "$m second run errored"; cat "$ERR" >&2; }
 done
-expect_value "a second run of 0203-0209 changes nothing" "$(val "$STATE_SQL")" "$FULL"
+expect_value "a second run of 0203-0210 changes nothing" "$(val "$STATE_SQL")" "$FULL"
 
-echo "== Full rollback in reverse order R1e -> R1a =="
+echo "== Full rollback in reverse order R1f -> R1a =="
+undo 0210 R1f
 undo 0209 R1e
 undo 0208 R1d
 undo 0207 R1c
 undo 0206 R1b
 expect_ok "undo_0205 (R1a) runs" "SET vents.rollback_confirm = 'undo-0205'; $(cat "$REPO_ROOT/supabase/rollback/undo_0205.sql")"
-expect_value "after R1e..R1a the database is exactly the post-0203 state" "$(val "$STATE_SQL")" "$POST_0203"
+expect_value "after R1f..R1a the database is exactly the post-0203 state" "$(val "$STATE_SQL")" "$POST_0203"
 
 echo "== Re-apply after a rollback =="
-for m in 0205_payout_cancelled_transfer_safety 0206_earnings_adjustment 0207_withdrawal_bank_reassignment 0208_ticket_fee_1_5_3_5 0209_representative_referral_links; do apply "$m"; done
+for m in 0205_payout_cancelled_transfer_safety 0206_earnings_adjustment 0207_withdrawal_bank_reassignment 0208_ticket_fee_1_5_3_5 0209_representative_referral_links 0210_referral_connections; do apply "$m"; done
 expect_value "re-applied stack equals the first full apply" "$(val "$STATE_SQL")" "$FULL"
 
 echo

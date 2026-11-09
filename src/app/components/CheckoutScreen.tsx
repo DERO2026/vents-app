@@ -986,29 +986,37 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>{priceText(breakdown.faceKobo)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Selected ticket</span>
+              <span data-testid="checkout-selected-ticket" style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{ticketType.name}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span data-testid="checkout-service-fee-label" style={{ color: ventsColors.ink3, fontSize: '14px' }}>{quote ? serviceFeeLabel(quote) : 'Service fee'}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Quantity</span>
+              <span data-testid="checkout-quantity" style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{quantity}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Ticket subtotal</span>
+              <span data-testid="checkout-subtotal" style={{ color: ventsColors.ink3, fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>{priceText(breakdown.faceKobo)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span data-testid="checkout-service-fee-label" style={{ color: ventsColors.ink3, fontSize: '14px' }}>{quote ? serviceFeeLabel(quote) : 'Attendee service fee'}</span>
               <span data-testid="checkout-service-fee" style={{ color: ventsColors.ink3, fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>{priceText(breakdown.serviceFeeKobo)}</span>
             </div>
             {promoApplied && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: ventsColors.success, fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
-                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>-{priceText(breakdown.discountKobo)}</span>
+                <span style={{ color: ventsColors.success, fontSize: '14px' }}>Promo discount ({promoDiscountPct}% off)</span>
+                <span data-testid="checkout-discount" style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>-{priceText(breakdown.discountKobo)}</span>
               </div>
             )}
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total payable</span>
               <span data-testid="checkout-total" style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{priceText(totalKobo)}</span>
             </div>
           </div>
         </div>
 
         <p style={{ color: ventsColors.ink2, fontSize: '11px', textAlign: 'center', marginTop: '10px' }}>
-          Paystack processing fees may apply and will be shown before you complete payment.
+          This total is the full amount charged. It is confirmed by VENTS before payment starts.
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '14px' }}>

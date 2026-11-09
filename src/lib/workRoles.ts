@@ -151,6 +151,24 @@ export const REWARD_STAGES: { status: ClaimStatus; label: string; hint: string }
   { status: 'reversed', label: 'Reversed', hint: 'Taken back by VENTS' },
 ];
 
+// How the fixed representative reward is earned, in order -- shown to BOTH
+// the representative and the organizer so neither can misunderstand it. A
+// link click, a registration, a verification or an event alone earns nothing.
+// Rules enforced server-side in 0201/0209 (earn_event_eligibility,
+// submit/respond/approve/claim functions).
+export const REFERRAL_REWARD_STEPS: { key: string; title: string; detail: string }[] = [
+  { key: 'connected', title: 'Connected', detail: 'The organizer registers through the representative\'s link, or accepts their invitation. This connection is permanent and earns nothing by itself.' },
+  { key: 'verified', title: 'Organizer verified', detail: 'The organizer completes VENTS organizer verification.' },
+  { key: 'event', title: 'Paid event published', detail: 'The organizer creates and publishes a paid event after the connection. Free events never qualify.' },
+  { key: 'happened', title: 'Event took place', detail: 'The event is not cancelled, its date has passed and its ticket sales have settled.' },
+  { key: 'confirmed', title: 'Confirmed and approved', detail: 'The organizer confirms the referral, then two VENTS admins confirm the event took place and approve the reward.' },
+  { key: 'paid', title: 'Reward paid', detail: 'VENTS pays the representative a fixed reward into their earnings wallet. Withdrawals need approval by two VENTS admins.' },
+];
+
+/** Plain statement for organizers: being referred never costs them anything. */
+export const ORGANIZER_REFERRAL_COST_NOTE =
+  'Being referred costs you nothing. VENTS pays the representative\'s fixed reward; nothing is deducted from your ticket sales or earnings for it.';
+
 // A backend function this build calls but the database does not have yet
 // (a migration not applied), or one the read-only Preview refuses. Screens
 // show an honest "not available yet" state for these, never a fake value.

@@ -51,14 +51,14 @@ SELECT pg_temp.vents_undo_0208('public.create_pending_purchase(uuid,text,jsonb,t
 SELECT pg_temp.vents_undo_0208('public.confirm_ticket_payment(text,bigint)', ARRAY[
   $x$public.ticket_fee_buyer_charge_kobo(v_total_amount, v_ticket_count, COALESCE(v_discount_pct, 0), v_fee_model)$x$,
   $x$round(v_total_amount * (public.ticket_fee_buyer_multiplier(v_fee_model) - COALESCE(v_discount_pct, 0) / 100) * 100)::bigint$x$,
-  $x$public.ticket_fee_commission_total_kobo(v_total_amount, v_ticket_count, v_fee_model)$x$,
-  $x$public.ticket_fee_commission_kobo(v_face_kobo, v_fee_model)$x$
+  $x$public.ticket_fee_organizer_deduction_total_kobo(v_total_amount, v_ticket_count, v_fee_model)$x$,
+  $x$public.ticket_fee_organizer_deduction_kobo(v_face_kobo, v_fee_model)$x$
 ]);
 SELECT pg_temp.vents_undo_0208('public.confirm_ticket_payment_via_wallet(text)', ARRAY[
   $x$public.ticket_fee_buyer_charge_kobo(v_total_amount, v_ticket_count, COALESCE(v_discount_pct, 0), v_fee_model)$x$,
   $x$round(v_total_amount * (public.ticket_fee_buyer_multiplier(v_fee_model) - COALESCE(v_discount_pct, 0) / 100) * 100)::bigint$x$,
-  $x$public.ticket_fee_commission_total_kobo(v_total_amount, v_ticket_count, v_fee_model)$x$,
-  $x$public.ticket_fee_commission_kobo(v_face_kobo, v_fee_model)$x$
+  $x$public.ticket_fee_organizer_deduction_total_kobo(v_total_amount, v_ticket_count, v_fee_model)$x$,
+  $x$public.ticket_fee_organizer_deduction_kobo(v_face_kobo, v_fee_model)$x$
 ]);
 SELECT pg_temp.vents_undo_0208('public.refund_ticket(uuid,text)', ARRAY[
   $x$public.ticket_fee_buyer_charge_kobo(v_ticket.amount, 1, COALESCE(v_ticket.discount_percentage, 0), v_ticket.fee_model)$x$,
@@ -85,7 +85,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.ticket_fee_commission_kobo(p_face_kobo bigint, p_fee_model text)
+CREATE OR REPLACE FUNCTION public.ticket_fee_organizer_deduction_kobo(p_face_kobo bigint, p_fee_model text)
  RETURNS bigint
  LANGUAGE plpgsql
  IMMUTABLE
@@ -140,4 +140,4 @@ ALTER TABLE public.pending_purchases DROP CONSTRAINT IF EXISTS pending_purchases
 ALTER TABLE public.pending_purchases ADD CONSTRAINT pending_purchases_fee_model_check CHECK (fee_model IN ('legacy_5', 'v2_4_5'));
 DROP FUNCTION IF EXISTS public.ticket_fee_quote(numeric, integer, numeric);
 DROP FUNCTION IF EXISTS public.ticket_fee_buyer_charge_kobo(numeric, integer, numeric, text);
-DROP FUNCTION IF EXISTS public.ticket_fee_commission_total_kobo(numeric, integer, text);
+DROP FUNCTION IF EXISTS public.ticket_fee_organizer_deduction_total_kobo(numeric, integer, text);
