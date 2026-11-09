@@ -94,7 +94,7 @@ jobs:
 
       - name: Encryption key (value never printed)
         env:
-          BACKUP_DB_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_DB_URL: ${{ secrets.O4_DATABASE_URL || secrets.DATABASE_URL }}
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
           bash scripts/ops/db-backup-key.sh "$WORK/key" "$WORK/key-mode"
@@ -104,7 +104,7 @@ jobs:
 
       - name: Encrypted pg_dump of production (read only)
         env:
-          BACKUP_DB_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_DB_URL: ${{ secrets.O4_DATABASE_URL || secrets.DATABASE_URL }}
           BACKUP_SCOPE: ${{ env.DUMP_SCOPE }}
         run: bash scripts/ops/db-backup-dump.sh "$WORK/out/vents-db-$STAMP.dump.gpg" "$WORK/key"
 
