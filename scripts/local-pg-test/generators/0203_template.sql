@@ -51,7 +51,7 @@
 --    refuses one whose bank recipient changed after approval.
 -- 4. (Representative rewards: verified organizer and event; in 0201.)
 -- 5. Tickets: the buyer pays face + 4% service fee, and the organizer is
---    settled face - 5% commission.
+--    settled face - 5% organizer deduction.
 --    Every ticket and pending purchase records its fee_model. Rows that
 --    exist before this migration are 'legacy_5' (the buyer paid face + 5%;
 --    the organizer got face), and every amount on them is computed exactly
@@ -130,7 +130,7 @@ END;
 $function$;
 
 -- VENTS organizer commission on a face value (kobo). legacy_5 had none.
-CREATE OR REPLACE FUNCTION public.ticket_fee_commission_kobo(p_face_kobo bigint, p_fee_model text)
+CREATE OR REPLACE FUNCTION public.ticket_fee_organizer_deduction_kobo(p_face_kobo bigint, p_fee_model text)
  RETURNS bigint
  LANGUAGE plpgsql
  IMMUTABLE
@@ -1236,7 +1236,7 @@ BEGIN
   -- Pure helpers, safe for anyone signed in.
   FOREACH f IN ARRAY ARRAY[
     'public.ticket_fee_buyer_multiplier(text)',
-    'public.ticket_fee_commission_kobo(bigint,text)',
+    'public.ticket_fee_organizer_deduction_kobo(bigint,text)',
     'public.earnings_release_delay()',
     'public.get_earnings_holds(uuid)',
     'public.admin_set_earnings_hold(uuid,boolean,text)',

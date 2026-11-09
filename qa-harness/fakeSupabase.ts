@@ -613,8 +613,8 @@ export const supabase = {
       const face = Math.round(Number(args?.p_unit_price || 0) * 100);
       const fee = Math.round(face * 15 / 1000), comm = Math.round(face * 35 / 1000), disc = Math.round(face * Number(args?.p_discount_pct || 0) / 100);
       return { data: { fee_model: 'v3_15_35', quantity: qty, unit_face_kobo: face, face_kobo: face * qty, service_fee_kobo: fee * qty,
-        discount_kobo: disc * qty, total_kobo: qty * (face + fee - disc), organizer_commission_kobo: comm * qty, organizer_net_kobo: (face - comm) * qty,
-        vents_revenue_kobo: qty * (fee - disc + comm), service_fee_bps: 150, organizer_commission_bps: 350 }, error: null };
+        discount_kobo: disc * qty, total_kobo: qty * (face + fee - disc), organizer_deduction_kobo: comm * qty, organizer_net_kobo: (face - comm) * qty,
+        vents_revenue_kobo: qty * (fee - disc + comm), service_fee_bps: 150, organizer_deduction_bps: 350 }, error: null };
     }
     // QA-only: verify_entry_pass keyed off a magic p_ticket_id prefix so
     // the real scanner UI's own dev simulator input can drive every real

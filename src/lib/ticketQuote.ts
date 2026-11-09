@@ -16,11 +16,16 @@ export interface TicketQuote {
   service_fee_kobo: number;
   discount_kobo: number;
   total_kobo: number;
-  organizer_commission_kobo: number;
+  organizer_deduction_kobo: number;
   organizer_net_kobo: number;
+  /** Attendee service fee + organizer deduction (VENTS platform fees). */
+  vents_platform_fees_kobo?: number;
+  /** Promo discount, funded by VENTS (never by the organizer). */
+  vents_funded_discount_kobo?: number;
+  /** VENTS net cash: platform fees minus any discount it funds. */
   vents_revenue_kobo: number;
   service_fee_bps: number;
-  organizer_commission_bps: number;
+  organizer_deduction_bps: number;
 }
 
 export type QuoteState =
@@ -66,15 +71,26 @@ export function useTicketQuote(unitPrice: number | null | undefined, quantity: n
   return state;
 }
 
-/** The service-fee label, from the server's own rate (basis points). */
+/** The attendee service fee label, from the server's own rate (basis points). */
 export function serviceFeeLabel(q: TicketQuote): string {
-  return `Service fee (${formatBps(q.service_fee_bps)})`;
+  return `Attendee service fee (${formatBps(q.service_fee_bps)})`;
 }
-export function commissionLabel(q: TicketQuote): string {
-  return `VENTS commission (${formatBps(q.organizer_commission_bps)})`;
+/** The organizer platform deduction label (organizer-facing screens only). */
+export function organizerDeductionLabel(q: TicketQuote): string {
+  return `Organizer platform deduction (${formatBps(q.organizer_deduction_bps)})`;
 }
 export function formatBps(bps: number): string {
   return `${(bps / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 })}%`;
+}
+
+/**
+ * What a LEGACY ticket (fee model legacy_5, sold before 0203/0208) cost the
+ * attendee, in kobo: the production formula round(amount x (1.05 - promo%) x 100).
+ * Display only, for refunds of those older tickets. New tickets (v3_15_35) are
+ * always shown from the server quote.
+ */
+export function legacyTicketChargeKobo(amount: number, discountPct = 0): number {
+  return Math.round(Number(amount || 0) * (1.05 - Number(discountPct || 0) / 100) * 100);
 }
 
 /** Checkout's guard: the amount the server will charge must equal the quote the buyer saw. */

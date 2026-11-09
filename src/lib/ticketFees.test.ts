@@ -25,6 +25,26 @@ describe('no ticket fee rate lives in the app', () => {
     });
     expect(offenders.map((f) => f.slice(SRC.length + 1))).toEqual([]);
   });
+
+  it('ticket screens never hard-code the old 5% attendee fee (only the named legacy helper may)', () => {
+    const ticketScreens = ['TicketRefundScreen.tsx', 'CheckoutScreen.tsx', 'TicketSelectScreen.tsx', 'EventDetailsScreen.tsx', 'MyTicketsScreen.tsx']
+      .map((n) => join(SRC, 'app', 'components', n));
+    // Colour opacities (rgba(..., 0.05)) are not fees.
+    const offenders = ticketScreens.filter((f) => /\b(0\.05|1\.05)\b/.test(readFileSync(f, 'utf8').replace(/rgba\([^)]*\)/g, '')));
+    expect(offenders.map((f) => f.slice(SRC.length + 1))).toEqual([]);
+  });
+
+  it('no user-facing text calls a ticket fee a commission', () => {
+    // The 1.5% attendee service fee and the 3.5% organizer platform deduction
+    // are VENTS platform fees. Nobody receives a commission from ticket sales.
+    const offenders = files(SRC).filter((f) => {
+      const s = readFileSync(f, 'utf8');
+      return /['"`>][^'"`<\n]*\b(VENTS|organi[sz]er|ticket|representative|recruiter)('s)? commission/i.test(s)
+        || /['"`>][^'"`<\n]*\b\d+(\.\d+)?% commission/i.test(s)
+        || /full (VENTS )?commission/i.test(s);
+    });
+    expect(offenders.map((f) => f.slice(SRC.length + 1))).toEqual([]);
+  });
 });
 
 describe('formatKobo', () => {

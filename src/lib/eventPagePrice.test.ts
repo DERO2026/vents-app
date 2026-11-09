@@ -10,7 +10,12 @@ const sel = readFileSync(join(__dirname, '..', 'app', 'components', 'TicketSelec
 describe('event page and ticket selection show the server quote', () => {
   it('event page', () => {
     expect(src).toMatch(/useTicketQuote\(selectedTicket && Number\(selectedTicket\.price\) > 0 \? selectedTicket\.price : null, selectedQty\)/);
-    expect(src.match(/`Pay \$\{eventPayText\}`/g)?.length).toBe(2);
+    // One label function feeds both the bottom bar and the desktop panel.
+    expect(src.match(/`Pay \$\{eventPayText\}`/g)?.length).toBe(1);
+    expect(src.match(/\{payButtonText\(purchasesDisabled\)\}/g)?.length).toBe(2);
+    // The bottom bar shows the selected category, never the cheapest "Buy from ₦X".
+    expect(src).not.toMatch(/formatCardCTA/);
+    expect(src).toMatch(/data-testid="event-bottom-selection"[^>]*>\s*\{orderLabel\}/);
   });
   it('ticket selection', () => {
     expect(sel).toMatch(/useTicketQuote\(selected && Number\(selected\.price\) > 0 \? selected\.price : null, qty\)/);

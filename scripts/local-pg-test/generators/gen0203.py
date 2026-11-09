@@ -82,7 +82,7 @@ patches.append(('create_pending_purchase', [
 for name, ref_key in (('confirm_ticket_payment', 'paystack_reference'), ('confirm_ticket_payment_via_wallet', 'wallet_reference')):
     patches.append((name, [
         ("  v_prior_paid_count integer;\nBEGIN",
-         "  v_prior_paid_count integer;\n  v_fee_model        text;\n  v_face_kobo        bigint;\n  v_commission_kobo  bigint;\nBEGIN"),
+         "  v_prior_paid_count integer;\n  v_fee_model        text;\n  v_face_kobo        bigint;\n  v_deduction_kobo  bigint;\nBEGIN"),
         ("         max(t.ticket_type), e.organizer_id, e.id, max(e.title),",
          "         max(t.ticket_type), max(t.fee_model), e.organizer_id, e.id, max(e.title),"),
         ("         v_ticket_type, v_organizer_id, v_event_id, v_event_title,",
@@ -90,13 +90,13 @@ for name, ref_key in (('confirm_ticket_payment', 'paystack_reference'), ('confir
         ("v_expected_kobo := round(v_total_amount * (1.05 - COALESCE(v_discount_pct, 0) / 100) * 100)::bigint;",
          "v_expected_kobo := round(v_total_amount * (public.ticket_fee_buyer_multiplier(v_fee_model) - COALESCE(v_discount_pct, 0) / 100) * 100)::bigint;"),
         ("    v_credit_kobo := floor(v_total_amount * 100)::bigint;",
-         "    -- Organizer settlement = face value minus the VENTS organizer commission.\n"
+         "    -- Organizer settlement = face value minus the organizer platform deduction.\n"
          "    v_face_kobo := floor(v_total_amount * 100)::bigint;\n"
-         "    v_commission_kobo := public.ticket_fee_commission_kobo(v_face_kobo, v_fee_model);\n"
-         "    v_credit_kobo := v_face_kobo - v_commission_kobo;"),
+         "    v_deduction_kobo := public.ticket_fee_organizer_deduction_kobo(v_face_kobo, v_fee_model);\n"
+         "    v_credit_kobo := v_face_kobo - v_deduction_kobo;"),
         ("      'gross_kobo', v_credit_kobo,\n      'buyer_fee_kobo', GREATEST(0, v_expected_kobo - v_credit_kobo),",
          "      'gross_kobo', v_face_kobo,\n      'buyer_fee_kobo', GREATEST(0, v_expected_kobo - v_face_kobo),\n"
-         "      'organizer_commission_kobo', v_commission_kobo,\n      'net_kobo', v_credit_kobo,\n      'fee_model', v_fee_model,"),
+         "      'organizer_deduction_kobo', v_deduction_kobo,\n      'net_kobo', v_credit_kobo,\n      'fee_model', v_fee_model,"),
     ]))
 
 # --- refund_ticket -----------------------------------------------------------
@@ -109,7 +109,7 @@ patches.append(('refund_ticket', [
      "  v_refund_kobo := round(v_ticket.amount * (public.ticket_fee_buyer_multiplier(v_ticket.fee_model) - COALESCE(v_ticket.discount_percentage, 0) / 100) * 100)::bigint;"),
     ("      v_owed_kobo := floor(v_ticket.amount * 100)::bigint;",
      "      v_owed_kobo := floor(v_ticket.amount * 100)::bigint\n"
-     "                   - public.ticket_fee_commission_kobo(floor(v_ticket.amount * 100)::bigint, v_ticket.fee_model);"),
+     "                   - public.ticket_fee_organizer_deduction_kobo(floor(v_ticket.amount * 100)::bigint, v_ticket.fee_model);"),
     (blk, helper_call(ind, [
         'v_ticket.organizer_id, v_owed_kobo',
         "'ticket_sale', COALESCE(v_ticket.payment_ref, v_ticket.id::text)",
@@ -129,7 +129,7 @@ patches.append(('finalize_ticket_refund', [
      "  v_refund_kobo := round(v_ticket.amount * (public.ticket_fee_buyer_multiplier(v_ticket.fee_model) - COALESCE(v_ticket.discount_percentage, 0) / 100) * 100)::bigint;"),
     ("    v_owed_kobo := floor(v_ticket.amount * 100)::bigint;",
      "    v_owed_kobo := floor(v_ticket.amount * 100)::bigint\n"
-     "                 - public.ticket_fee_commission_kobo(floor(v_ticket.amount * 100)::bigint, v_ticket.fee_model);"),
+     "                 - public.ticket_fee_organizer_deduction_kobo(floor(v_ticket.amount * 100)::bigint, v_ticket.fee_model);"),
     (blk, helper_call(ind, [
         'v_ticket.organizer_id, v_owed_kobo',
         "'ticket_sale', COALESCE(v_ticket.payment_ref, v_ticket.id::text)",
@@ -176,11 +176,11 @@ patches.append(('finalize_service_booking_refund', [
 patches.append(('get_event_analytics', [
     ("      COALESCE(sum(amount * 100), 0)::bigint AS gross_kobo,\n",
      "      COALESCE(sum(amount * 100), 0)::bigint AS gross_kobo,\n"
-     "      COALESCE(sum(public.ticket_fee_commission_kobo(floor(amount * 100)::bigint, fee_model)), 0)::bigint AS commission_kobo,\n"),
+     "      COALESCE(sum(public.ticket_fee_organizer_deduction_kobo(floor(amount * 100)::bigint, fee_model)), 0)::bigint AS organizer_deduction_kobo,\n"),
     ("round(amount * (1.05 - COALESCE(discount_percentage, 0) / 100) * 100)",
      "round(amount * (public.ticket_fee_buyer_multiplier(fee_model) - COALESCE(discount_percentage, 0) / 100) * 100)"),
     ("      'organizerEarnedKobo', o.gross_kobo,",
-     "      'organizerEarnedKobo', o.gross_kobo - o.commission_kobo,\n      'ventsCommissionKobo', o.commission_kobo,"),
+     "      'organizerEarnedKobo', o.gross_kobo - o.organizer_deduction_kobo,\n      'organizerDeductionKobo', o.organizer_deduction_kobo,"),
 ]))
 
 # --- credit functions: earnings go on hold -----------------------------------
@@ -235,7 +235,7 @@ b202_complete = fn_text(M202, 'complete_organizer_payout')[1]
 own.append(('earn_event_eligibility', 'public.earn_event_eligibility(uuid)', b201_elig, [
     ("SELECT COALESCE(sum(GREATEST(0, COALESCE((ot.metadata->>'buyer_fee_kobo')::bigint, 0))), 0)",
      "SELECT COALESCE(sum(GREATEST(0, COALESCE((ot.metadata->>'buyer_fee_kobo')::bigint, 0))\n"
-     "                    + GREATEST(0, COALESCE((ot.metadata->>'organizer_commission_kobo')::bigint, 0))), 0)"),
+     "                    + GREATEST(0, COALESCE((ot.metadata->>'organizer_deduction_kobo')::bigint, 0))), 0)"),
     ("SELECT COALESCE(sum(public.earn_ticket_nominal_fee_kobo(t.amount)), 0)",
      "SELECT COALESCE(sum(public.earn_ticket_nominal_fee_kobo(t.amount, t.fee_model)), 0)"),
 ]))

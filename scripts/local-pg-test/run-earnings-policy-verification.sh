@@ -219,7 +219,7 @@ PY
 expect_error "a drifted live function is refused, not patched" "differs from the definition" \
   "$(printf '%s\n' "$DRIFT_SQL" | sed "s/public.refund_ticket(uuid,text)/public.drift_probe()/")"
 
-echo "== Rule 5: 4% attendee fee + 5% organizer commission =="
+echo "== Rule 5: 4% attendee fee + 5% organizer deduction =="
 R2=$(buy "$BUYER2" "$E_R2" 2)
 expect_value "checkout charges face + 4% (2 x ₦10,000 -> ₦20,800)" "$(amount_of "$R2")" "2080000"
 expect_value "the new pending purchase is v2_4_5" "$(val "SELECT fee_model FROM public.pending_purchases WHERE payment_ref = '$R2';")" "v2_4_5"
@@ -228,17 +228,17 @@ expect_value "exact payment confirms" "$(confirm "$R2" 2080000)" "confirmed"
 expect_value "tickets bought through it are v2_4_5 (from the purchase, not the caller)" \
   "$(val "SELECT string_agg(DISTINCT fee_model, ',') || '/' || count(*) FROM public.tickets WHERE payment_ref = '$R2';")" "v2_4_5/2"
 expect_value "organizer settled face - 5% = ₦19,000, on hold" "$(wallet "$ORG")" "1000000/0/1900000"
-expect_value "ledger credit records gross, buyer fee, commission, net and model" \
-  "$(val "SELECT amount_kobo || '/' || (metadata->>'gross_kobo') || '/' || (metadata->>'buyer_fee_kobo') || '/' || (metadata->>'organizer_commission_kobo') || '/' || (metadata->>'net_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$R2")';")" \
+expect_value "ledger credit records gross, buyer fee, organizer deduction, net and model" \
+  "$(val "SELECT amount_kobo || '/' || (metadata->>'gross_kobo') || '/' || (metadata->>'buyer_fee_kobo') || '/' || (metadata->>'organizer_deduction_kobo') || '/' || (metadata->>'net_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$R2")';")" \
   "1900000/2000000/80000/100000/1900000/v2_4_5"
-expect_value "buyer paid = organizer net + VENTS fee + VENTS commission (no double charge)" "$((1900000 + 80000 + 100000))" "2080000"
+expect_value "buyer paid = organizer net + attendee fee + organizer deduction (no double charge)" "$((1900000 + 80000 + 100000))" "2080000"
 expect_value "duplicate webhook: already_paid, no second credit, no second hold" \
   "$(confirm "$R2" 2080000)/$(val "SELECT count(*) FROM public.organizer_transactions WHERE type = 'credit' AND organizer_id = '$ORG';")/$(val "SELECT count(*) FROM public.earnings_holds WHERE source_key = '$R2';")" "already_paid/2/1"
 expect_value "the hold waits for the event: with no end_date the end is event_date + 24h (event_effective_end_at), release 48h later" \
   "$(val "SELECT ((public.earnings_hold_state(id)->>'release_at')::timestamptz - (SELECT event_date FROM public.events WHERE id = '$E_R2') = interval '72 hours')::text FROM public.earnings_holds WHERE source_key = '$R2';")" "true"
 expect_value "a legacy purchase confirmed after 0203 still charges 5%" "$(confirm "$LEG_OPEN" 1040000)" "amount_mismatch:1050000:1040000"
-expect_value "and credits the full face (no commission on legacy), on hold" \
-  "$(confirm "$LEG_OPEN" 1050000)/$(val "SELECT amount_kobo || '/' || (metadata->>'organizer_commission_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$LEG_OPEN")';")" \
+expect_value "and credits the full face (no organizer deduction on legacy), on hold" \
+  "$(confirm "$LEG_OPEN" 1050000)/$(val "SELECT amount_kobo || '/' || (metadata->>'organizer_deduction_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$LEG_OPEN")';")" \
   "confirmed/1000000/0/legacy_5"
 PROMO=$(buy "$BUYER" "$E_PROMO" 1 "'ten'")
 expect_value "a 10% promo discounts the face value, fee rate unchanged (₦10,000 x (1.04 - 0.10))" "$(amount_of "$PROMO")" "940000"
@@ -270,8 +270,8 @@ expect_value "a legacy Paystack refund still returns face + 5%" \
 expect_value "its finalization debits the legacy owed amount (full face) from the available balance" \
   "$(val "SELECT status FROM public.finalize_ticket_refund('RF_leg');")/$(wallet "$ORG")" "finalized/0/0/3850000"
 expect_value "duplicate refund webhook does nothing" "$(val "SELECT status FROM public.finalize_ticket_refund('RF_leg');")/$(wallet "$ORG")" "already_refunded/0/0/3850000"
-expect_value "event analytics: organizer earned = gross - commission (₦20,000 gross, 2 x ₦500)" \
-  "$(val "$(as "$ORG" "SELECT (public.get_event_analytics('$E_R2')->'overview'->>'organizerEarnedKobo') || '/' || (public.get_event_analytics('$E_R2')->'overview'->>'ventsCommissionKobo');")")" "1900000/100000"
+expect_value "event analytics: organizer earned = gross - organizer deduction (₦20,000 gross, 2 x ₦500)" \
+  "$(val "$(as "$ORG" "SELECT (public.get_event_analytics('$E_R2')->'overview'->>'organizerEarnedKobo') || '/' || (public.get_event_analytics('$E_R2')->'overview'->>'organizerDeductionKobo');")")" "1900000/100000"
 
 echo "== Rule 2: release 48 hours after the event ends =="
 expect_error "held earnings cannot be withdrawn" "Insufficient balance" \

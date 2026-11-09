@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Real-execution verification of migration 0208 (ticket fees 1.5% attendee
-# service fee + 3.5% organizer commission, owner instruction 2026-11-08):
+# service fee + 3.5% organizer deduction, owner instruction 2026-11-08):
 #   - attendee pays qty x (face + round(face x 1.5%) - promo), per ticket in kobo;
 #   - organizer is settled qty x (face - round(face x 3.5%)), on hold as 0203 rules;
 #   - VENTS keeps exactly 5% per ticket, never more (no double charge);
@@ -196,29 +196,52 @@ expect_value "new columns default to v3_15_35" \
   "$(val "SELECT string_agg(column_default, ',' ORDER BY table_name) FROM information_schema.columns WHERE table_schema='public' AND column_name='fee_model' AND table_name IN ('tickets','pending_purchases');")" \
   "'v3_15_35'::text,'v3_15_35'::text"
 expect_value "the fee helpers are not callable by clients" \
-  "$(val "SELECT has_function_privilege('authenticated', 'public.ticket_fee_buyer_charge_kobo(numeric,integer,numeric,text)', 'EXECUTE')::text || '/' || has_function_privilege('anon', 'public.ticket_fee_commission_total_kobo(numeric,integer,text)', 'EXECUTE')::text;")" "false/false"
+  "$(val "SELECT has_function_privilege('authenticated', 'public.ticket_fee_buyer_charge_kobo(numeric,integer,numeric,text)', 'EXECUTE')::text || '/' || has_function_privilege('anon', 'public.ticket_fee_organizer_deduction_total_kobo(numeric,integer,text)', 'EXECUTE')::text;")" "false/false"
 
 echo "== Fee arithmetic (kobo, per ticket x quantity) =="
 expect_value "₦10,000: attendee pays ₦10,150 (1.5%)" "$(val "SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'v3_15_35');")" "1015000"
-expect_value "₦10,000: commission ₦350 (3.5%), organizer gets ₦9,650" \
-  "$(val "SELECT public.ticket_fee_commission_kobo(1000000, 'v3_15_35') || '/' || (1000000 - public.ticket_fee_commission_kobo(1000000, 'v3_15_35'));")" "35000/965000"
+expect_value "₦10,000: organizer deduction ₦350 (3.5%), organizer gets ₦9,650" \
+  "$(val "SELECT public.ticket_fee_organizer_deduction_kobo(1000000, 'v3_15_35') || '/' || (1000000 - public.ticket_fee_organizer_deduction_kobo(1000000, 'v3_15_35'));")" "35000/965000"
 expect_value "₦1,001 x 3: per ticket 100100 + 1502 (1501.5 rounded half-up) = 101602, x3 = 304806" \
   "$(val "SELECT public.ticket_fee_buyer_charge_kobo(3003, 3, 0, 'v3_15_35');")" "304806"
-expect_value "₦1,001 x 3: commission per ticket 3504 (3503.5 half-up), x3 = 10512" \
-  "$(val "SELECT public.ticket_fee_commission_total_kobo(3003, 3, 'v3_15_35');")" "10512"
+expect_value "₦1,001 x 3: organizer deduction per ticket 3504 (3503.5 half-up), x3 = 10512" \
+  "$(val "SELECT public.ticket_fee_organizer_deduction_total_kobo(3003, 3, 'v3_15_35');")" "10512"
 expect_value "the quantity multiplies the per-ticket amount exactly (1..10 tickets)" \
-  "$(val "SELECT bool_and(public.ticket_fee_buyer_charge_kobo(1001 * n, n, 0, 'v3_15_35') = n * 101602 AND public.ticket_fee_commission_total_kobo(1001 * n, n, 'v3_15_35') = n * 3504)::text FROM generate_series(1, 10) n;")" "true"
-expect_value "VENTS keeps exactly 5% of face on round prices, and attendee fee + commission = 5% +/- 1 kobo on any price" \
-  "$(val "SELECT bool_and(abs(public.ticket_fee_buyer_charge_kobo(p, 1, 0, 'v3_15_35') - p * 100 + public.ticket_fee_commission_kobo((p * 100)::bigint, 'v3_15_35') - p * 5) <= 1)::text FROM generate_series(1, 5000) p;")" "true"
-expect_value "legacy and v2 models keep their original formulas" \
-  "$(val "SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'legacy_5') || '/' || public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'v2_4_5') || '/' || public.ticket_fee_commission_kobo(1000000, 'legacy_5');")" "1050000/1040000/0"
+  "$(val "SELECT bool_and(public.ticket_fee_buyer_charge_kobo(1001 * n, n, 0, 'v3_15_35') = n * 101602 AND public.ticket_fee_organizer_deduction_total_kobo(1001 * n, n, 'v3_15_35') = n * 3504)::text FROM generate_series(1, 10) n;")" "true"
+expect_value "VENTS keeps exactly 5% of face on round prices, and attendee fee + organizer deduction = 5% +/- 1 kobo on any price" \
+  "$(val "SELECT bool_and(abs(public.ticket_fee_buyer_charge_kobo(p, 1, 0, 'v3_15_35') - p * 100 + public.ticket_fee_organizer_deduction_kobo((p * 100)::bigint, 'v3_15_35') - p * 5) <= 1)::text FROM generate_series(1, 5000) p;")" "true"
+expect_value "the legacy 5% attendee-fee model keeps its formula (no organizer deduction)" \
+  "$(val "SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'legacy_5') || '/' || public.ticket_fee_organizer_deduction_kobo(1000000, 'legacy_5');")" "1050000/0"
+expect_error "the unapproved 4% + 5% model (v2_4_5) is gone: its attendee charge is refused" "Unknown ticket fee model" \
+  "SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'v2_4_5');"
+expect_error "... and its organizer deduction is refused" "Unknown ticket fee model" \
+  "SELECT public.ticket_fee_organizer_deduction_kobo(1000000, 'v2_4_5');"
+expect_value "tickets and pending purchases only allow legacy_5 and v3_15_35" \
+  "$(val "SELECT string_agg(pg_get_constraintdef(oid), ' | ' ORDER BY conname) FROM pg_constraint WHERE conname IN ('tickets_fee_model_check', 'pending_purchases_fee_model_check');")" \
+  "CHECK ((fee_model = ANY (ARRAY['legacy_5'::text, 'v3_15_35'::text]))) | CHECK ((fee_model = ANY (ARRAY['legacy_5'::text, 'v3_15_35'::text])))"
+expect_value "no public function mentions the 4% + 5% model" \
+  "$(val "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prosrc LIKE '%''v2_4_5''%';")" "0"
+# Owner's approved examples (2026-11-09).
+expect_value "N20,000: attendee pays N20,300, organizer deduction N700, organizer receives N19,300" \
+  "$(val "SELECT public.ticket_fee_buyer_charge_kobo(20000, 1, 0, 'v3_15_35') || '/' || public.ticket_fee_organizer_deduction_kobo(2000000, 'v3_15_35') || '/' || (2000000 - public.ticket_fee_organizer_deduction_kobo(2000000, 'v3_15_35'));")" "2030000/70000/1930000"
+expect_value "N70,000: attendee pays N71,050, organizer deduction N2,450, organizer receives N67,550" \
+  "$(val "SELECT public.ticket_fee_buyer_charge_kobo(70000, 1, 0, 'v3_15_35') || '/' || public.ticket_fee_organizer_deduction_kobo(7000000, 'v3_15_35') || '/' || (7000000 - public.ticket_fee_organizer_deduction_kobo(7000000, 'v3_15_35'));")" "7105000/245000/6755000"
+expect_value "N20,000 quote: fee 30,000, total 2,030,000, deduction 70,000, net 1,930,000, VENTS 100,000, 150/350 bps" \
+  "$(val "SELECT q->>'service_fee_kobo' || '/' || (q->>'total_kobo') || '/' || (q->>'organizer_deduction_kobo') || '/' || (q->>'organizer_net_kobo') || '/' || (q->>'vents_revenue_kobo') || '/' || (q->>'service_fee_bps') || '/' || (q->>'organizer_deduction_bps') FROM (SELECT public.ticket_fee_quote(20000, 1, 0) AS q) x;")" \
+  "30000/2030000/70000/1930000/100000/150/350"
+expect_value "N70,000 x 2 quote: total 14,210,000, organizer net 13,510,000, VENTS 700,000" \
+  "$(val "SELECT q->>'total_kobo' || '/' || (q->>'organizer_net_kobo') || '/' || (q->>'vents_revenue_kobo') FROM (SELECT public.ticket_fee_quote(70000, 2, 0) AS q) x;")" "14210000/13510000/700000"
+expect_value "N20,000 with a N2,000 (10%) promo: attendee N18,300, organizer still N19,300 (fee on the full face; VENTS funds the discount)" \
+  "$(val "SELECT q->>'discount_kobo' || '/' || (q->>'total_kobo') || '/' || (q->>'organizer_net_kobo') || '/' || (q->>'vents_platform_fees_kobo') || '/' || (q->>'vents_funded_discount_kobo') || '/' || (q->>'vents_revenue_kobo') FROM (SELECT public.ticket_fee_quote(20000, 1, 10) AS q) x;")" "200000/1830000/1930000/100000/200000/-100000"
+expect_value "a free ticket costs nothing and deducts nothing" \
+  "$(val "SELECT public.ticket_fee_buyer_charge_kobo(0, 1, 0, 'v3_15_35') || '/' || public.ticket_fee_organizer_deduction_kobo(0, 'v3_15_35');")" "0/0"
 expect_value "refund nominal fee (VENTS revenue given up) is 5% for v3" "$(val "SELECT public.earn_ticket_nominal_fee_kobo(10000, 'v3_15_35');")" "50000"
 
 echo "== The one fee quote every screen displays =="
 q() { val "SET ROLE anon; SELECT public.ticket_fee_quote($1)->>'$2';"; }
 expect_value "anyone (anon) can get a quote: ₦10,000 -> fee 15,000, total 1,015,000, organizer net 965,000, VENTS 50,000" \
   "$(q "10000, 1, 0" service_fee_kobo)/$(q "10000, 1, 0" total_kobo)/$(q "10000, 1, 0" organizer_net_kobo)/$(q "10000, 1, 0" vents_revenue_kobo)" "15000/1015000/965000/50000"
-expect_value "rates come from the helpers, not restated: 150 bps and 350 bps" "$(q "10000, 1, 0" service_fee_bps)/$(q "10000, 1, 0" organizer_commission_bps)" "150/350"
+expect_value "rates come from the helpers, not restated: 150 bps and 350 bps" "$(q "10000, 1, 0" service_fee_bps)/$(q "10000, 1, 0" organizer_deduction_bps)" "150/350"
 expect_value "3 x ₦1,001 quote equals the charge create_pending_purchase will make (304806)" "$(q "1001, 3, 0" total_kobo)" "304806"
 expect_value "a 10% promo: discount 100,000, total 915,000, organizer still 965,000" \
   "$(q "10000, 1, 10" discount_kobo)/$(q "10000, 1, 10" total_kobo)/$(q "10000, 1, 10" organizer_net_kobo)" "100000/915000/965000"
@@ -234,10 +257,10 @@ expect_value "underpayment by 1 kobo is refused" "$(confirm "$R3" 3044999)" "amo
 expect_value "exact payment confirms" "$(confirm "$R3" 3045000)" "confirmed"
 expect_value "its tickets are v3_15_35" "$(val "SELECT string_agg(DISTINCT fee_model, ',') || '/' || count(*) FROM public.tickets WHERE payment_ref = '$R3';")" "v3_15_35/3"
 expect_value "organizer settled 3 x ₦9,650 = ₦28,950, on hold" "$(val "SELECT on_hold_kobo FROM public.organizer_wallets WHERE organizer_id = '$ORG';")" "2895000"
-expect_value "ledger credit records gross, attendee fee, commission, net and model" \
-  "$(val "SELECT amount_kobo || '/' || (metadata->>'gross_kobo') || '/' || (metadata->>'buyer_fee_kobo') || '/' || (metadata->>'organizer_commission_kobo') || '/' || (metadata->>'net_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$R3")';")" \
+expect_value "ledger credit records gross, attendee fee, organizer deduction, net and model" \
+  "$(val "SELECT amount_kobo || '/' || (metadata->>'gross_kobo') || '/' || (metadata->>'buyer_fee_kobo') || '/' || (metadata->>'organizer_deduction_kobo') || '/' || (metadata->>'net_kobo') || '/' || (metadata->>'fee_model') FROM public.organizer_transactions WHERE ticket_sale_id = '$(first_ticket "$R3")';")" \
   "2895000/3000000/45000/105000/2895000/v3_15_35"
-expect_value "attendee paid = organizer net + attendee fee + commission (no double charge)" "$((2895000 + 45000 + 105000))" "3045000"
+expect_value "attendee paid = organizer net + attendee fee + organizer deduction (no double charge)" "$((2895000 + 45000 + 105000))" "3045000"
 expect_value "duplicate webhook: already_paid, no second credit" \
   "$(confirm "$R3" 3045000)/$(val "SELECT count(*) FROM public.organizer_transactions WHERE type = 'credit' AND ticket_sale_id IN (SELECT id FROM public.tickets WHERE payment_ref = '$R3');")" "already_paid/1"
 ODD=$(buy "$BUYER" "$E_ODD" 3)
@@ -269,8 +292,8 @@ expect_value "a Paystack refund of one ₦1,001 ticket of three returns that tic
 "${PSQL[@]}" -q -c "UPDATE public.tickets SET refund_id = 'RF_odd' WHERE id = '$ODDT';"
 expect_value "its finalization takes back that ticket's net, 96596 (a third of the sale's 289788)" \
   "$(val "SELECT status FROM public.finalize_ticket_refund('RF_odd');")/$(val "SELECT amount_kobo FROM public.organizer_transactions WHERE type = 'refund' AND ticket_sale_id = '$ODDT';")" "finalized/96596"
-expect_value "event analytics: organizer earned = 3 x ₦9,650, VENTS commission 3 x ₦350" \
-  "$(val "$(as "$ORG" "SELECT (public.get_event_analytics('$E_R2')->'overview'->>'organizerEarnedKobo') || '/' || (public.get_event_analytics('$E_R2')->'overview'->>'ventsCommissionKobo');")")" "2895000/105000"
+expect_value "event analytics: organizer earned = 3 x ₦9,650, organizer deduction 3 x ₦350" \
+  "$(val "$(as "$ORG" "SELECT (public.get_event_analytics('$E_R2')->'overview'->>'organizerEarnedKobo') || '/' || (public.get_event_analytics('$E_R2')->'overview'->>'organizerDeductionKobo');")")" "2895000/105000"
 expect_value "after sales and refunds every wallet reconciles" "$(reconciled)" "0"
 expect_error "undo_0208 is refused once 1.5% + 3.5% sales exist" "purchases exist on the 1.5% + 3.5% model" \
   "SET vents.rollback_confirm = 'undo-0208'; $(cat "$REPO_ROOT/supabase/rollback/undo_0208.sql")"
