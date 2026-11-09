@@ -102,7 +102,7 @@ for URL in "${CANDIDATES[@]}"; do
   [ "${rc[0]}" = 0 ] && [ "${rc[1]}" = 0 ] && break
   rm -f "$OUT.partial"
   # Only a wrong pooler host is worth another candidate; anything else is final.
-  if [ "$attempt" -lt "${#CANDIDATES[@]}" ] && grep -qiE 'tenant or user not found|could not translate host|connection refused|timeout expired' "$ERR"; then
+  if [ "$attempt" -lt "${#CANDIDATES[@]}" ] && grep -qiE 'tenant(/| or )user .*not found|could not translate host|connection refused|timeout expired' "$ERR"; then
     echo "  pooler host $attempt did not accept this project; trying the next one"
     continue
   fi
