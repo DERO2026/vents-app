@@ -1004,7 +1004,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
                 ₦50k
               </span>
               <span style={{ ...ventsTypography.caption, color: ventsColors.ink2, lineHeight: 1.4 }}>
-                A fixed <strong style={{ color: ventsColors.ink1 }}>₦50,000 reward</strong> for each organizer you bring who hosts a qualifying event, once they confirm and VENTS approves it.
+                A fixed <strong style={{ color: ventsColors.ink1 }}>₦50,000 reward</strong> for each verified organizer you bring whose paid event actually takes place, once they confirm and two VENTS admins approve it. It is not a share of ticket sales; free events never qualify.
               </span>
             </div>
             <button
@@ -1026,9 +1026,10 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
               <Tile k="Invites" v={teamCounts ? teamCounts.invites : '—'} s="Waiting for a reply" />
             </Tiles>
             <NoteBand>
-              Earn a fixed ₦50,000 for each organizer you bring who hosts a qualifying event: it has ended, isn&apos;t
-              cancelled and has finished settling. The organizer confirms, VENTS approves, and the reward is paid once
-              VENTS ticket profit covers it.
+              Earn a fixed ₦50,000 (never a share of ticket sales) for each verified organizer you bring who hosts a paid event that
+              actually takes place: it has ended, isn&apos;t cancelled and has finished settling. Free events never qualify.
+              The organizer confirms, two VENTS admins confirm the event took place, and the reward is paid into your
+              earnings wallet once VENTS ticket profit covers it. A click or a sign-up earns nothing by itself.
             </NoteBand>
             {onOpenRewards && (
               <MCard testId="representative-rewards-entry">
@@ -1228,7 +1229,7 @@ export function RepresentativesScreen({ onBack, currentUser, focusPartnership, o
                       <p style={{ ...ventsTypography.label, color: ventsColors.ink2, margin: 0, textTransform: 'none', letterSpacing: 'normal', lineHeight: 1.5 }}>
                         {targetRole === 'provider'
                           ? 'Rewards are for organizers you bring to VENTS. Service provider partnerships are tracked on your team.'
-                          : 'When this organizer hosts a qualifying event, confirms you referred them and VENTS approves it, you earn a fixed ₦50,000 reward.'}
+                          : 'When this organizer is verified, hosts a paid event that takes place, confirms you referred them and two VENTS admins approve it, you earn a fixed ₦50,000 reward. Free events never qualify.'}
                       </p>
                     </div>
                     <button

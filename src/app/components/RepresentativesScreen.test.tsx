@@ -1123,4 +1123,28 @@ describe('RepresentativesScreen: receiving an invitation', () => {
       expect(lookups()).toBe(before);
     });
   });
+
+  // Approved business model (2026-11-09, docs/business-model.md): a fixed
+  // N50,000 per qualifying organizer -- verified organizer, a PAID event that
+  // actually took place, organizer confirmation, two VENTS admins -- never a
+  // commission, never for free events, never for a click or sign-up alone.
+  it('states the approved reward conditions to non-representatives and representatives, with no commission', async () => {
+    recruiterRowExists = false;
+    await mount();
+    let text = container.textContent || '';
+    expect(text).toMatch(/fixed ₦50,000 reward/);
+    expect(text).toMatch(/verified organizer/);
+    expect(text).toMatch(/two VENTS admins/);
+    expect(text).toMatch(/free events never qualify/i);
+    expect(text).not.toMatch(/\b10%|full (VENTS )?commission|genuine free events may qualify/i);
+    act(() => root.unmount()); container.remove();
+    recruiterRowExists = true;
+    await mount();
+    text = container.textContent || '';
+    expect(text).toMatch(/never a share of ticket sales/);
+    expect(text).not.toMatch(/commission/i);
+    expect(text).toMatch(/two VENTS admins confirm the event took place/);
+    expect(text).toMatch(/A click or a sign-up earns nothing by itself/);
+    expect(text).toMatch(/earnings wallet/);
+  });
 });
