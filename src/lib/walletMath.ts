@@ -1,3 +1,4 @@
+
 // Pure, client-side mirrors of the money math the deployed Postgres
 // functions are the real authority on (initiate_wallet_deposit,
 // confirm_ticket_payment_via_wallet — see live schema audit). Used for
@@ -17,16 +18,9 @@ export function validateWalletDepositAmountKobo(amountKobo: number): string | nu
   return null;
 }
 
-// Mirrors confirm_ticket_payment_via_wallet's v_expected_kobo:
-//   round(total_amount * (1.05 - discount_pct/100) * 100)
-// where total_amount is the Naira subtotal (unit price * quantity) BEFORE
-// the 5% VENTS fee, and discount_pct is a promo code's percentage-off
-// applied to the fee-inclusive rate. The organizer/provider is credited
-// the base subtotal in full (100%) separately -- this function only
-// computes what the buyer's wallet is charged.
-export function computeTicketWalletChargeKobo(subtotalNaira: number, discountPct = 0): number {
-  return Math.round(subtotalNaira * (1.05 - discountPct / 100) * 100);
-}
+// Ticket charges are not computed here: checkout displays the database's
+// quote (src/lib/ticketQuote.ts, ticket_fee_quote) and the server charges
+// exactly that amount.
 
 export function hasSufficientBalance(balanceKobo: number, chargeKobo: number): boolean {
   return balanceKobo >= chargeKobo;

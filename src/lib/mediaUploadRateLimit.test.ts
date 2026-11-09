@@ -49,14 +49,15 @@ describe('uploadImage: server-side upload-count rate limit', () => {
   it('rejects the upload with a clear message when the limit is hit, before any Storage call', async () => {
     mockRpc.mockResolvedValue({ error: { code: 'P0429', message: 'rate_limited' } });
     const blob = new Blob(['x'], { type: 'image/jpeg' });
-    await expect(uploadImage(blob, { bucket: 'avatars' })).rejects.toThrow(/too many uploads/i);
+    await expect(uploadImage(blob, { bucket: 'avatars' })).rejects.toThrow(/limit of 30 uploads per hour/i);
     expect(mockStorageUpload).not.toHaveBeenCalled();
   });
 
   it('fails CLOSED on an unrelated RPC error too -- an infra hiccup must not let uploads through unmetered', async () => {
     mockRpc.mockResolvedValue({ error: { code: '42883', message: 'function check_media_upload_rate_limit() does not exist' } });
     const blob = new Blob(['x'], { type: 'image/jpeg' });
-    await expect(uploadImage(blob, { bucket: 'avatars' })).rejects.toThrow(/too many uploads/i);
+    // Still blocked, but no longer misreported as a rate limit.
+    await expect(uploadImage(blob, { bucket: 'avatars' })).rejects.toThrow(/Couldn't start the upload/);
     expect(mockStorageUpload).not.toHaveBeenCalled();
   });
 });

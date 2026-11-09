@@ -8,7 +8,7 @@
     "preview": "vite preview",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.preview.config.ts",
     "test:watch": "vitest",
     "ios:add": "npx cap add ios",
     "ios:assets": "npx capacitor-assets generate --ios",

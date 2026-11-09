@@ -4,8 +4,8 @@ import { createRoot, Root } from 'react-dom/client';
 
 // VENTS Representatives frontend (migration 0193's backend, not yet
 // applied to production). These tests mock supabase entirely -- no real
-// RPC or network call happens. The fixed organizer reward is informational
-// only; no earnings balance or payout logic is built yet.
+// RPC or network call happens, and no commission amount/payout UI should
+// ever render here, since that logic is intentionally not built yet.
 
 const rpcCalls: { name: string; args: any }[] = [];
 let recruiterRowExists = false;
@@ -131,6 +131,12 @@ vi.mock('../../lib/supabase', () => ({
     }),
     rpc: (name: string, args: any) => {
       rpcCalls.push({ name, args });
+      // 0204 is not applied in production yet: by default answer the way
+      // PostgREST does for a missing function, so these tests exercise the
+      // search_users_for_request fallback (searchUsers mock below).
+      if (name === 'search_recruiter_invite_targets' && !rpcResponses[name] && !rpcDelayed[name]) {
+        return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.search_recruiter_invite_targets(p_query) in the schema cache' } });
+      }
       if (name === 'get_recruiter_invite_target' && !rpcResponses[name] && !rpcDelayed[name]) {
         if (targetRoleThrows) return Promise.reject(new Error('network unreachable'));
         if (deferTargetIds.includes(args.p_user_id)) {
@@ -210,7 +216,7 @@ async function flush() {
 async function mount() {
   root = createRoot(container);
   act(() => {
-    root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+    root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} searchDebounceMs={0} />);
   });
   await flush();
 }
@@ -398,7 +404,7 @@ describe('RepresentativesScreen', () => {
     expect(container.textContent).not.toMatch(/[Cc]ommission split \(%\)/);
   });
 
-  it('keeps the legacy partnership RPC argument fixed and independent of user input', async () => {
+  it('sending a valid invite always calls invite_recruiter_partnership with the fixed full commission (10000 bps), never a UI-derived value', async () => {
     recruiterRowExists = true;
     await mount();
     const input = container.querySelector('input[placeholder="Search by VENTS username"]') as HTMLInputElement;
@@ -414,17 +420,16 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
+    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null });
   });
 
-  it('describes the fixed organizer reward without promising revenue commission', async () => {
+  it('describes the fixed ₦50,000 qualifying-organizer reward -- never the retired 10% commission, "5%" or a negotiable split', async () => {
     recruiterRowExists = false;
     await mount();
-    expect(container.textContent).toMatch(/₦50,000/);
-    expect(container.textContent).toMatch(/eligible organizer onboarded/i);
-    expect(container.textContent).toMatch(/event must be over and its ticket sales finalized/i);
-    expect(container.textContent).toMatch(/at least ₦50,000 in pooled ticket profit/i);
-    expect(container.textContent).not.toMatch(/\b10%\b|\bcommission\b/i);
+    expect(container.textContent).toMatch(/₦50,000 reward/);
+    expect(container.textContent).not.toMatch(/10%|commission/i);
+    expect(container.textContent).not.toMatch(/5%/);
+    expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
   });
 
   it('resolves the caller\'s own service_providers.id before filtering incoming provider-side invitations', async () => {
@@ -487,7 +492,7 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 10000 });
+    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99' });
   });
 
   it('a search result that is neither an organizer nor a provider has no Send Invitation action, with a clear reason shown', async () => {
@@ -551,7 +556,7 @@ describe('RepresentativesScreen', () => {
       await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
       expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
-        p_organizer_id: 'dero-uid', p_provider_id: null, p_commission_split_bps: 10000,
+        p_organizer_id: 'dero-uid', p_provider_id: null,
       });
     });
 
@@ -566,7 +571,7 @@ describe('RepresentativesScreen', () => {
       await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
       expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
-        p_organizer_id: 'both-1', p_provider_id: null, p_commission_split_bps: 10000,
+        p_organizer_id: 'both-1', p_provider_id: null,
       });
     });
 
@@ -650,17 +655,11 @@ describe('RepresentativesScreen', () => {
     expect((acceptBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('shows the fixed reward to an existing Representative without claiming the payout flow is live', async () => {
+  it('never renders a commission amount, earnings total, or payout control anywhere', async () => {
     recruiterRowExists = true;
     await mount();
     const text = container.textContent || '';
-    expect(text).toMatch(/₦50,000/);
-    expect(container.querySelector('[data-testid="vents-work-reward-terms"]')).toBeTruthy();
-    expect(text).toMatch(/non-cancelled event approved by both the organizer and a VENTS event admin/i);
-    expect(text).toMatch(/at least ₦50,000 in pooled ticket profit/i);
-    expect(text).toMatch(/reward tracking and payouts are still being implemented/i);
-    expect(text).not.toMatch(/\d+ earned|earned total/i);
-    expect(Array.from(container.querySelectorAll('button')).some((button) => /withdraw/i.test(button.textContent || ''))).toBe(false);
+    expect(text).not.toMatch(/earned|payout|withdraw.*commission|\$\d/i);
   });
 
   // Mobile UI fix: the root-container color override is necessary but not
@@ -683,7 +682,7 @@ describe('RepresentativesScreen', () => {
       // that's still true.
       root = createRoot(container);
       act(() => {
-        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} searchDebounceMs={0} />);
       });
       const loading = container.querySelector('[data-testid="representatives-loading"] p');
       notBlack(loading);
@@ -691,7 +690,7 @@ describe('RepresentativesScreen', () => {
 
     it('registration (empty/prompt) state: the prompt paragraph and button text have explicit non-black colors', async () => {
       await mount();
-      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('fixed reward is ₦50,000'));
+      const prompt = Array.from(container.querySelectorAll('p')).find((p) => p.textContent?.includes('Become a VENTS Representative'));
       notBlack(prompt ?? null);
       const btn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Become a Representative');
       expect(btn).toBeTruthy();
@@ -896,7 +895,7 @@ describe('RepresentativesScreen: receiving an invitation', () => {
   async function mountWith(focusPartnership?: { partnershipId: string; nonce: number } | null) {
     root = createRoot(container);
     act(() => {
-      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} />);
+      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} searchDebounceMs={0} />);
     });
     await flush();
     await flush();
@@ -1123,5 +1122,29 @@ describe('RepresentativesScreen: receiving an invitation', () => {
       await flush();
       expect(lookups()).toBe(before);
     });
+  });
+
+  // Approved business model (2026-11-09, docs/business-model.md): a fixed
+  // N50,000 per qualifying organizer -- verified organizer, a PAID event that
+  // actually took place, organizer confirmation, two VENTS admins -- never a
+  // commission, never for free events, never for a click or sign-up alone.
+  it('states the approved reward conditions to non-representatives and representatives, with no commission', async () => {
+    recruiterRowExists = false;
+    await mount();
+    let text = container.textContent || '';
+    expect(text).toMatch(/fixed ₦50,000 reward/);
+    expect(text).toMatch(/verified organizer/);
+    expect(text).toMatch(/two VENTS admins/);
+    expect(text).toMatch(/free events never qualify/i);
+    expect(text).not.toMatch(/\b10%|full (VENTS )?commission|genuine free events may qualify/i);
+    act(() => root.unmount()); container.remove();
+    recruiterRowExists = true;
+    await mount();
+    text = container.textContent || '';
+    expect(text).toMatch(/never a share of ticket sales/);
+    expect(text).not.toMatch(/commission/i);
+    expect(text).toMatch(/two VENTS admins confirm the event took place/);
+    expect(text).toMatch(/A click or a sign-up earns nothing by itself/);
+    expect(text).toMatch(/earnings wallet/);
   });
 });

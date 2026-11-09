@@ -31,7 +31,7 @@ import {
 import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
 import { COUNTRY_CODES } from '../../lib/countries';
-import { formatPrice, formatPriceRange, formatCardCTA } from './data';
+import { formatPrice, formatPriceRange } from './data';
 import { hasEventEnded, isEventDiscoverable } from '../../lib/eventLifecycle';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
@@ -46,6 +46,13 @@ import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
 import { FlyerLightbox } from './FlyerLightbox';
 import { EventMap } from './EventMap';
+import { contactPhoneLinks } from '../../lib/contactPhone';
+import { formatKobo } from '../../lib/ticketFees';
+import { useTicketQuote, serviceFeeLabel } from '../../lib/ticketQuote';
+import {
+  firstAvailableTicketId, initialTicketQuantities, nextQuantity, isTicketAvailable, selectionProblem,
+  selectionLabel, isFreeSelection, ONE_CATEGORY_PER_ORDER_NOTE,
+} from '../../lib/ticketSelection';
 
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
@@ -262,6 +269,7 @@ export function EventDetailsScreen({
   onAskVentsAi,
 }: EventDetailsScreenProps) {
   const isEventOwner = !!currentUserId && !!event.organizer_id && currentUserId === event.organizer_id;
+  const contactPhone = contactPhoneLinks(event.contactPhone);
   const isSubAdmin = currentUserRole === 'sub-admin';
   const isRootAdmin = currentUserId === ROOT_UID;
   const isPlatformAdmin = currentUserRole === 'admin';
@@ -281,15 +289,20 @@ export function EventDetailsScreen({
 
   // Inline ticket quantity selection
   const ticketTypes = event.ticketTypes || [];
-  const [selectedTicketId, setSelectedTicketId] = useState<string>(ticketTypes[0]?.id ?? '');
-  const [ticketQtys, setTicketQtys] = useState<Record<string, number>>(
-    Object.fromEntries(ticketTypes.map((t, i) => [t.id, i === 0 ? 1 : 0]))
-  );
+  // The first AVAILABLE category is pre-selected with quantity 1; sold-out
+  // categories start (and stay) at 0 and cannot be selected. One category
+  // per order (ticketSelection.ts).
+  const [selectedTicketId, setSelectedTicketId] = useState<string>(() => firstAvailableTicketId(ticketTypes));
+  const [ticketQtys, setTicketQtys] = useState<Record<string, number>>(() => initialTicketQuantities(ticketTypes));
   const changeTicketQty = useCallback((id: string, delta: number) => {
-    setTicketQtys((prev) => {
-      const max = ticketTypes.find((t) => t.id === id)?.available ?? 10;
-      return { ...prev, [id]: Math.max(0, Math.min(max, (prev[id] ?? 0) + delta)) };
-    });
+    setTicketQtys((prev) => ({ ...prev, [id]: nextQuantity(ticketTypes.find((t) => t.id === id), prev[id] ?? 0, delta) }));
+  }, [ticketTypes]);
+  const selectTicket = useCallback((id: string) => {
+    const t = ticketTypes.find((x) => x.id === id);
+    if (!isTicketAvailable(t)) return;
+    setSelectedTicketId(id);
+    // Selecting an available category with nothing chosen yet starts at 1.
+    setTicketQtys((prev) => ((prev[id] ?? 0) > 0 ? prev : { ...prev, [id]: 1 }));
   }, [ticketTypes]);
   const selectedTicket = ticketTypes.find((t) => t.id === selectedTicketId);
   const selectedQty = ticketQtys[selectedTicketId] ?? 0;
@@ -305,7 +318,23 @@ export function EventDetailsScreen({
   // access per RLS -- ended-ness is a UI/purchase-eligibility concern, not
   // a visibility one).
   const hasEnded = hasEventEnded({ event_date: (event as any).event_date, end_date: (event as any).endDate });
-  const canBook = !hasEnded && !!selectedTicket && selectedQty > 0;
+  const selectionIssue = selectionProblem(selectedTicket, selectedQty);
+  const canBook = !hasEnded && selectionIssue === null;
+  const freeSelection = isFreeSelection(selectedTicket, selectedQty);
+  const allSoldOut = ticketTypes.length > 0 && !ticketTypes.some(isTicketAvailable);
+  // What the buyer will actually pay, fee included, with the same per-ticket
+  // arithmetic as checkout and the database (ticketFees.ts / 0208), so the
+  // event page never shows a lower amount than checkout charges.
+  const eventQuote = useTicketQuote(selectedTicket && Number(selectedTicket.price) > 0 ? selectedTicket.price : null, selectedQty).quote;
+  const eventCheckout = { totalKobo: eventQuote?.total_kobo ?? 0, serviceFeeKobo: eventQuote?.service_fee_kobo ?? 0 };
+  const eventPayText = eventQuote ? formatKobo(eventCheckout.totalKobo) : '…';
+  // Bottom bar / order panel: the SELECTED category and quantity, never the cheapest price.
+  const orderLabel = allSoldOut ? 'Sold out' : selectionLabel(selectedTicket, selectedQty);
+  const payButtonText = (paused: boolean): string => paused
+    ? 'Purchases Temporarily Paused'
+    : allSoldOut ? 'Sold out'
+    : canBook ? (freeSelection ? 'Book Free Ticket' : `Pay ${eventPayText}`)
+    : selectionIssue === 'zero_quantity' ? 'Choose a quantity' : 'Select a ticket';
   const [reviewText, setReviewText] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -863,7 +892,7 @@ export function EventDetailsScreen({
               color: ventsColors.white,
               fontSize: '24px',
               fontWeight: 700,
-              fontFamily: 'Outfit, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               letterSpacing: '-0.5px',
               lineHeight: 1.25,
               marginBottom: '8px',
@@ -1317,8 +1346,10 @@ export function EventDetailsScreen({
           </div>
         </div>
 
-        {/* Contact number (if organizer chose to show it) */}
-        {event.contactPhone && (
+        {/* Contact number (if organizer chose to show it). Nigerian numbers show in
+            local format (0XXXXXXXXXX); call and WhatsApp always use +234 (see
+            src/lib/contactPhone.ts). */}
+        {contactPhone && (
           <div
             style={{
               background: 'rgba(168,85,247,0.06)',
@@ -1334,18 +1365,21 @@ export function EventDetailsScreen({
                 ORGANISER CONTACT
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em' }}>
-                  {event.contactPhone}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ minWidth: 0 }}>
+                <p data-testid="organizer-contact-phone" style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+                  {contactPhone.display}
                 </p>
                 <p style={{ color: ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
                   For event enquiries only
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                {contactPhone.telHref && (
                 <a
-                  href={`tel:${event.contactPhone}`}
+                  href={contactPhone.telHref}
+                  data-testid="organizer-contact-call"
+                  aria-label={`Call organiser on ${contactPhone.display}`}
                   style={{
                     width: '40px',
                     height: '40px',
@@ -1360,8 +1394,13 @@ export function EventDetailsScreen({
                 >
                   <Phone size={16} color={ventsColors.accent} />
                 </a>
+                )}
+                {contactPhone.whatsappNumber && (
                 <button
-                  onClick={() => openExternalUrl(`https://wa.me/${event.contactPhone!.replace(/\D/g, '')}`)}
+                  type="button"
+                  data-testid="organizer-contact-whatsapp"
+                  aria-label="Message organiser on WhatsApp"
+                  onClick={() => openExternalUrl(`https://wa.me/${contactPhone.whatsappNumber}`)}
                   style={{
                     width: '40px',
                     height: '40px',
@@ -1376,6 +1415,7 @@ export function EventDetailsScreen({
                 >
                   <MessageCircle size={16} color="#25D366" />
                 </button>
+                )}
               </div>
             </div>
           </div>
@@ -1444,15 +1484,18 @@ export function EventDetailsScreen({
                 </span>
               )}
             </div>
+            {ticketTypes.length > 1 && (
+              <p data-testid="one-category-note" style={{ color: ventsColors.ink3, fontSize: '11.5px', margin: '-4px 0 10px' }}>{ONE_CATEGORY_PER_ORDER_NOTE}</p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {ticketTypes.map((t) => {
                 const isSelected = selectedTicketId === t.id;
                 const qty = ticketQtys[t.id] ?? 0;
-                const soldOut = t.available === 0;
+                const soldOut = !isTicketAvailable(t);
                 return (
                   <div
                     key={t.id}
-                    onClick={() => { if (!soldOut) { haptics.light(); setSelectedTicketId(t.id); } }}
+                    onClick={() => { if (!soldOut) { haptics.light(); selectTicket(t.id); } }}
                     style={{
                       background: isSelected ? 'rgba(124,58,237,0.08)' : ventsColors.elevated,
                       border: isSelected ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.06)',
@@ -1589,20 +1632,33 @@ export function EventDetailsScreen({
           <div style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
             Your Order
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{selectedTicket?.name || 'Select a ticket'}</span>
-            <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-              {selectedTicket ? formatPrice(selectedTicket.price) : ''}
-            </span>
+          <div data-testid="event-order-breakdown" style={{ display: 'grid', gap: '6px', fontSize: '13px', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: ventsColors.ink2 }}>Selected ticket</span>
+              <span data-testid="event-order-ticket" style={{ color: ventsColors.ink1, fontWeight: 600 }}>{selectedTicket ? selectedTicket.name : (allSoldOut ? 'Sold out' : 'None')}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: ventsColors.ink2 }}>Quantity</span>
+              <span data-testid="event-order-qty" style={{ color: ventsColors.ink1, fontWeight: 600 }}>{selectedTicket ? selectedQty : 0}</span>
+            </div>
+            {canBook && !freeSelection && eventQuote && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: ventsColors.ink2 }}>Ticket subtotal</span>
+                  <span data-testid="event-order-subtotal" style={{ color: ventsColors.ink1, fontWeight: 600 }}>{formatKobo(eventQuote.face_kobo)}</span>
+                </div>
+                <div data-testid="event-total-fee-note" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: ventsColors.ink2 }}>{serviceFeeLabel(eventQuote)}</span>
+                  <span data-testid="event-order-fee" style={{ color: ventsColors.ink1, fontWeight: 600 }}>{formatKobo(eventCheckout.serviceFeeKobo)}</span>
+                </div>
+              </>
+            )}
           </div>
-          {selectedTicket && (
-            <div style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '16px' }}>Qty: {selectedQty}</div>
-          )}
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '12px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>Total</span>
-            <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
-              {selectedTicket ? formatPrice(selectedTicket.price * selectedQty) : formatPrice(0)}
+            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>Total payable</span>
+            <span data-testid="event-order-total" style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {canBook ? (freeSelection ? formatPrice(0) : eventPayText) : formatPrice(0)}
             </span>
           </div>
           <button
@@ -1638,11 +1694,7 @@ export function EventDetailsScreen({
               boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
             }}
           >
-            {purchasesDisabled
-              ? 'Purchases Paused'
-              : canBook
-              ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
-              : 'Select tickets'}
+            {payButtonText(purchasesDisabled)}
           </button>
         </div>
       )}
@@ -1774,11 +1826,11 @@ export function EventDetailsScreen({
           </div>
         ) : (
           <>
-            {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
-                "Buy from ₦X") instead of a bare "FROM / Free" label, which read
-                as a fully free event even when paid tiers also exist. */}
-            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flexShrink: 0 }}>
-              {formatCardCTA(event.ticketTypes)}
+            {/* The SELECTED category and quantity ("Guys × 1"). Never the
+                cheapest category's "Buy from ₦X": that read as the price of
+                what the attendee had chosen. The amount is on the button. */}
+            <div data-testid="event-bottom-selection" style={{ color: freeSelection ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {orderLabel}
             </div>
             <button
               onClick={() => {
@@ -1817,11 +1869,7 @@ export function EventDetailsScreen({
                 gap: '8px',
               }}
             >
-              {purchasesDisabled
-                ? 'Purchases Temporarily Paused'
-                : canBook
-                ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
-                : 'Select tickets above'}
+              {payButtonText(purchasesDisabled)}
             </button>
           </>
         )}

@@ -40,6 +40,7 @@ export type AdminConsoleViewKey =
   | 'providers'
   | 'finance'
   | 'vcents'
+  | 'ventsEarn'
   | 'reports'
   | 'analytics'
   | 'adminActions'
@@ -76,6 +77,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItemDef[] = [
   { key: 'serviceBookings', label: 'Bookings', mono: 'BK' },
   { key: 'finance', label: 'Payouts', mono: 'FN' },
   { key: 'vcents', label: 'VENTS Cents', mono: 'VC' },
+  { key: 'ventsEarn', label: 'VENTS Earn', mono: 'VE' },
   { key: 'reports', label: 'Reports & Safety', mono: 'RS' },
   { key: 'analytics', label: 'Analytics', mono: 'AN' },
   { key: 'adminActions', label: 'Admin Actions', mono: 'AA' },

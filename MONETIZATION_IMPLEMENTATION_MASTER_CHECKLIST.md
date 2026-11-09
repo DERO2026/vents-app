@@ -1,164 +1,146 @@
 # VENTS Monetization Implementation Master Checklist
 
-This is the canonical implementation tracker for the original 12-part VENTS monetization checklist supplied in the VENTS Revenue Streams conversation on 2026-10-30. Each numbered item below is accounted for; `[ ]` means implementation or verification remains open, and `[~]` means the repository contains partial groundwork that does not yet satisfy the full requirement.
+This tracker covers the original 12-part VENTS monetization checklist supplied on 2026-10-30, corrected to the owner's **final business model of 2026-11-09**. That model is the authoritative source: see `docs/business-model.md`. Where the two disagree, `docs/business-model.md` wins.
 
-## Confirmed product directions
+Legend:
+- `[x]` built and tested in the repository;
+- `[~]` partially built;
+- `[ ]` not built.
 
-- Revenue streams: ticketing fees; event promotions and advertising; service marketplace fees; organizer subscriptions; service-provider subscriptions; vendor marketplace; VENTS Wallet and payouts; additional paid event services; future marketplace expansion; VENTS Work representative compensation; admin and financial controls; testing, release and deployment.
-- Representative compensation was changed from a percentage commission to **₦50,000 per qualifying organizer onboarded**. The organizer must host an event that is not cancelled, and both organizer and event admin approval are required. Withdrawal is only after the event is over and ticket sales/proceeds are finalized, and VENTS must have at least **₦50,000 in pooled ticket profit** before representatives can claim rewards. A genuine free event may qualify after verification and can be funded from the pooled profits.
-- Cross-cutting requirement: make the revenue streams valuable to users and close obvious fraud, self-referral, collusion, retry, and reversal paths with server-side controls.
+**Built is not live.** Nothing below is live in production unless it says so. Migrations 0201–0210 are unapplied, and getvents.com serves an older build, until the owner authorises the release window (runbook W4–W6f, W7).
+
+## Approved model (2026-11-09)
+
+### Event tickets: two VENTS platform fees and nothing else
+- **Attendee service fee:** 1.5% per ticket, added at checkout.
+- **Organizer platform deduction:** 3.5% per ticket, deducted from the organizer's ticket revenue.
+- **No commission of any kind.** There is no organizer, representative, recruiter or referral commission, and nobody receives a percentage of ticket sales.
+
+| Ticket | Attendee pays | Organizer receives | VENTS keeps |
+|---|---|---|---|
+| ₦20,000 | ₦20,300 | ₦19,300 | ₦1,000 |
+| ₦70,000 | ₦71,050 | ₦67,550 | ₦3,500 |
+
+### Promo codes
+- Platform-level and funded by VENTS.
+- The fee is calculated on the full face value, and the organizer's settlement never drops. Example: ₦20,000 with ₦2,000 off means the attendee pays ₦18,300 and the organizer gets ₦19,300.
+
+### Service-provider bookings
+- The existing **5%** booking fee is unchanged, and kept separate from ticket fees.
+
+### Representatives
+- **Reward:** a **fixed ₦50,000** per qualifying organizer, once per organizer, paid by VENTS into the representative's **withdrawable earnings wallet**. Never the spend-only VENTS Wallet or VENTS Cents.
+- **Qualifying requires all of the following:**
+  - the organizer is attributed to the representative (by an accepted invitation, or the referral link used at registration);
+  - the organizer holds an approved verification;
+  - the organizer publishes a **paid** event after the attribution;
+  - the event is not cancelled, its date has passed and it has settled;
+  - the organizer confirms the referral;
+  - two different VENTS admins confirm the event took place and approve the reward.
+- **Never qualifies:** a **free** event, or a click, sign-up, verification or event creation on its own.
+- **Payment:** made once recognised VENTS ticket profit covers it. Withdrawal needs two-admin approval.
+- **The retired 10% programme** was never paid. Its history is kept for audit, and no commission split can be recorded again (0210).
 
 ## Original checklist: all revenue streams
 
 ### 1. Ticketing fees
-
-- [ ] Attendee service fee — 4% per ticket — existing agreed model; current source computes a 5% buyer surcharge (`1.05` multiplier), so price logic does not match.
-- [ ] Organizer commission — 5% per ticket — existing agreed model; current ticket confirmation credits the organizer the full ticket face amount, so no 5% organizer deduction is evident in the audited payment path.
-- [ ] Combined gross ticket fee revenue — 9% (4% attendee + 5% organizer); current audited path computes 5% gross only and does not implement the agreed split.
-- [~] Ticket transfer fee — 7.5%, ₦500 minimum, ₦5,000 maximum; audit current transfer implementation and edge cases.
-- [ ] Refund administration fee — ₦500–₦1,000 proposed; settle policy and legal review before implementation.
-- [ ] Expedited organizer payout — ₦500–₦1,500 proposed optional service; verify cost and disclose before charging.
+- [x] **Attendee service fee, 1.5% per ticket** (0208 `ticket_fee_buyer_charge_kobo`, `ticket_fee_quote`). Tested: fee suite 64/64.
+  - Supersedes the earlier 4%-attendee proposal. 0208 removes the 4% + 5% model entirely.
+  - **Production still charges the legacy 5% attendee fee** until 0203 + 0208 are applied.
+- [x] **Organizer platform deduction, 3.5% per ticket** (0208 `ticket_fee_organizer_deduction_kobo`; settlement credits face − deduction into the 48 h hold, 0203).
+  - Supersedes the earlier "5% organizer commission".
+  - **Production still credits organizers the full face** until the release.
+- [x] **Combined VENTS ticket revenue, 5%** (1.5% + 3.5%). Reported by `ticket_fee_quote` as `vents_platform_fees_kobo`; VENTS-funded promo discounts are reported separately (`vents_funded_discount_kobo`).
+- [x] **Checkout shows the selected ticket, quantity, subtotal, attendee service fee, promo and total payable.**
+  - Paystack starts only if the server amount equals the quote shown.
+  - Payment confirmation recomputes the amount on the server.
+- [~] Ticket transfer fee: 7.5%, ₦500 minimum, ₦5,000 maximum. A transfer fee exists in the app; audit its edge cases.
+- [ ] Refund administration fee: ₦500–₦1,000 proposed. Not approved; needs a policy and legal review first.
+- [ ] Expedited organizer payout: ₦500–₦1,500 proposed optional service. Not approved.
 
 ### 2. Event promotions and advertising
-
-- [~] Trending: 3 days ₦75,000; 7 days ₦150,000; 14 days ₦275,000; 30 days ₦500,000 — source price table matches; verify billing, fulfillment, expiry, and production.
-- [~] Featured: 3 days ₦150,000; 7 days ₦250,000 — source matches these prices but also offers 14/30-day tiers; reconcile those additional tiers with the master price list and verify billing/production.
-- [ ] Sponsored event campaigns — negotiated pricing, campaign workflow and fulfillment.
-- [ ] Sponsored discovery/category placements — ₦25,000–₦75,000 proposed; define inventory, measurement, and billing.
-- [ ] Brand sponsorships and advertising partnerships — negotiated contracts and operational tracking.
+- [~] Trending: 3 days ₦75,000; 7 days ₦150,000; 14 days ₦275,000; 30 days ₦500,000.
+  - The source price table matches.
+  - Verify billing, fulfilment and expiry in production.
+- [~] Featured: 3 days ₦150,000; 7 days ₦250,000.
+  - The source also offers 14- and 30-day tiers that the master list doesn't include; reconcile them.
+- [ ] Sponsored event campaigns: negotiated pricing, campaign workflow and fulfilment.
+- [ ] Sponsored discovery/category placements: ₦25,000–₦75,000 proposed.
+- [ ] Brand sponsorships and advertising partnerships: negotiated contracts.
 
 ### 3. Service marketplace fees
+- [x] **Existing 5% service-provider booking fee: kept unchanged** (owner decision 2026-11-09).
+- [ ] Customer 2% booking fee plus provider 5% platform fee (earlier proposal). **Not adopted.** The existing 5% booking fee stays.
+- [ ] Cancellation/no-show penalties: ₦2,000–₦5,000 proposed. Needs a policy and dispute handling first.
+- [ ] Paid service-provider promotion: ₦10,000–₦25,000/month proposed.
 
-- [ ] Customer booking fee — 2% proposed.
-- [ ] Service-provider commission — 5% proposed.
-- [ ] Cancellation/no-show penalties — ₦2,000–₦5,000 proposed; define clear policy and dispute handling first.
-- [ ] Photography and other completed service commissions — 5% proposed.
-- [ ] Paid service-provider promotion — ₦10,000–₦25,000/month proposed.
+### 4. Organizer subscriptions (proposed, not built)
+- [ ] Starter (free), Pro ₦10,000/month, Business ₦25,000/month.
+- [ ] Billing, renewal, cancellation, expiry and plan access controls.
 
-### 4. Organizer subscriptions
+### 5. Service-provider subscriptions (proposed, not built)
+- [ ] Basic (free), Professional ₦5,000/month, Premium ₦15,000/month.
+- [ ] Billing, renewal, cancellation, expiry and access controls.
 
-- [ ] Starter Organizer — Free; basic event creation and ticket management.
-- [ ] Pro Organizer — ₦10,000/month; advanced analytics, reports and team tools.
-- [ ] Business Organizer — ₦25,000/month; advanced operations and multiple-event tools.
-- [ ] Subscription billing, renewal, cancellation, expiry, and plan access controls.
-
-### 5. Service-provider subscriptions
-
-- [ ] Basic provider — Free; standard profile and discovery.
-- [ ] Professional provider — ₦5,000/month; enhanced portfolio and analytics.
-- [ ] Premium provider — ₦15,000/month; extra visibility and advanced insights.
-- [ ] Subscription management, billing, renewal, cancellation, expiry, and access controls.
-
-### 6. Vendor marketplace
-
-- [ ] Basic vendor listing — Free; standard listing.
-- [ ] Premium vendor listing — ₦5,000/month proposed.
-- [ ] Featured vendor placement — ₦10,000–₦25,000/month proposed.
-- [ ] Sponsored category placement — ₦25,000–₦75,000/month proposed.
-- [ ] Commission on eligible vendor sales — 5% proposed.
-- [ ] Vendor payments, orders, refunds, and commission records.
+### 6. Vendor marketplace (proposed, not built)
+- [ ] Basic listing (free), premium ₦5,000/month, featured ₦10,000–₦25,000/month, sponsored category ₦25,000–₦75,000/month.
+- [ ] A 5% platform fee on eligible vendor sales (proposal).
+- [ ] Vendor payments, orders, refunds and fee records.
 
 ### 7. VENTS Wallet and payouts
+- [~] Wallet deposits: ₦0 VENTS fee; account for payment-processing cost.
+- [ ] Wallet withdrawal fee (₦50–₦100) and wallet-to-wallet transfer (₦0–₦50). Proposals, not approved.
+- [x] Earnings ledger, holds, recovery and two-admin withdrawals for organizers, providers and representative rewards (0202, 0203, 0205–0207). Built and tested; not applied.
+- [x] Server-side idempotency for purchases, settlement, reward credits and payouts. Proven by the local suites.
 
-- [~] Wallet deposits — ₦0 VENTS fee initially; account for payment-processing cost.
-- [ ] Wallet withdrawal fee — ₦50–₦100 proposed; verify actual payout costs.
-- [ ] Wallet-to-wallet transfer — ₦0–₦50 proposed.
-- [~] Wallet ledger and transaction history — audit existing wallet records for complete, immutable accounting.
-- [~] Payout reconciliation, failed transfers, refunds, and reversal handling — audit existing payout lifecycle.
-- [~] Prevent double charging and duplicate transactions — security requirement; verify all monetization flows use server-side idempotency.
+### 8. Additional paid event services (proposed, not built)
+- [ ] Poster design, custom ticket branding, promotion consultation, photography bookings (5% platform fee proposed), corporate services, brand campaigns.
 
-### 8. Additional paid event services
+### 9. Future marketplace expansion (proposed, not built)
+- [ ] Transportation, studio, equipment and venue bookings; premium analytics; further categories.
 
-- [ ] Event poster design — ₦5,000–₦20,000 per design proposed.
-- [ ] Custom ticket branding — ₦5,000–₦15,000 per event proposed.
-- [ ] Event promotion consultation — ₦10,000–₦50,000 proposed.
-- [ ] Photography bookings — 5% commission proposed.
-- [ ] Corporate event services and partnerships — negotiated pricing.
-- [ ] Brand-sponsored campaigns — negotiated pricing.
-
-### 9. Future marketplace expansion
-
-- [ ] Transportation bookings — commission per completed booking.
-- [ ] Studio rentals — booking commission.
-- [ ] Equipment rentals — booking commission.
-- [ ] Venue bookings — commission per reservation.
-- [ ] Premium organizer analytics and business tools.
-- [ ] Additional marketplace categories and commissions.
-
-### 10. VENTS Work — Representative compensation
-
-- [ ] ₦50,000 per qualifying organizer onboarded; replaces old 10% commission model.
-- [ ] Representative referral attribution: record recruiter against each organizer.
-- [ ] Qualifying event verification: event must be hosted and not cancelled; validate event has ended.
-- [ ] Organizer and event admin approval required before payment.
-- [ ] Genuine free events may qualify after verification; rewards are funded from the pooled ticket-profit balance.
-- [ ] Fraud and duplicate prevention: no duplicate or fraudulent payouts.
-- [ ] Approved rewards become claimable/withdrawable through VENTS Wallet only after event completion, finalized ticket sales/proceeds, and at least ₦50,000 in pooled VENTS ticket profit; reserve funds so concurrent claims cannot overspend the available profit.
-- [ ] Monthly performance tracking by qualifying organizers per calendar month.
-- [ ] At 9+ qualifying organizers in a month, management may approve a higher rate for the following month; define the approval workflow and effective rate before enabling.
-- [ ] Approved transport/support expenses tracked separately and require approval.
-- [ ] Reconcile existing 10% commitments and balances before activating the new payout model.
+### 10. VENTS Work: representative reward (fixed ₦50,000, no commission)
+- [x] Fixed ₦50,000 per qualifying organizer, once per organizer (0201; the `base_reward_kobo` CHECK).
+- [x] Attribution:
+  - one representative per organizer, by an accepted invitation or the referral link used at registration (0201, 0209);
+  - self-referral, representative-to-representative and duplicate attempts refused and audited.
+- [x] Referral from both sides (0209, 0210 and the app):
+  - **Representative:** link, code and share; their own name and @username; referred organizers with @username and status; the reward steps.
+  - **Organizer:** "who invited me" before sign-up, and "Your VENTS Representative" afterwards.
+- [x] Qualification:
+  - verified organizer, a paid event that took place (not cancelled, past, settled);
+  - organizer confirmation, then two-admin approval recording that the event took place;
+  - free events never qualify.
+- [x] Funding from recognised VENTS ticket profit, with reservation so concurrent claims cannot overspend. Credited to the withdrawable earnings wallet; two-admin withdrawals.
+- [x] Monthly counts by calendar month (Lagos time). At 9+ qualifying organizers, management *may* approve a higher next-month rate through dual control; nothing increases automatically.
+- [x] Transport and support expenses tracked separately with dual-control approval; never mixed into rewards.
+- [x] The retired 10% programme:
+  - nothing was ever accrued or paid;
+  - rewards stay blocked until management records the reconciliation;
+  - 0210 makes new commission splits impossible and keeps the old values as history.
+- [ ] **Owner decision:** record the reconciliation, including what to tell the two representatives who accepted under the old programme.
+- [ ] **Release:** apply 0201–0210 and promote the build (owner authorisation).
 
 ### 11. Admin and financial controls
+- [~] Central fee configuration. Ticket fees live only in the database (0208), and the app has no fee rates (a test enforces this). Other streams still hard-code their prices.
+- [~] Admin enable/disable of products. Kill switches exist for purchases, payouts, sign-ups and more.
+- [x] Ledger recording gross, attendee fee, organizer deduction, net and fee model per ticket sale (0203/0208).
+- [ ] Revenue reporting by stream (ticketing, promotions, marketplace, subscriptions).
+- [~] Representative reward and expense administration (VENTS Earn admin). Reports are basic.
+- [x] Fee breakdown shown to the user before payment (tickets).
+- [ ] Terms, cancellation and refund disclosures; legal review.
 
-- [ ] Central fee and pricing configuration; eliminate conflicting hardcoded rates.
-- [ ] Authorized admin controls to enable/disable fee products.
-- [~] Transaction ledger and audit trail recording gross amount, fee, net amount, and status across each revenue stream.
-- [ ] Revenue reporting by stream: ticketing, promotions, marketplace, subscriptions, and more.
-- [ ] Representative earnings and payout reports, including approvals and expenses.
-- [~] Refunds, reversals, and failed-payment handling with accurate balances.
-- [~] Role-based permissions and database security for financial records.
-- [ ] User-facing fee breakdowns before payment.
-- [ ] Terms, cancellation, and refund disclosures; review applicable legal requirements.
+### 12. Testing, release and deployment
+- [x] Local suites: all 24 database suites, plus vitest 343 files / 3,162 tests on the business-model change.
+- [ ] Owner-authorised release window. Its own runbook step requires a verified backup (now automated by the daily backup workflow; first real run pending).
+- [ ] Production verification after release with authoritative evidence. A code change is not production activation.
 
-### 12. Testing, release, and deployment
+## Corrections made on 2026-11-09
 
-- [ ] Audit current production code and deployed schema before changes; identify existing fee logic and state.
-- [ ] Test every percentage/fixed fee, including minimums, maximums, and rounding.
-- [ ] Test payment verification and idempotency; prove no duplicate charges or payouts.
-- [ ] Test subscriptions, expiry, renewals, and access control.
-- [ ] Test refunds, cancellations, and failed payouts; verify ledger accuracy.
-- [ ] Run relevant regression and security tests; preserve existing app features.
-- [ ] Commit and push implementation changes with reviewable Git history.
-- [ ] Merge/deploy as appropriate; do not treat a code change as production activation.
-- [ ] Verify production behavior after release using authoritative runtime/database evidence.
-
-## Existing VENTS Earn code / VENTS Work checklist scope
-
-### Shipped foundation
-
-- [x] Recruiter registration and profile foundation (`0193`, merged in code)
-- [x] Organizer/provider partnership invitations and accept/decline/withdraw/revoke flows (`0193`, merged in code)
-- [x] Authorization, row-level access, rate limits, and admin suspension controls (`0193`, `0196`, merged in code)
-- [x] Representatives screen and invitation notifications (merged in code)
-- [x] Platform-fee accounting and qualification-state groundwork (`0192`, merged in code)
-- [ ] Verify which VENTS Earn foundation migrations have been applied in production.
-
-### Remaining implementation
-
-- [~] Replace the old percentage/`commission_split_bps` compensation model with the agreed fixed ₦50,000 organizer-onboarding reward. The Representative screen now shows the fixed reward and no longer promises revenue commission; the database/API legacy split field and invite notification wording still need removal.
-- [~] Qualification rule is now specified: hosted, not-cancelled event plus organizer and event-admin approval; genuine free events may qualify after verification. Implement authoritative event verification, approval audit, fraud-resistant holds, and reversal policy.
-- [ ] Add an immutable earnings ledger with idempotency, source attribution, reversals, and reconciliation.
-- [ ] Implement admin review and payout authorization using the existing maker-checker pattern where required.
-- [ ] Decide whether recruiter rewards use a recruiter-specific ledger/wallet or extend organizer payout infrastructure; existing `request_organizer_payout` is organizer-scoped.
-- [ ] Implement payout destination, payout status, failure/retry, and audit history, with idempotency and the existing payout kill switch respected.
-- [~] Update recruiter/representative earnings UI to reflect the agreed fixed reward. The screen now states that eligibility/payout rules remain under verification and does not show balances; earned, pending, reversed, and paid amounts require the ledger and payout lifecycle first.
-- [ ] Verify the complete earning and payout lifecycle before production release.
-
-## Checklist reconciliation
-
-- [x] The complete 12-section master checklist supplied by the user is represented above, including every amount, proposal qualifier, security requirement, and release gate.
-- [ ] Audit each item against the current source, migration history, and production state; identify existing, partial, missing, and unsafe implementations with evidence.
-
-## Audit notes
-
-- Migration `0193_vents_earn_foundation.sql` explicitly scopes itself to partnerships and invitations; it does not calculate or pay commission.
-- Migration `0192_platform_fee_accounting_foundation.sql` adds accounting and qualification groundwork, not recruiter payout logic.
-- `RepresentativesScreen.tsx` now shows the fixed ₦50,000 amount and current qualification/funding gates, with no percentage-commission promise. It still sends `10000` basis points because the legacy partnership RPC requires that argument; the RPC/schema and notification text must be replaced before rollout.
-- The repository also contains a VENTS Design Implementation checklist, which is separate from this monetization checklist.
-- Existing bank-account and withdrawal flows are scoped to organizer wallets; recruiter earnings need an explicit role and ledger design before using them.
-- Ticketing audit: `confirm_ticket_payment` in migration 0192 uses a `1.05` buyer multiplier and credits the organizer the ticket amount; the agreed 4% buyer fee + 5% organizer commission is not represented by this path.
-- Event promotion audit: `src/lib/eventPromotionPricing.ts` has shared client/server Trending prices matching all four agreed tiers. Featured 3/7-day prices match; it also exposes 14/30-day prices not listed in the recovered master checklist. Promotion billing exists in the app/API and has prior bypass-hardening migrations, but production deployment still needs verification.
-- Subscription audit: the schema/source contains VENTS AI subscription infrastructure, but the requested organizer and service-provider subscription tiers are not found in the audited implementation inventory.
-- Wallet audit: `user_wallets` is a deposit/spend/refund cash wallet with no withdrawal path; organizer payout infrastructure is organizer-scoped. VENTS Work therefore needs an approved reward ledger plus a deliberate wallet/withdrawal integration.
-- Vendor/paid-service audit: the repository has service-booking and event-vendor planning foundations, but the specified vendor paid listings, commissions, subscription products, and design/consultation service checkout were not found in the current inventory.
+- **Ticket fees:** the "agreed 4% attendee fee + 5% organizer commission" was replaced by **1.5% attendee service fee + 3.5% organizer platform deduction**.
+- **Representative conditions:**
+  - "Genuine free events may qualify after review" → **free events never qualify**;
+  - "organizer and event-admin approval" → **organizer confirmation plus two VENTS admins confirming the event took place**;
+  - "paid through the VENTS Wallet" → **the withdrawable earnings wallet**.
+- **The invite no longer sends a 10000-basis-point split.** PR #81's change would have sent one; with 0210 applied that call would be refused. `main` sends none.
+- **"Commission" wording:** in proposals for marketplace fees, it is renamed "platform fee", so it is never confused with a referral commission.

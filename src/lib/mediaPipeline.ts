@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { uploadAllowanceError } from './uploadAllowance';
 import { compressImage, CompressedImage } from './compressImage';
 import { withTimeoutFallback } from './withTimeoutFallback';
 
@@ -130,11 +131,16 @@ async function recordMetadata(a: MediaAsset, userId?: string | null, eventId?: s
 // error from the RPC (a genuine limit hit or an infra/misconfiguration
 // error) blocks the upload, since silently letting uploads through on an
 // RPC failure is itself an unmetered path.
+// The message says what actually blocked the upload (see uploadAllowance.ts);
+// it is still blocked on every error.
 async function enforceUploadRateLimit(): Promise<void> {
-  const { error } = await supabase.rpc('check_media_upload_rate_limit');
-  if (error) {
-    throw new Error('Too many uploads. Please wait a bit before uploading more.');
+  let error: unknown;
+  try {
+    ({ error } = await supabase.rpc('check_media_upload_rate_limit'));
+  } catch (thrown) {
+    throw uploadAllowanceError(thrown);
   }
+  if (error) throw uploadAllowanceError(error);
 }
 
 /** Compress → responsive thumbnail → direct signed upload of both → record metadata. */

@@ -23,6 +23,9 @@ import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { pickImage } from '../../lib/pickImage';
 import { Sentry } from '../../lib/sentry';
 import { isSafeHttpsUrl } from '../../lib/externalLink';
+import { OrganizerDeductionNotice, TicketNetEarnings, useOrganizerDeductionRateText } from './OrganizerDeductionNotice';
+import { formatKobo } from '../../lib/ticketFees';
+import { toE164ContactPhone, splitStoredContactPhone } from '../../lib/contactPhone';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; country?: string } | null;
@@ -121,6 +124,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   ]);
   const [contactPhone, setContactPhone] = useState('');
   const [contactPhoneCountryCode, setContactPhoneCountryCode] = useState<string>(DEFAULT_COUNTRY.code);
+  // The organizer platform deduction shown before publishing comes from the database's quote (0208).
+  const deductionRateText = useOrganizerDeductionRateText();
   const [showPhone, setShowPhone] = useState(false);
   const [is18Plus, setIs18Plus] = useState(false);
   
@@ -296,7 +301,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setTicketTypes(tts);
         setIs18Plus(!!row.is_18_plus);
         setShowPhone(!!row.show_phone);
-        setContactPhone(row.show_phone && row.contact_phone ? row.contact_phone : '');
+        {
+          // Stored values may be E.164 (current saves) or the bare digits older
+          // saves kept; split back into the picker's dial code + national digits.
+          const parts = splitStoredContactPhone(row.show_phone ? row.contact_phone : '');
+          setContactPhoneCountryCode(parts.countryCode);
+          setContactPhone(parts.national);
+        }
         originalStatusRef.current = row.status || 'live';
         originalCreatedAtRef.current = row.created_at ? new Date(row.created_at).getTime() : Date.now();
       } catch (err: any) {
@@ -598,7 +609,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           ticketName: ticketTypes[0]?.name || 'Regular',
           ticketPrice: ticketTypes[0]?.price || '0',
           ticketQty: ticketTypes[0]?.quantity || '500',
-          contactPhone: showPhone ? contactPhone : '',
+          contactPhone: showPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : '',
           showPhone,
           status: eventStatus,
           createdAt: Date.now(),
@@ -644,7 +655,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               payout_account_id: payoutAccountId || null,
               status: eventStatus,
               is_18_plus: is18Plus,
-              contact_phone: showPhone ? contactPhone : null,
+              contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
               show_phone: showPhone,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
@@ -709,7 +720,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ticketName: ticketTypes[0]?.name || 'Regular',
         ticketPrice: ticketTypes[0]?.price || '0',
         ticketQty: ticketTypes[0]?.quantity || '500',
-        contactPhone: showPhone ? contactPhone : '',
+        contactPhone: showPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : '',
         showPhone,
         status: eventStatus,
         createdAt: Date.now(),
@@ -827,7 +838,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               categories: selectedCategories,
               ...(payoutAccountId ? { payout_account_id: payoutAccountId } : {}),
               is_18_plus: is18Plus,
-              contact_phone: showPhone ? contactPhone : null,
+              contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
               show_phone: showPhone,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
@@ -868,7 +879,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ticketName: ticketTypes[0]?.name || 'Regular',
         ticketPrice: ticketTypes[0]?.price || '0',
         ticketQty: ticketTypes[0]?.quantity || '500',
-        contactPhone: showPhone ? contactPhone : '',
+        contactPhone: showPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : '',
         showPhone,
         status: originalStatusRef.current as any,
         createdAt: originalCreatedAtRef.current,
@@ -1643,6 +1654,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         {!loadingEdit && step === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
+            <OrganizerDeductionNotice />
 
             {ticketTypes.map((ticket, index) => (
               <div
@@ -1736,6 +1748,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       />
                     </div>
                   </div>
+                  <TicketNetEarnings price={ticket.price} />
                   <div>
                     <Label>Description</Label>
                     <input
@@ -1937,9 +1950,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               {
                 label: 'Tickets',
                 value: ticketTypes.length > 0
-                  ? ticketTypes.map(t => `${t.name || 'Standard'} (₦${Number(t.price || 0).toLocaleString()})`).join(', ')
+                  ? ticketTypes.map(t => {
+                      const price = Number(t.price || 0);
+                      return price > 0
+                        ? `${t.name || 'Standard'} (${formatKobo(Math.round(price * 100))})`
+                        : `${t.name || 'Standard'} (Free)`;
+                    }).join(', ')
                   : '(not set)'
               },
+              { label: 'Organizer platform deduction', value: deductionRateText ? `${deductionRateText} of every ticket sold, deducted automatically` : 'Loading…' },
               { label: 'Contact Number', value: showPhone && contactPhone ? `${contactPhoneCountryCode} ${contactPhone}` : 'Not shown' },
             ].map(({ label, value }) => (
               <div

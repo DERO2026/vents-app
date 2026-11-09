@@ -1,0 +1,364 @@
+# Deploy and rollback runbook: 0201 → 0202 → 0203 and the PR #82 frontend
+
+Batch C, 2026-10-31. **Prepared, not executed.** Every step that changes
+production is for the owner (or two named admins) to run after explicit
+approval. Background and evidence: `docs/migration-apply-plan-0192-0203.md`.
+
+Nothing in this runbook was run against production while preparing it. All
+production figures are the read-only values recorded on 2026-10-30;
+re-check them in step P3.
+
+## 0. Approvals required before anything starts
+
+| # | Approval | Who | Why |
+|---|---|---|---|
+| A1 | Apply **0201 → 0202 → 0203 → 0205 → 0206 → 0207 → 0208 → 0209 → 0210** to production, in that order, each in its own transaction (W4–W6f) | Owner | Changes fees, settlement, payouts and rewards, and adds the payout state machine, the earnings adjustment and the withdrawal reassignment. 0204 (PR #83) is **not** part of this approval (W10) |
+| A2 | **Promote** the latest `main` production deployment in Vercel (PR #82 is already merged; production is held on the rolled-back build, see §0b), immediately after W6f (0210) | Owner | Production deploy; shows the 1.5% attendee service fee and the 3.5% organizer platform deduction (VENTS platform fees, no commission), the representative referral from both sides, adds the two-admin payout, adjustment and reassignment steps |
+| A3 | Pause purchases and payouts for the window (`disable_purchases`, `disable_payouts`) | Owner | Stops checkouts and payouts while the database and frontend disagree |
+| A4 | The two admins for withdrawal authorization: one may request; a **different super admin** approves; **neither** may own a withdrawal they act on | Owner names them | 0203 enforces this; with fewer than two eligible admins, no withdrawal can be paid |
+| A5 | What to do with the 5 pending withdrawals (section 6) | Owner | Each is real money leaving VENTS. **Decided in part:** D4 (both ₦20,000 kept) and D5 (root's ₦5,000 to be rejected through an authorized process). Still open: D4a payees (O2) and D5a (who rejects) |
+| A6 | Confirm the Supabase dashboard GitHub integration / branching does **not** auto-apply migrations on merge (**exact steps: §0a O3**) | Owner (dashboard) | **Branching is enabled on the production project** (default branch created 2026-09-13). The repo has no CI or `config.toml`, but "Deploy to production" would apply `supabase/migrations` on merge. Turn it off (Batch D §10.13 O3) |
+| A7 | Backup method (**exact steps: §0a O4**) | Owner (dashboard) | **The organization is on the Free plan: no daily backups, no PITR.** Pro upgrade, or a verified manual dump in W2 (D8) |
+
+## 0b. Incident 2026-11-08: frontend live before its migrations
+
+PR #82 was merged to `main` at 22:34 UTC and Vercel deployed it to
+getvents.com (`dpl_63R6JZbs…`, `9115982`) while production still had none
+of 0201–0209. Checkout showed a 1.5% service fee but `create_pending_purchase`
+charged 5%, and the Paystack popup charged the database amount. At about
+22:52 UTC production was rolled back (Vercel Instant Rollback) to
+`dpl_By69ggy9…` (`1bef75e`, PR #85), whose checkout shows 5% and matches the
+database. While rolled back, Vercel does **not** move getvents.com to new
+`main` builds; only a **promote** does (W7).
+
+Follow-up (needs owner authorization for a read-only query): list paid
+ticket purchases created between 22:34 and 22:53 UTC; each was shown 1.5%
+and charged 5%, and any refund of the difference is the owner's decision.
+
+Fix so it cannot recur (release-recovery PR): checkout, ticket selection,
+the event page and Create Event display only the database's quote
+(`ticket_fee_quote`, 0208); checkout refuses to charge if the server's amount
+differs from the quote it showed, and cannot pay at all without a quote.
+No fee rate remains in the app code.
+
+## 0a. Owner steps in the Supabase dashboard before the window can be scheduled (O3, O4)
+
+Claude cannot do these: they are dashboard settings and a credentialed database dump. Do them in this order and record each answer in the A6/A7 rows above.
+
+### O3: stop merges from applying migrations (A6, blocker)
+
+Evidence: Supabase Branching is enabled on project `slrtjxtzhowhwhebjprv` (a default branch `main` exists, created 2026-09-13). If **Deploy to production** is on, a merge to `main` makes Supabase apply `supabase/migrations/*` to production, and they are not recorded under those versions there.
+
+1. Supabase dashboard → project **VENTS** → **Project Settings** → **Integrations** → **GitHub Integration**.
+2. **Record**:
+   - connected repository (expected `DERO2026/vents-app`, or none);
+   - production branch name;
+   - working directory;
+   - the state of **Deploy to production**, **Automatic branching** and **Supabase changes only**.
+3. Turn **Deploy to production** **off**.
+4. Turn **Automatic branching** **off**.
+5. Safest option: **disconnect** the GitHub integration entirely. Nothing in Batch D needs it: every migration is applied by hand (W4–W6c).
+6. Dashboard → **Branches** (Manage branches): confirm only the production branch (`main`) is listed. No preview or persistent branches.
+7. GitHub → account/org `DERO2026` → **Settings** → **Applications** → **Installed GitHub Apps** → **Supabase**: record whether it has access to `vents-app`. Remove that access if you disconnected in step 5.
+
+**Verify:** the integration page shows both toggles off (or "not connected"), and the next push to PR #82 shows no "Supabase" check run (today it shows only Vercel and CodeRabbit).
+
+### O4: a restorable backup (A7, blocker)
+
+The organization is on the **Free plan**: no downloadable daily backups and no point-in-time recovery. Choose one of the two below, and **also** take the W2 dump in the window either way.
+
+**(a) Pro plan.** Dashboard → Organization → **Billing** → upgrade.
+- Then **Database** → **Backups** must list a daily backup (the first can take up to 24 hours).
+- Optional: PITR (**Settings** → **Add-ons**; needs at least Small compute).
+- A daily backup can be up to a day old, so it does not replace the W2 dump.
+
+**(b) Stay on Free.** The manual dump below is the only backup. Rehearse it once **before** scheduling the window.
+
+**Manual dump (W2; rehearse once beforehand):**
+
+1. Use **PostgreSQL 17** client tools: `pg_dump --version` must say 17.x. Production runs PostgreSQL 17.6. An older `pg_dump` refuses, and an older `pg_restore` cannot read a 17 archive. Before dumping, run `bash scripts/ops/o4-preflight.sh` from the repository root (local only). It must end with `0 stop`. The drill always uses the local server on port **5432**; a 17 cluster on 5433 is not used.
+2. Dashboard → **Connect** → copy the **Session pooler** connection string (port **5432**, not the 6543 transaction pooler) and your database password.
+3. Dump (read-only for production):
+
+   ```sh
+   pg_dump "<session-pooler-connection-string>" -Fc \
+     -f "vents-W2-$(date -u +%Y%m%dT%H%MZ).dump"
+   ```
+
+   Do **not** add `--no-owner` or `--no-privileges` to the dump: they drop every GRANT and REVOKE from the archive, and a real restore would then leave every `SECURITY DEFINER` function that migrations revoke from `PUBLIC`/`anon`/`authenticated` callable by clients again. The drill applies those options at restore time instead.
+
+   Leave the password out of the connection string; `pg_dump` prompts for it. If the dump aborts with `permission denied` on a Supabase internal schema (for example `LOCK TABLE "graphql"."_type"`), do **not** run the GRANT Supabase's docs suggest, because that changes production. Re-run with `-n public -n auth -n storage` added, or with `-n public` alone if that also fails. Record which variant worked, and use the same one in W2. A `-n public` dump has no `auth.users` (no logins): record that limitation in A7.
+
+4. In the SQL editor, record the row counts immediately before **and** immediately after the dump (plain counts need no admin claim):
+
+   ```sql
+   SELECT 'organizer_wallets', count(*) FROM public.organizer_wallets
+   UNION ALL SELECT 'organizer_transactions', count(*) FROM public.organizer_transactions
+   UNION ALL SELECT 'organizer_withdrawal_requests', count(*) FROM public.organizer_withdrawal_requests
+   UNION ALL SELECT 'tickets', count(*) FROM public.tickets
+   UNION ALL SELECT 'service_bookings', count(*) FROM public.service_bookings;
+   ```
+
+**Restore drill** (on your own machine with a local **PostgreSQL 17** server on port 5432; the script restores only into a throwaway local database and refuses if a hosted database URL is in the environment). Supported:
+- **macOS:** Homebrew `postgresql@17`, started with `brew services start postgresql@17`. The scripts run as you: Homebrew's superuser is your login name, and its socket is in `/tmp`. No `sudo` is needed.
+- **Linux/WSL:** the `postgresql-17` package. The scripts run as the `postgres` OS user via `sudo`, with the socket in `/var/run/postgresql`.
+
+Connection handling for both lives in `scripts/ops/_local_pg.sh`. Every call uses the local socket with an emptied environment.
+
+```sh
+unset DATABASE_URL PGHOST PGPASSWORD PGDATABASE   # the script refuses if any is set
+git checkout claude/vents-work-earn
+bash scripts/ops/verify-backup-restore.sh /path/to/vents-W2-....dump
+```
+
+**Pass criteria:**
+- the output shows **`Public tables restored: N/N`** with no `NOT RESTORED` line, ends with **`Functions matching: 19/19`**, and the exit code is 0;
+- the printed money-table counts equal the counts from step 4. In a rehearsal outside the window, purchases are not paused, so run step 4 both before and after the dump; each count must fall between those two values. In W2 (after W1), they must be equal.
+
+Restore errors about roles, extensions or Supabase-managed schemas are expected and counted; only the public schema is checked.
+
+**19/19 holds only for a dump taken before 0201 is applied** (it checks the 19 pre-apply function bodies). Take the W2 dump after W1 and before W4. Any other result: **stop**, the window does not start.
+
+**Store** the dump encrypted (for example `gpg -c vents-W2-….dump`), outside the repository, with the P2 function capture. It contains personal data: never commit or share it.
+
+**Storage files** (avatars, event images, verification documents) are not in a database dump. If any bucket must survive a disaster, download it separately before the window.
+
+### Also dashboard or owner only (not blocking the schedule)
+
+- **Organization → Team:** keep project access limited to the owner and turn on MFA. Anyone with SQL access can act as any admin (§3a).
+- **First use of §3a** (P1): confirm in the SQL editor that the read-only admin-claim pattern returns rows.
+- **O1:** a second super admin is appointed through the app's audited role change, not the dashboard.
+- **O5:** the Paystack webhook URL is set in the **Paystack** dashboard, not Supabase.
+
+## 1. What is ready in the repository (Batch C)
+
+| Item | File | Proof |
+|---|---|---|
+| 0192 retired (moved, byte-identical, cannot be applied by filename order) | `supabase/migrations/_superseded/0192_platform_fee_accounting_foundation.sql` + `README.md` | `src/lib/migration0192Retirement.security.test.ts` (sha256 pin, no top-level 0192, no later full replacement of a 0203-patched function) |
+| 0202 drift guard: refuses unless each of the 5 replaced payout functions has its 2026-10-30 production md5 or 0202's own body; refuses a re-run over 0203 | `supabase/migrations/0202_payout_engine_safety.sql` (top) | `run-migration-order-verification.sh` "0202 drift guard" (10 checks) |
+| **0202 fix found by the guard tests:** `admin_release_payout_claim` keeps `p_reason text DEFAULT NULL`. Without it, 0202 would have **failed in production** ("cannot remove parameter defaults") | same file | the production-shaped guard test applies only with the fix |
+| Rollback snapshot of the replaced functions (17 of 19 in Batch C; **all 19 since Batch D**), each body md5-equal to production's 2026-10-30 value; refuses without confirmation or while earnings are held | `supabase/rollback/pre_0201_0203_functions.sql` (generated by `scripts/local-pg-test/generators/gen_rollback_snapshot.py`) | `run-rollback-snapshot-verification.sh` (11 checks: restores all 17 to production's exact md5, grants unchanged) |
+| Pre-0203 withdrawals: refused until two-admin authorization, then paid once under the fixed reference; one of an identical pair stays unauthorized; a duplicate can be rejected | `run-earnings-policy-verification.sh` | 7 new checks (163 total) |
+
+**Batch D:** the snapshot now covers all 19 functions:
+- `complete_organizer_payout` comes from production's 2026-10-30 capture;
+- `invite_recruiter_partnership` comes from 0197, which production applied byte for byte.
+
+P2 remains the authoritative capture. See `docs/production-readiness-batch-d.md`.
+
+## 2. Day before (T−1)
+
+1. Merge-readiness of PR #82: CI green, Draft lifted by the owner, review done. **Do not merge yet** (that is step W7).
+2. Owner confirms A6 and A7 in the Supabase dashboard.
+3. A5 is decided in part: D4 keeps both ₦20,000 requests (**do not reject either**), and D5 rejects root's ₦5,000 later through an authorized process (D5a), not in the window.
+4. **Do not pay any of the 5 pending withdrawals before the window.** Today's payout engine is the one with the double-payout defects 0202 fixes (a retry after a timeout can send a second transfer).
+5. Announce the window to organizers and providers. Checkout and payouts are paused for about **60–90 minutes**: W2's backup and restore drill takes most of it, so rehearse the dump and drill beforehand (§0a O4).
+
+## 3. Preflight (P1–P4, read-only, in the window, before any change)
+
+Run as the project admin in the Supabase SQL editor. **Stop on any mismatch.**
+
+P1. Nothing applied yet:
+
+```sql
+SELECT to_regprocedure('public.get_my_representative_rewards()') IS NULL      AS no_0201,
+       to_regprocedure('public.admin_earnings_reconciliation()') IS NULL      AS no_0202,
+       to_regprocedure('public.earnings_release_delay()') IS NULL             AS no_0203,
+       NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'tickets'
+                      AND column_name = 'qualifying_status')                  AS no_0192,
+       to_regprocedure('public.search_recruiter_invite_targets(text)') IS NULL AS no_0204,
+       to_regprocedure('public.organizer_withdrawal_requests_guard()') IS NULL AS no_0205,
+       to_regclass('public.earnings_adjustments') IS NULL                    AS no_0206,
+       to_regclass('public.withdrawal_bank_reassignments') IS NULL           AS no_0207,
+       to_regprocedure('public.ticket_fee_buyer_charge_kobo(numeric,integer,numeric,text)') IS NULL AS no_0208,
+       to_regprocedure('public.claim_representative_referral(text)') IS NULL AS no_0209;
+-- all ten must be true
+```
+
+P2. Capture the rollback snapshot of all 19 replaced functions (save the output **outside** the database; it is the authoritative rollback source):
+
+```sql
+SELECT p.oid::regprocedure::text AS fn, md5(p.prosrc) AS md5, pg_get_functiondef(p.oid) || ';' AS definition
+FROM pg_proc p
+WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN (
+  'admin_cancel_processing_payout','admin_claim_payout_for_processing','admin_mark_payout_processing',
+  'admin_release_payout_claim','approve_admin_action','cancel_service_booking','complete_organizer_payout',
+  'confirm_ticket_payment','confirm_ticket_payment_via_wallet','create_pending_purchase','credit_organizer_wallet',
+  'credit_provider_wallet_for_booking','finalize_service_booking_refund','finalize_ticket_refund','get_event_analytics',
+  'invite_recruiter_partnership','refund_ticket','request_admin_action','request_organizer_payout')
+ORDER BY 1;
+-- expect 19 rows
+```
+
+P3. No drift. Every md5 from P2 must equal the expected value below, or the migrations refuse. For the 0202 five, its own guard enforces it.
+
+| Function | Expected md5 |
+|---|---|
+| create_pending_purchase | e10d13bed6fe2e53743c1fb5bca6cd57 |
+| confirm_ticket_payment | 56d671416e12041eefe0856cec303b75 |
+| confirm_ticket_payment_via_wallet | 99e7184e21cd3acee3739ebd7d260464 |
+| refund_ticket | 6ad935dc8a027533a1481208045fe861 |
+| finalize_ticket_refund | 0006acfb1f30da94029367dbc21a6b98 |
+| cancel_service_booking | 80d930ef3b259cc982a91ec4895b732c |
+| finalize_service_booking_refund | e2c6c2979960fa5477da0de0f49fefb7 |
+| get_event_analytics | 1657aa6186eb1286981f5fe258d84654 |
+| credit_organizer_wallet | 9b889f4696ceb56f990cdf582c40c679 |
+| credit_provider_wallet_for_booking | 2f0724e6b3de78ddd97b27af3a1188c7 |
+| request_organizer_payout | dd12a3e3b54b5aa620404e8b928527f4 |
+| admin_claim_payout_for_processing | 89675182b62750b8631eb2de1d71211e |
+| admin_mark_payout_processing | bf84ac786144b3ea3796fbc09f4bbec6 |
+| admin_release_payout_claim | 33dd4783b1bb7c4333b70bf32c671e02 |
+| admin_cancel_processing_payout | cea18083231d281ba2fee58e7610a774 |
+| complete_organizer_payout | 563304a9394f6fb5148b2d458ce945f6 |
+| approve_admin_action | 24d77efd072158b729009014f5c808e3 |
+| request_admin_action | a07cbf3e5d1cd62741765a325c5813ae |
+| invite_recruiter_partnership | 32fbfa3f13d6f5ef6320c007b0f87896 (by provenance: 0197 was applied byte for byte; no live md5 was captured. A mismatch means the body was edited outside migrations: **stop**, because the snapshot and the W2 drill's 19/19 both assume this value) |
+
+P4. Data the new constraints must accept (all must be 0):
+
+```sql
+SELECT
+ (SELECT count(*) FROM public.organizer_transactions WHERE type NOT IN ('credit','debit','payout','cancelled_payout_refund','refund')) AS odd_ledger_types,
+ (SELECT count(*) FROM (SELECT withdrawal_request_id FROM public.organizer_transactions WHERE type = 'payout' AND withdrawal_request_id IS NOT NULL GROUP BY 1 HAVING count(*) > 1) d) AS dup_payout_rows,
+ (SELECT count(*) FROM (SELECT paystack_reference FROM public.organizer_withdrawal_requests WHERE paystack_reference IS NOT NULL GROUP BY 1 HAVING count(*) > 1) d) AS dup_refs,
+ (SELECT count(*) FROM public.organizer_wallets WHERE balance_kobo < 0 OR pending_kobo < 0) AS negative_wallets,
+ (SELECT count(*) FROM public.organizer_withdrawal_requests WHERE status = 'processing') AS in_flight_payouts;
+```
+
+`in_flight_payouts` must be 0. A transfer in flight while payout functions are replaced must first finish, through the webhook or Reconcile.
+
+## 3a. Running admin-only checks in the SQL editor (read-only)
+
+Several checks below call functions that answer only to an admin:
+- `admin_earnings_reconciliation()`, `admin_payout_integrity_report()`, `admin_list_payout_exceptions()`;
+- user-scoped ones such as `get_earnings_holds()`.
+
+In the Supabase SQL editor `auth.uid()` is NULL, so they return **no rows** (the reconciliation filters with `WHERE is_admin()`) or raise "Admin access required". **An empty reconciliation in the SQL editor does not mean "no gaps".** Run them like this, always inside a **read-only** transaction:
+
+```sql
+BEGIN READ ONLY;
+SELECT set_config('request.jwt.claims',
+                  json_build_object('sub', '<a super admin user id>', 'role', 'authenticated')::text, true);
+SELECT * FROM public.admin_earnings_reconciliation();
+-- SELECT issue, count(*) FROM public.admin_payout_integrity_report() GROUP BY 1;
+ROLLBACK;
+```
+
+- `READ ONLY` makes any write fail, and `ROLLBACK` discards the setting. Never use this pattern to file or approve an admin action: that would impersonate an admin and defeat the two-person rule.
+- This is standard Supabase behaviour (`auth.uid()` reads the `sub` claim). It is **not yet verified against production**; check it the first time in P1.
+
+**Known limitation:** anyone with SQL access to the production project can set these claims and act as any admin. Two-admin control protects against app users and individual admins, not against database owners. Keep dashboard and SQL access limited to the owner, and treat it as part of D6/O1.
+
+## 4. Window (W1–W9)
+
+| Step | Action | Verify (read-only) | Stop if |
+|---|---|---|---|
+| W1 | Admin → System: set `disable_purchases` and `disable_payouts` (A3) | `SELECT disable_purchases, disable_payouts FROM public.app_config;` = true/true | not both true |
+| W2 | **First run P2 (below) and save its output**, then take the backup (A7/D8). **On the Free plan there is no dashboard backup or PITR:** take `pg_dump -Fc` (or `supabase db dump` for schema and data) through the Session pooler URL, run `scripts/ops/verify-backup-restore.sh <dump>` locally, and store the dump encrypted outside the repository. On Pro: also record the latest daily backup time. Store the P2 output next to it | drill prints `Functions matching: 19/19`, plus money-table counts that match P4 | no verified dump → stop |
+| W3 | P1–P4 | as above | any mismatch |
+| W4 | In a session with `SET lock_timeout = '5s';`, apply **0201** (one transaction; SQL editor or `psql -1 -v ON_ERROR_STOP=1 -f`; **never `supabase db push`**) | `get_my_representative_rewards()` exists; `SELECT count(*) FROM public.representative_attributions;` = 2; `SELECT payouts_enabled, legacy_commission_reconciled FROM public.earn_settings;` = false/false | error → section 7 row R1 |
+| W5 | Apply **0202** (do **not** set `vents.migration_local_test`) | `SELECT * FROM public.admin_earnings_reconciliation();` **run as in §3a** (otherwise it returns no rows) lists only the 2 known gaps; `SELECT count(*) FROM public.organizer_withdrawal_requests r WHERE r.status IN ('cancelled','failed','rejected') AND r.transfer_code IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.organizer_transactions t WHERE t.withdrawal_request_id = r.id AND t.type = 'payout');` = **4** (the four paid-but-cancelled ₦100 transfers; any other number: stop); `SELECT count(*) FROM public.payout_exceptions;` = 0; `SELECT count(*) FROM pg_trigger WHERE tgname = 'organizer_withdrawal_transfer_guard';` = 1; `SELECT pg_get_constraintdef(oid) LIKE '%payout_reversal%' FROM pg_constraint WHERE conname = 'organizer_transactions_type_check';` = true | error (including the drift guard) → R1 |
+| W6 | Apply **0203** | `SELECT count(*) FROM pg_proc WHERE prosrc LIKE '%[0203]%';` ≥ 14; `SELECT public.earnings_release_delay();` = 48:00:00; `SELECT column_default FROM information_schema.columns WHERE table_name='tickets' AND column_name='fee_model';` mentions `v2_4_5` | error → R1 |
+| W6a | Apply **0205** (`0205_payout_cancelled_transfer_safety.sql`, its own transaction; the version rebuilt on this branch: it has no md5 dependency and does not touch `complete_organizer_payout`) | `SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.organizer_withdrawal_requests'::regclass AND NOT tgisinternal AND tgname LIKE 'organizer_withdrawal%';` = `organizer_withdrawal_requests_guard,organizer_withdrawal_requests_no_delete` (0202's `organizer_withdrawal_transfer_guard` is gone). As in §3a (read-only, admin claim; no app screen calls it yet): `SELECT issue, count(*) FROM public.admin_payout_integrity_report() GROUP BY 1;` shows `transfer_on_cancelled_request_funds_not_returned` = 4 | error (including its prerequisite check) → R1. 0201–0203 without 0205 are still safe (0202 has its own guard), so a failed W6a does not require rolling back W4–W6 |
+| W6b | Apply **0206** (`0206_earnings_adjustment.sql`, its own transaction). It adds the audited two-admin earnings adjustment and moves no money | `SELECT to_regclass('public.earnings_adjustments') IS NOT NULL, position('execute_earnings_adjustment' IN pg_get_functiondef('public.approve_admin_action(uuid)'::regprocedure)) > 0, pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'organizer_transactions_type_check')) LIKE '%adjustment_debit%';` = true/true/true; `SELECT count(*) FROM public.earnings_adjustments;` = 0 | error → R1; 0201–0205 stay valid without it. **No adjustment is filed in the window:** each correction (D2, D10) is a separate, owner-approved, two-admin action afterwards |
+| W6c | Apply **0207** (`0207_withdrawal_bank_reassignment.sql`, its own transaction). It adds the audited two-admin withdrawal bank-account reassignment (D4a) and a guard that lets a withdrawal's destination change only through it. It moves no money and changes no withdrawal | `SELECT to_regclass('public.withdrawal_bank_reassignments') IS NOT NULL, EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'organizer_withdrawal_destination_guard'), position('execute_withdrawal_bank_reassignment' IN pg_get_functiondef('public.approve_admin_action(uuid)'::regprocedure)) > 0;` = true/true/true; `SELECT count(*) FROM public.withdrawal_bank_reassignments;` = 0 | error → R1; 0201–0206 stay valid without it. **No reassignment is filed in the window** |
+| W6d | Apply **0208** (`0208_ticket_fee_1_5_3_5.sql`, its own transaction). Owner instruction 2026-11-08: attendee service fee **1.5%**, organizer platform deduction **3.5%** (owner, final model 2026-11-09: both are VENTS platform fees; there is no commission), per ticket in kobo times the quantity (fee model `v3_15_35`). It replaces 0203's 4% + 5% before any ticket is sold on it (purchases are paused since W1) and **removes the 4% + 5% model entirely**: it refuses to run if any ticket or purchase used `v2_4_5`, then allows only `legacy_5` and `v3_15_35`. It changes no recorded amount or balance | `SELECT column_default FROM information_schema.columns WHERE table_name='tickets' AND column_name='fee_model';` mentions `v3_15_35`; `SELECT public.ticket_fee_buyer_charge_kobo(10000, 1, 0, 'v3_15_35'), public.ticket_fee_organizer_deduction_kobo(1000000, 'v3_15_35');` = 1015000 / 35000; `SELECT count(*) FROM pg_proc WHERE prosrc LIKE '%[0208]%';` = 6; `SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prosrc LIKE '%''v2_4_5''%';` = 0 | error (including "tickets or purchases exist on the unapproved 4% + 5% model": stop, purchases were not paused) → R1d; 0201–0207 stay valid without it (sales would then be on 4% + 5%: keep `disable_purchases` set until 0208 is in) |
+| W6e | Apply **0209** (`0209_representative_referral_links.sql`, its own transaction). Owner instruction 2026-11-08: each active representative gets an organizer referral code and link; a user who registers through it is attributed once (reusing 0201's attribution, through an accepted partnership marked `referral_link` with **no** commission split (NULL)); free events never qualify for a reward; the Representative badge reads the active status. It moves no money and changes no reward amount | `SELECT to_regprocedure('public.claim_representative_referral(text)') IS NOT NULL, to_regprocedure('public.get_representative_badges(uuid[])') IS NOT NULL, (SELECT count(*) FROM pg_proc WHERE prosrc LIKE '%[0209]%');` = true/true/2; `SELECT count(*) FROM public.recruiter_partnerships WHERE source = 'referral_link';` = 0 | error → R1e; 0201–0208 stay valid without it |
+| W6f | Apply **0210** (`0210_referral_connections.sql`, its own transaction). Owner decision 2026-11-09: the referral is visible from both sides -- the organizer sees who invited them before registering (`get_representative_referral_preview`, public, name/username/avatar of an active representative only) and their own connection afterwards (`get_my_representative_connection`); and no commission split can ever be recorded again (trigger `recruiter_partnerships_no_commission`; the values recorded under the retired 10% programme are kept unchanged as history). It moves no money and changes no reward rule | `SELECT to_regprocedure('public.get_representative_referral_preview(text)') IS NOT NULL, to_regprocedure('public.get_my_representative_connection()') IS NOT NULL, EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'recruiter_partnerships_no_commission');` = true/true/true; `SELECT count(*) FROM public.recruiter_partnerships WHERE commission_split_bps IS NOT NULL;` equals the count recorded in P4 before the window (history unchanged) | error → R1f; 0201–0209 stay valid without it |
+| W7 | **Promote** the newest `main` production deployment in Vercel (A2): Deployments → the latest `main` build → Promote (this also undoes the rollback). Wait for it to serve getvents.com | production `/` serves that build; checkout shows "Attendee service fee (1.5%)" from `ticket_fee_quote` and the event page bar shows the selected ticket ("Guys × 1 · Pay ₦…"); Create Event shows the 3.5% organizer platform deduction notice; Admin → Payouts shows the authorize step | build fails or a screen disagrees with the database → Instant Rollback to `dpl_By69ggy9…` (R2) |
+| W8 | Clear `disable_purchases` only. One ₦100 live purchase by the owner (PAY-4) | charged ₦101.50; the organizer's `on_hold_kobo` rises by ₦96.50; `get_earnings_holds()` (run as in §3a with the organizer's id as `sub`) shows a 48 h release | any other amount → set `disable_purchases` again, R3 |
+| W9 | **First** confirm D11: the Paystack LIVE webhook URL is the production `/api/webhook/paystack` (Paystack dashboard → Settings → API Keys & Webhooks). Then clear `disable_payouts`. Watch Sentry and webhook logs for 30 minutes. The first real payout must reach `completed` from the webhook alone (no Reconcile) | no new errors; first payout completed by webhook | webhook URL not confirmed → keep `disable_payouts`; errors → R3 |
+| W10 | **After** the window and only once W9 is green: apply **0204** alone. (PR #83 was merged into this branch on 2026-11-08, `9e0276b`, so its frontend ships with W7; until 0204 is applied its representative search falls back to the old user search, `src/lib/recruiterSearch.ts`.) (`0204_search_recruiter_invite_targets.sql`, its own transaction). 0204 touches no payout or earnings object, so it is not part of W4–W6c | `SELECT pg_get_functiondef('public.search_recruiter_invite_targets(text)'::regprocedure) IS NOT NULL;` | error → drop the function; the app falls back to the old search |
+
+## 5. Go / no-go after W9
+
+Go when all hold:
+- W4–W8 verified;
+- `admin_earnings_reconciliation()` (run as in §3a) shows nothing new;
+- Admin → Payouts → **Check payout exceptions** reports exactly the four known requests as `paid_not_recorded` and nothing else (report only; resolve them later per Batch D §9.5, never by editing the rows);
+- the test purchase settled as expected;
+- no Sentry errors from `/api/webhook/paystack` or `/api/wallet/*`.
+
+## 6. The five pending withdrawals (A5)
+
+The full register is in `docs/production-readiness-batch-d.md` §4 (evidence: 2026-10-30 11:41 UTC):
+- 4 requests (₦44,100) from wallet `91b0afb4`, including the identical ₦20,000 pair (2026-09-24, 10 s apart);
+- 1 request (₦5,000) from the root admin's own wallet.
+
+Wallet `91b0afb4` is the one with the ₦32,150 ledger gap, but its pending ₦44,100 is within the ₦312,750 its ledger explains (§2).
+
+What 0203 requires for each one (enforced in SQL; proven locally):
+1. Admin A requests `authorize_withdrawal` naming the request and the exact amount reviewed.
+2. A **different super admin** approves it. Neither may be the organizer who asked for the money.
+3. The organizer's bank account must still be active, with the recipient code captured at authorization. A changed or deactivated account blocks the claim until it is authorized again.
+4. The claim then attaches the fixed reference `payout_<request id without dashes>`, so a retry can never send a second transfer.
+
+Recommendation:
+- **Before the window:** contact the organizer about the identical ₦20,000 pair. If it is a duplicate, reject one (a single admin can; it returns ₦20,000 to their available balance and moves no money out of VENTS). Do not pay anything on the old engine.
+- **After the window, for each remaining request:**
+  1. Run `admin_earnings_reconciliation()` (as in §3a) and confirm the organizer's wallet has **no ledger gap**. If it is one of the two gap wallets, resolve the gap first with an audited adjustment; never pay out money the ledger cannot explain.
+  2. Confirm the bank account with the organizer (the requests are about 2 months old).
+  3. Then authorize with two admins and pay.
+
+## 6a. Outstanding owner decisions (not made here)
+
+Each needs the owner's answer, recorded here, before the step in the
+"Needed before" column. Batch D §7 has the options; nothing below has
+been decided on the owner's behalf.
+
+| # | Decision | Needed before | Owner's answer |
+|---|---|---|---|
+| D4 | The two ₦20,000 requests (`1abe8e53`, `a0e389c9`) | — | **Decided 2026-11-01: both intended (₦40,000); keep both; normal verification and two-admin approval** |
+| D4a | All four `91b0afb4` pending requests point at **deactivated** bank accounts. **Mechanism built as 0207 (T3; not applied).** Remaining: the organizer adds and verifies a new account; the owner confirms each payee (O2), including the ₦40,000 pair's third-party payee "C.J.N."; then reassign (two admins), authorize (two admins), pay | paying any of them | _organizer + owner pending_ |
+| D5 | Root admin's own ₦5,000 (`e7ca4751`) | — | **Decided 2026-11-01: reject later through an authorized process; not now; no bypass of two-admin approval** |
+| D5a | Who rejects it: today only root can (the single super admin), which is a self-action. Second super admin (recommended) / written owner exception (Batch D §10.2) | executing D5 | _pending_ |
+| D6 | Requester and approver per withdrawal. **Case A confirmed:** root is the only super admin; two sub-admins. For `91b0afb4`: a sub-admin requests, root approves, a sub-admin claims. A second super admin is needed for D5 and for any future root withdrawal (Batch D §10.3) | after the window, before any payout | _names pending_ |
+| D3 | `earnings_adjustment`: **built as 0206 (2026-11-02, at the owner's instruction); not applied** (Batch D §13) | any wallet or ledger correction; D10 | Each actual correction still needs its own owner decision (D2, D10), then two admins |
+| D7 | **Branching is enabled on the production project.** Confirm "Deploy to production" and "Automatic branching" are **off** (owner action O3, Batch D §10.5) | **merging PR #82 (blocker)** | **Done (owner-reported 2026-11-06): O3 off** |
+| D8 | **The organization is on the Free plan: no daily backups, no PITR.** Choose O4 (a) Pro before the window, or (b) a manual dump plus restore drill in W2 (Batch D §10.6) | **the window (blocker)** | _manual-dump route (b) in progress; local toolchain validated 2026-11-06; production rehearsal pending_ |
+| D10 | The four paid-but-cancelled transfers: process designed (Batch D §10.7). Choose option a/b/c and an approver who is not the payee's account holder | closing PAY-6 | _pending_ |
+| D11 | Webhook delivery **evidenced** (two payouts completed by webhook 1.4–1.5 s after initiation, 2026-10-17 and 10-27). Record the Live Webhook URL (O5) | W9 | _URL pending_ |
+| D12 | The ₦400 that left `pending_kobo`: **not attributable from available records**; needs the InsForge cutover export (O8) | D10 (c), D2 | _evidence pending_ |
+| D13 | `91b0afb4`: **strong evidence of an internal QA/test account**, but with a ₦300,000 real-payment credit and third-party payees. Owner confirms (O7) | D2, D10, D4a | _pending_ |
+
+## 7. Rollback and recovery
+
+| Row | Situation | Action |
+|---|---|---|
+| R1 | A migration fails while applying | It rolls back by itself (one transaction). Stop. Leave the migrations already applied in place: after 0201 only, nothing user-facing changes; after 0201+0202 the old frontend works and payouts are safer. Clear the kill switches. Investigate before another attempt; regenerate the migration if its drift guard refused |
+| R1a | Undo 0205 only (**only after R1b**: refused while 0206 is installed, because 0206 depends on 0205) | One transaction: `SET vents.rollback_confirm = 'undo-0205';` then `supabase/rollback/undo_0205.sql`. It drops 0205's two triggers and three functions and **restores 0202's `organizer_withdrawal_transfer_guard` verbatim**, so the table is never left unguarded. It moves no money (verified: `run-payout-state-machine-verification.sh`). An R3 full restore leaves 0205's triggers in place, which is safe (they only refuse unsafe changes) |
+| R1b | Undo 0206 only | One transaction: `SET vents.rollback_confirm = 'undo-0206';` then `supabase/rollback/undo_0206.sql`. **Refused once any adjustment has been executed** (those rows are financial history; go forward with a new approved adjustment instead) or while an `earnings_adjustment` request is pending. It unwires the maker-checker and the reconciliation, drops 0206's objects and restores the 0203 ledger types. It moves no money (verified: `run-earnings-adjustment-verification.sh`). An R3 full restore puts back the pre-0201 `approve_admin_action` / `request_admin_action`, so no new adjustment can be filed after R3 |
+| R1c | Undo 0207 only | One transaction: `SET vents.rollback_confirm = 'undo-0207';` then `supabase/rollback/undo_0207.sql`. **Refused once any withdrawal has been reassigned** (the record is the audit trail of where money was sent) or while a reassignment request is pending. It unwires only 0207 (0203's and 0206's wiring stay), drops the destination guard and 0207's objects, and moves no money (verified: `run-withdrawal-reassignment-verification.sh`) |
+| R1f | Undo 0210 only | One transaction: `SET vents.rollback_confirm = 'undo-0210';` then `supabase/rollback/undo_0210.sql`. Drops only 0210's two functions and the commission-split trigger; touches no row. Proven by `run-representative-referral-verification.sh` and `run-release-stack-verification.sh` |
+| R1e | Undo 0209 only | One transaction: `SET vents.rollback_confirm = 'undo-0209';` then `supabase/rollback/undo_0209.sql`. **Refused once any organizer was attributed through a referral link.** Proven by `run-representative-referral-verification.sh` |
+| R1d | Undo 0208 only (back to 0203's 4% + 5%) | One transaction: `SET vents.rollback_confirm = 'undo-0208';` then `supabase/rollback/undo_0208.sql`. **Refused once any purchase was made on the 1.5% + 3.5% model.** Proven by `run-fee-model-0208-verification.sh` (round trip to the exact 0203 state) |
+| R1-order | Undoing more than one of 0205–0210 | Always reverse apply order: **R1f (0210) → R1e (0209) → R1d (0208) → R1c (0207) → R1b (0206) → R1a (0205)**. R1b and R1c refuse once their action has been used (that is financial history); then roll forward instead. R1a refuses while 0206 exists (verified: `run-earnings-adjustment-verification.sh`) |
+| R2 | 0203 applied, frontend deploy fails | Keep purchases and payouts paused. Fix and redeploy. Do **not** reopen purchases on the old frontend (it shows 5% while 0203 charges 4%) |
+| R3 | Defect found after deploy | **Prefer rolling forward** with a new migration. If a full rollback is unavoidable, do the steps in order: (1) pause purchases and payouts; (2) release every held amount to `balance_kobo` with a ledger and audit row per hold (`release_matured_earnings()` only releases matured holds, so anything not yet matured needs an approved, audited one-off); (3) restore the functions in one transaction: `SET vents.rollback_confirm = 'restore-pre-0201-0203';` then `supabase/rollback/pre_0201_0203_functions.sql`, which restores **all 19** functions, `complete_organizer_payout` and `invite_recruiter_partnership` included (the file refuses while anything is held, and without the setting). The P2 output is the fallback only if a P3 md5 differed; (4) Vercel instant rollback to deployment `dpl_8L1sqPf1u2FSggsC7DYYUzUqjAwa` (`5612ee0`), **only together with** step 3; (5) reconcile; (6) reopen |
+| R3a | Note on R3 | The restore keeps 0202's `payout_exceptions` table and the `organizer_withdrawal_transfer_guard` trigger (verified by `run-rollback-snapshot-verification.sh`). Leave them: the trigger only refuses unsafe changes (cancelling, rejecting or re-queueing a request whose transfer exists; changing its code or reference). With it in place, the pre-0202 `admin_cancel_processing_payout` is refused for such a request, which is the safe outcome. The restored pre-0202 `complete_organizer_payout` again **swallows a late success on a cancelled request**: after any rollback, run the exceptions check daily until rolled forward |
+| R4 | Data damage | **Free plan:** restore the W2 dump into the project (or a new project), since no PITR exists. **Pro with PITR:** point-in-time restore to W2. Loses every purchase, payout and booking since; reconcile each against the Paystack dashboard before reopening |
+
+Never drop `earnings_holds`, `earnings_recoveries`, `earn_profit_ledger`
+or `earn_audit_log`. They are the record of what happened.
+
+## 8. Risks: status after Batch D
+
+| # | Risk | Status |
+|---|---|---|
+| 1 | `complete_organizer_payout` drift | **Closed.** Production's body (captured 2026-10-30, md5 matches) is in `supabase/rollback/sources/`; 0202's rewrite was diffed against it: only the documented fixes |
+| 2 | `invite_recruiter_partnership` without a live md5 | **Mitigated.** Production applied 0197 byte for byte (migration-history md5). P2 still compares the live body |
+| 3 | Two-admin capacity | **Open, owner.** 1 `admin` + 1 `sub-admin` on record. If root is that `admin`, root's own ₦5,000 cannot be approved (decision D5) |
+| 4 | Ledger gaps | **Bounded, not closed.** `91b0afb4`'s pending ₦44,100 is within its ledger-explained ₦312,750. G1–G3 read (Batch D §9.7): `dfca505f`'s ₦1,000 is one spurious ledger credit (`64e7e2e8`); `91b0afb4`'s ₦32,150 = +₦36,450 unexplained earned + ₦200 − ₦200 pre-July-9 payouts − ₦4,300 unexplained. The two unexplained parts need pre-cutover / pre-2026-09-27 backups or the people involved. Decisions D2/D3 |
+| 5 | Database change and frontend release in one window | **Accepted design.** Mitigated by the pause and the stop conditions |
+| 6 | Production facts from 2026-10-30 | **Open by design.** P1–P4 re-check in the window |
+| 7 | Supabase GitHub integration | **Open, owner.** Steps in Batch D §5 |
+| 8 | Backups | **Open, owner.** Requirements B1–B8; restore drill script ready |
+| 9 | Paid-but-cancelled payouts (2026-07 incident) | **Root cause found; recurrence prevented by 0202 + 0205; records unresolved.** 0202 handles late success safely. 0205 (PR #84's rules, rebuilt here) makes the sweep statement and any raw status, amount, owner, reference or code rewrite fail, and blocks deleting payout history. The four records await D10/D12 and the D3 adjustment action (0206) |
+| 10 | Production payout code before the window | **Open until W5/W7.** On today's code an ambiguous Paystack response re-queues the request and a retry uses a new reference (possible double transfer); `admin_cancel_processing_payout` returns money to the balance even when a transfer exists. Do not pay any withdrawal before the window |
+| 11 | Webhook delivery | **Mostly closed (D11).** Two payouts completed by webhook in 1.4–1.5 s (2026-10-17, 10-27). The URL record is still pending (O5) |
+| 12 | No managed backups | **Open, blocker (D8).** Free plan: no daily backups, no PITR. A manual dump plus restore drill is the minimum before the window |
+| 13 | Automatic migrations on merge | **Open, blocker (D7).** Branching is enabled on the production project; confirm "Deploy to production" is off |
+| 14 | Pending withdrawals unpayable | **Mechanism built (T3, 0207); waiting on the organizer and the owner (D4a).** 0207 moves a pending, unauthorized, never-sent request to another active, verified account of the same organizer, with two admins. **All of `91b0afb4`'s accounts are inactive today** (read-only 2026-11-01), so the organizer must first add and verify a new account. Then: reassign (two admins), then authorize (two admins), then pay |
+| 15 | Single super admin | **Open (D5a/D6).** Root is the only approver of every withdrawal and adjustment; a second super admin is advised |
+| 16 | Two parallel incident fixes (#82 and #84) | **Closed (T1, Batch D §12).** #84's useful parts are ported into #82; #84 should be closed |
