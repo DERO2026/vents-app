@@ -25,7 +25,36 @@ let loadPromise: Promise<void> | null = null;
 // loadGoogleMaps() has been called.
 let rejectOnAuthFailure: ((err: Error) => void) | null = null;
 const authFailure = new Promise<never>((_, reject) => { rejectOnAuthFailure = reject; });
-(window as any).gm_authFailure = () => {
+authFailure.catch(() => {}); // observed through loadGoogleMaps / onGoogleMapsAuthFailure
+// The race in loadGoogleMaps() only catches a key rejection that arrives
+// BEFORE the libraries resolve. In practice Google usually reports it
+// after (the bootstrap resolves, then the first Maps/Places request is
+// refused), when every map already shows "ready" and Google's grey error
+// box. Components subscribe here so a late rejection still switches them
+// to their "type the address manually" fallback.
+let authFailed = false;
+const authFailureListeners = new Set<() => void>();
+export function isGoogleMapsAuthFailed(): boolean {
+  return authFailed;
+}
+/** Calls `listener` when the API key is rejected (immediately if it already was). Returns an unsubscribe. */
+export function onGoogleMapsAuthFailure(listener: () => void): () => void {
+  if (authFailed) { listener(); return () => {}; }
+  authFailureListeners.add(listener);
+  return () => { authFailureListeners.delete(listener); };
+}
+// Every way Google can refuse this app ends here: gm_authFailure (key /
+// referrer rejected) and watchForGoogleMapsErrorUi (Google's own error box,
+// which also covers project-level refusals such as billing not enabled or
+// an API not enabled -- those never call gm_authFailure). Each map then
+// switches to its manual-entry / no-map fallback instead of Google's grey box.
+function failGoogleMaps(reason: string) {
+  if (authFailed) return;
+  authFailed = true;
+  for (const l of Array.from(authFailureListeners)) {
+    try { l(); } catch { /* a listener must not stop the others */ }
+  }
+  authFailureListeners.clear();
   // This is the one piece of diagnostic infrastructure that actually
   // matters here: this failure only reproduces on a real device we don't
   // have physical/DevTools access to. Reporting it to Sentry (already
@@ -33,19 +62,59 @@ const authFailure = new Promise<never>((_, reject) => { rejectOnAuthFailure = re
   // of guessing at Google Cloud Console settings blind. The origin/href are
   // exactly what determines whether the API key's referrer allowlist
   // matches, so they're the first thing to check in the captured event.
-  const context = { origin: window.location.origin, href: window.location.href, userAgent: navigator.userAgent };
-  console.error('Google Maps: authentication failed — check the API key\'s HTTP referrer restrictions cover this app\'s actual origin.', context);
+  const context = { reason, origin: window.location.origin, href: window.location.href, userAgent: navigator.userAgent };
+  console.error('Google Maps unavailable (' + reason + '): check the API key restrictions, enabled APIs and billing for this key\'s Google Cloud project.', context);
   import('./sentry').then(({ Sentry }) => {
-    Sentry.captureMessage('Google Maps gm_authFailure — API key rejected this origin', {
+    Sentry.captureMessage('Google Maps unavailable: ' + reason, {
       level: 'error',
       extra: context,
     });
   }).catch(() => {});
-  rejectOnAuthFailure?.(new Error('Google Maps authentication failed — this app\'s origin is not allowed by the API key\'s referrer restrictions.'));
-};
+  rejectOnAuthFailure?.(new Error('Google Maps is unavailable (' + reason + ').'));
+}
+(window as any).gm_authFailure = () => failGoogleMaps('gm_authFailure: API key rejected for this origin');
+
+// Google paints its own error UI into the map element when it refuses to
+// serve the map ("This page can't load Google Maps correctly", the
+// .gm-err-container box). That happens for project-level problems --
+// billing not active, Maps JavaScript API not enabled, key not allowed to
+// use it -- which do NOT call gm_authFailure, so without this the app keeps
+// showing Google's grey box. Watch the map element and fail over as soon as
+// that UI appears. Returns a stop function.
+export const GOOGLE_MAPS_ERROR_SELECTOR = '.gm-err-container, .gm-err-message, .gm-err-title, .dismissButton';
+const GOOGLE_MAPS_ERROR_TEXT = /can.t load Google Maps correctly|Oops! Something went wrong/i;
+export function hasGoogleMapsErrorUi(el: Element | null | undefined): boolean {
+  if (!el) return false;
+  return !!el.querySelector(GOOGLE_MAPS_ERROR_SELECTOR) || GOOGLE_MAPS_ERROR_TEXT.test(el.textContent || '');
+}
+export function watchForGoogleMapsErrorUi(el: HTMLElement | null | undefined): () => void {
+  if (!el || typeof MutationObserver === 'undefined') return () => {};
+  const check = () => {
+    if (hasGoogleMapsErrorUi(el)) {
+      observer.disconnect();
+      failGoogleMaps("Google's map error UI (billing, enabled APIs or key restrictions)");
+    }
+  };
+  const observer = new MutationObserver(check);
+  observer.observe(el, { childList: true, subtree: true, characterData: true });
+  check();
+  return () => observer.disconnect();
+}
+
+/** For tests only. */
+export function __resetGoogleMapsFailureForTests(): void { authFailed = false; }
+
+// A script that never loads and never errors (a captive portal, a stalled
+// connection, a blocked request in some WebViews) used to leave
+// LocationPicker's input disabled on 'loading' forever, so the address
+// could not even be typed by hand.
+export const GOOGLE_MAPS_LOAD_TIMEOUT_MS = 20000;
 
 export function loadGoogleMaps(): Promise<void> {
   if (loadPromise) return loadPromise;
+  if (authFailed) {
+    return Promise.reject(new Error('Google Maps authentication failed — this app\'s origin is not allowed by the API key\'s referrer restrictions.'));
+  }
 
   const apiKey = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
@@ -97,6 +166,9 @@ export function loadGoogleMaps(): Promise<void> {
       ]);
     })(),
     authFailure,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Google Maps took too long to load.')), GOOGLE_MAPS_LOAD_TIMEOUT_MS);
+    }),
   ]);
 
   // A failure (flaky network, ad-blocker, transient CORS hiccup) must not

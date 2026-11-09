@@ -88,6 +88,14 @@ export async function completeServiceBooking(bookingId: string): Promise<{ statu
   return data as { status: string };
 }
 
+export { bookingScheduledStart, bookingDisputeDeadline, BOOKING_DISPUTE_WINDOW_MS } from './bookingSettlement';
+
+export async function disputeServiceBooking(bookingId: string, reason: string): Promise<{ status: string }> {
+  const { data, error } = await supabase.rpc('dispute_service_booking' as any, { p_booking_id: bookingId, p_reason: reason });
+  if (error) throw error;
+  return (data as any) || { status: 'open' };
+}
+
 export interface ServiceBookingItemRow {
   id: string;
   serviceName: string;
@@ -114,6 +122,11 @@ export interface ServiceBookingRow {
   fee: number;
   total: number;
   createdAt: string;
+  // 0203: when the booking was marked completed, and the earliest time the
+  // service could have happened (its scheduled start; never moves earlier).
+  // Absent on a database without 0203.
+  completedAt?: string | null;
+  serviceStartFloorAt?: string | null;
   items: ServiceBookingItemRow[];
   // Populated by fetchMyServiceBookings via a second query against
   // provider_reviews (own reviewer_id, RLS-scoped) -- null until that
@@ -139,6 +152,8 @@ function mapBookingRow(row: any): ServiceBookingRow {
     fee: Number(row.fee_kobo) / 100,
     total: Number(row.total_kobo) / 100,
     createdAt: row.created_at,
+    completedAt: row.completed_at ?? null,
+    serviceStartFloorAt: row.service_start_floor_at ?? null,
     items: (row.service_booking_items || []).map((i: any) => ({
       id: i.id,
       serviceName: i.service_name,

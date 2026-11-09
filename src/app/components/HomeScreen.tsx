@@ -1,4 +1,5 @@
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
@@ -670,7 +671,8 @@ function HorizontalCardSkeleton() {
 }
 
 // ── Featured Carousel ─────────────────────────────────────────────
-function FeaturedCarousel({
+// Exported for the QA harness (qa-harness/main.tsx 'featured-card') and tests.
+export function FeaturedCarousel({
   events, currentIndex, onIndexChange, onEventPress, isSaved, onToggleSave,
 }: {
   events: Event[];
@@ -767,8 +769,12 @@ function FeaturedCarousel({
             showDots={false}
             style={{ width: '100%', height: '100%' }}
           />
-          {/* Solid translucent band behind the bottom text */}
-          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '55%', background: 'rgba(0,0,0,0.75)' }} />
+          {/* Bottom-only scrim behind the text. It replaces a flat
+              rgba(0,0,0,0.75) band over the lower 55% of the card that greyed
+              out half of every flyer. The flyer stays fully visible above;
+              the scrim starts transparent and only darkens (VENTS background
+              #060A14) behind the title, date, place and CTA. */}
+          <div data-testid="featured-scrim" aria-hidden style={flyerScrim(40)} />
           {/* FEATURED badge -- handoff anatomy: dark glass pill, JetBrains
               Mono caps, not a purple gradient pill. */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
@@ -796,8 +802,8 @@ function FeaturedCarousel({
             )}
             <p style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Manrope, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
-              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
+              <span style={{ color: 'rgba(255,255,255,0.92)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>{event.date}</span>
+              <span style={{ color: 'rgba(255,255,255,0.92)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>{event.city}</span>
               {(() => {
                 const cta = formatCardCTA(event.ticketTypes);
                 const isFree = cta === 'Book Free';

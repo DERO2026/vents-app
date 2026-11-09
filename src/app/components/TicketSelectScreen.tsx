@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ArrowLeft, Minus, Plus, CheckCircle, Maximize2 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { ventsColors } from '../../lib/ventsDesignTokens';
+import { formatKobo } from '../../lib/ticketFees';
+import { useTicketQuote, serviceFeeLabel } from '../../lib/ticketQuote';
 
 interface TicketSelectScreenProps {
   event: Event;
@@ -55,10 +58,17 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
 
   const selected = ticketTypes.find((t) => t.id === selectedId);
   const qty = selectedId ? quantities[selectedId] ?? 0 : 0;
-  const subtotal = selected ? selected.price * qty : 0;
-  const SERVICE_FEE_PCT = 0.05;
-  const serviceFee = Math.round(subtotal * SERVICE_FEE_PCT);
-  const total = subtotal + serviceFee;
+  // The database's own quote (ticket_fee_quote, 0208): the same numbers checkout charges.
+  const quoteState = useTicketQuote(selected && Number(selected.price) > 0 ? selected.price : null, qty);
+  const q = quoteState.quote;
+  const isFree = !!selected && !(Number(selected.price) > 0);
+  const breakdown = {
+    faceKobo: q?.face_kobo ?? (selected ? Math.round(Number(selected.price || 0) * 100) * qty : 0),
+    serviceFeeKobo: q?.service_fee_kobo ?? 0,
+    totalKobo: isFree ? 0 : (q?.total_kobo ?? 0),
+  };
+  const ready = isFree || !!q;
+  const money = (kobo: number) => (ready ? formatKobo(kobo) : '…');
 
   const changeQty = (id: string, delta: number) => {
     setQuantities((prev) => {
@@ -133,14 +143,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           alt={event.title}
           style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block' }}
         />
-        <div style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: '45%',
-          background: 'rgba(6,10,18,0.75)',
-        }} />
+        <div aria-hidden style={flyerScrim(45)} />
         {/* Back button */}
         <button
           onClick={onBack}
@@ -372,13 +375,13 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                   {selected?.name} × {qty}
                 </span>
                 <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatPrice(subtotal)}
+                  {money(breakdown.faceKobo)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Service fee (5%)</span>
+                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{q ? serviceFeeLabel(q) : 'Service fee'}</span>
                 <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatPrice(serviceFee)}
+                  {money(breakdown.serviceFeeKobo)}
                 </span>
               </div>
               <div
@@ -391,7 +394,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>Total</span>
                 <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                  {formatPrice(total)}
+                  {money(breakdown.totalKobo)}
                 </span>
               </div>
             </div>
@@ -432,7 +435,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             transition: 'all 0.2s ease',
           }}
         >
-          {canContinue ? `Continue · ${formatPrice(total)}` : 'Select a ticket type'}
+          {canContinue ? `Continue · ${money(breakdown.totalKobo)}` : 'Select a ticket type'}
         </button>
       </div>
     </div>

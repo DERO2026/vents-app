@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MapPin, Navigation } from 'lucide-react';
-import { loadGoogleMaps } from '../../lib/googleMaps';
+import { loadGoogleMaps, onGoogleMapsAuthFailure, watchForGoogleMapsErrorUi } from '../../lib/googleMaps';
 import { SecondaryButton } from './shared/Button';
 import { Sentry } from '../../lib/sentry';
 import { buildMapEmbedUrl, listenToMapEmbed, shouldUseMapEmbed } from '../../lib/mapEmbed';
@@ -53,7 +53,16 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
         Sentry.captureException(e);
         if (!cancelled) setStatus('unavailable');
       });
-    return () => { cancelled = true; };
+    // A key rejection reported after the libraries loaded (see
+    // googleMaps.ts) shows the fallback instead of Google's error box.
+    const unsubscribe = onGoogleMapsAuthFailure(() => {
+      if (cancelled) return;
+      mapRef.current = null;
+      // Remove Google's error box itself, not just cover it.
+      if (mapDivRef.current) mapDivRef.current.replaceChildren();
+      setStatus('unavailable');
+    });
+    return () => { cancelled = true; unsubscribe(); };
   }, [hasCoords, useEmbed]);
 
   // iOS embed path: the map itself is rendered by embed/map.html inside the
@@ -110,6 +119,9 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
       // white Google InfoWindow just duplicated it while clashing hard with
       // the dark theme. Still opens normally on marker tap.
     }
+    // Google's own error box (billing / API not enabled / key restriction)
+    // switches this card to its no-map fallback instead of staying grey.
+    return watchForGoogleMapsErrorUi(mapDivRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, hasCoords]);
 

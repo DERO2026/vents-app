@@ -16,10 +16,14 @@
 // Pooler's per-connection model since these are low-frequency webhook
 // calls, not a request-serving pool.
 import { Pool } from 'pg';
+import { assertPreviewSafe } from './previewGuard.js';
 
 let pool: Pool | null = null;
 
 function getPool(): Pool {
+  // Before any connection: on a Vercel Preview sharing the production
+  // database, no privileged call may run (see previewGuard.ts).
+  assertPreviewSafe('privileged database call');
   if (pool) return pool;
   const connectionString = process.env.PROJECT_ADMIN_DATABASE_URL;
   if (!connectionString) throw new Error('PROJECT_ADMIN_DATABASE_URL not set');

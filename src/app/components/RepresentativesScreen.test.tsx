@@ -131,6 +131,12 @@ vi.mock('../../lib/supabase', () => ({
     }),
     rpc: (name: string, args: any) => {
       rpcCalls.push({ name, args });
+      // 0204 is not applied in production yet: by default answer the way
+      // PostgREST does for a missing function, so these tests exercise the
+      // search_users_for_request fallback (searchUsers mock below).
+      if (name === 'search_recruiter_invite_targets' && !rpcResponses[name] && !rpcDelayed[name]) {
+        return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.search_recruiter_invite_targets(p_query) in the schema cache' } });
+      }
       if (name === 'get_recruiter_invite_target' && !rpcResponses[name] && !rpcDelayed[name]) {
         if (targetRoleThrows) return Promise.reject(new Error('network unreachable'));
         if (deferTargetIds.includes(args.p_user_id)) {
@@ -210,7 +216,7 @@ async function flush() {
 async function mount() {
   root = createRoot(container);
   act(() => {
-    root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+    root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} searchDebounceMs={0} />);
   });
   await flush();
 }
@@ -414,13 +420,14 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null, p_commission_split_bps: 10000 });
+    expect(call?.args).toEqual({ p_organizer_id: 'org-1', p_provider_id: null });
   });
 
-  it('describes the commission arrangement as the full, fixed VENTS commission -- never "5%" or a negotiable split', async () => {
+  it('describes the fixed ₦50,000 qualifying-organizer reward -- never the retired 10% commission, "5%" or a negotiable split', async () => {
     recruiterRowExists = false;
     await mount();
-    expect(container.textContent).toMatch(/full commission/i);
+    expect(container.textContent).toMatch(/₦50,000 reward/);
+    expect(container.textContent).not.toMatch(/10%|commission/i);
     expect(container.textContent).not.toMatch(/5%/);
     expect(container.textContent).not.toMatch(/agreed (commission )?split/i);
   });
@@ -485,7 +492,7 @@ describe('RepresentativesScreen', () => {
     await flush();
 
     const call = rpcCalls.find((c) => c.name === 'invite_recruiter_partnership');
-    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99', p_commission_split_bps: 10000 });
+    expect(call?.args).toEqual({ p_organizer_id: null, p_provider_id: 'sp-99' });
   });
 
   it('a search result that is neither an organizer nor a provider has no Send Invitation action, with a clear reason shown', async () => {
@@ -549,7 +556,7 @@ describe('RepresentativesScreen', () => {
       await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
       expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
-        p_organizer_id: 'dero-uid', p_provider_id: null, p_commission_split_bps: 10000,
+        p_organizer_id: 'dero-uid', p_provider_id: null,
       });
     });
 
@@ -564,7 +571,7 @@ describe('RepresentativesScreen', () => {
       await act(async () => { sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
       expect(rpcCalls.find((c) => c.name === 'invite_recruiter_partnership')?.args).toEqual({
-        p_organizer_id: 'both-1', p_provider_id: null, p_commission_split_bps: 10000,
+        p_organizer_id: 'both-1', p_provider_id: null,
       });
     });
 
@@ -675,7 +682,7 @@ describe('RepresentativesScreen', () => {
       // that's still true.
       root = createRoot(container);
       act(() => {
-        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} />);
+        root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} searchDebounceMs={0} />);
       });
       const loading = container.querySelector('[data-testid="representatives-loading"] p');
       notBlack(loading);
@@ -888,7 +895,7 @@ describe('RepresentativesScreen: receiving an invitation', () => {
   async function mountWith(focusPartnership?: { partnershipId: string; nonce: number } | null) {
     root = createRoot(container);
     act(() => {
-      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} />);
+      root.render(<RepresentativesScreen onBack={() => {}} currentUser={currentUser} focusPartnership={focusPartnership} searchDebounceMs={0} />);
     });
     await flush();
     await flush();
@@ -1115,5 +1122,29 @@ describe('RepresentativesScreen: receiving an invitation', () => {
       await flush();
       expect(lookups()).toBe(before);
     });
+  });
+
+  // Approved business model (2026-11-09, docs/business-model.md): a fixed
+  // N50,000 per qualifying organizer -- verified organizer, a PAID event that
+  // actually took place, organizer confirmation, two VENTS admins -- never a
+  // commission, never for free events, never for a click or sign-up alone.
+  it('states the approved reward conditions to non-representatives and representatives, with no commission', async () => {
+    recruiterRowExists = false;
+    await mount();
+    let text = container.textContent || '';
+    expect(text).toMatch(/fixed ₦50,000 reward/);
+    expect(text).toMatch(/verified organizer/);
+    expect(text).toMatch(/two VENTS admins/);
+    expect(text).toMatch(/free events never qualify/i);
+    expect(text).not.toMatch(/\b10%|full (VENTS )?commission|genuine free events may qualify/i);
+    act(() => root.unmount()); container.remove();
+    recruiterRowExists = true;
+    await mount();
+    text = container.textContent || '';
+    expect(text).toMatch(/never a share of ticket sales/);
+    expect(text).not.toMatch(/commission/i);
+    expect(text).toMatch(/two VENTS admins confirm the event took place/);
+    expect(text).toMatch(/A click or a sign-up earns nothing by itself/);
+    expect(text).toMatch(/earnings wallet/);
   });
 });

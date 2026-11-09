@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession, confirmPassword, enforceWalletRateLimit } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
+import { refuseInPreview } from '../_lib/previewGuard.js';
 
 // Organizer bank-account mutations — add/edit (default action), set_default,
 // and remove. EVERY action is guarded by a mandatory password (or
@@ -13,6 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (refuseInPreview(res, 'bank account save')) return;
 
   const authHeader = req.headers.authorization;
   const session = await verifyInsforgeSession(authHeader);

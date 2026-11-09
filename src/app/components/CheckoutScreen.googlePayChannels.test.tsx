@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 import { CheckoutScreen } from './CheckoutScreen';
+import { __clearQuoteCache, PRICE_CHANGED_MESSAGE } from '../../lib/ticketQuote';
 import type { Event, TicketType } from './types';
 
 // Regression coverage for the bug /verify caught in commit 317e825:
@@ -30,6 +31,7 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
 beforeEach(() => {
+  __clearQuoteCache();
   mockOpenPaystackPopup.mockReset();
   mockRpc.mockReset();
   mockRpc.mockImplementation((name: string) => {
@@ -38,6 +40,13 @@ beforeEach(() => {
     }
     if (name === 'initiate_ticket_payment_attempt') {
       return Promise.resolve({ data: { reference: 'vnt_attempt_1', amount_kobo: 525000 }, error: null });
+    }
+    // The server's fee quote the checkout displays; it must equal the
+    // purchase amount above, or checkout refuses to charge.
+    if (name === 'ticket_fee_quote') {
+      return Promise.resolve({ data: { fee_model: 'v3_15_35', quantity: 1, unit_face_kobo: 500000, face_kobo: 500000, service_fee_kobo: 25000,
+        discount_kobo: 0, total_kobo: 525000, organizer_deduction_kobo: 0, organizer_net_kobo: 500000, vents_revenue_kobo: 25000,
+        service_fee_bps: 500, organizer_deduction_bps: 0 }, error: null });
     }
     if (name === 'get_my_wallet') {
       return Promise.resolve({ data: [{ balance_kobo: 0 }], error: null });
@@ -73,6 +82,8 @@ async function mount() {
       />
     );
   });
+  // The fee quote (ticket_fee_quote) loads asynchronously before Pay is enabled.
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 }
 
 function fillRequiredFields() {
@@ -123,5 +134,29 @@ describe('CheckoutScreen real paid-ticket checkout: Paystack channels', () => {
     expect(call.amountKobo).toBe(525000);
     expect(call.ref).toBe('vnt_attempt_1');
     expect(call.email).toBe('buyer@example.com');
+  });
+
+  it('never charges an amount the buyer was not shown (the 2026-11-08 incident: shown 1.5%, server 5%)', async () => {
+    const base = mockRpc.getMockImplementation()!;
+    mockRpc.mockImplementation((name: string, args: any) => name === 'ticket_fee_quote'
+      ? Promise.resolve({ data: { fee_model: 'v3_15_35', quantity: 1, unit_face_kobo: 500000, face_kobo: 500000, service_fee_kobo: 7500,
+          discount_kobo: 0, total_kobo: 507500, organizer_deduction_kobo: 17500, organizer_net_kobo: 482500, vents_revenue_kobo: 25000,
+          service_fee_bps: 150, organizer_deduction_bps: 350 }, error: null })
+      : base(name, args));
+    await driveToPaystackCall();
+    expect(getPayButton()?.textContent).toContain('₦5,075');
+    expect(mockOpenPaystackPopup).not.toHaveBeenCalled();
+    expect(container!.textContent).toContain(PRICE_CHANGED_MESSAGE);
+  });
+
+  it('cannot pay at all when the server has no fee quote (an old database)', async () => {
+    const base = mockRpc.getMockImplementation()!;
+    mockRpc.mockImplementation((name: string, args: any) => name === 'ticket_fee_quote'
+      ? Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } })
+      : base(name, args));
+    await mount();
+    const pay = Array.from(container!.querySelectorAll('button')).find((b) => /^Pay /.test(b.textContent || '')) as HTMLButtonElement;
+    expect(pay.disabled).toBe(true);
+    expect(container!.querySelector('[data-testid="checkout-quote-unavailable"]')).not.toBeNull();
   });
 });

@@ -3,6 +3,8 @@ import { ArrowLeft, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
+import { useTicketQuote, serviceFeeLabel, legacyTicketChargeKobo } from '../../lib/ticketQuote';
+import { formatKobo } from '../../lib/ticketFees';
 
 interface TicketRefundScreenProps {
   ticketId: string;
@@ -46,6 +48,9 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
   const [ticket, setTicket] = useState<RefundTicketRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  // The fee model the ticket was bought under (0203+). Before 0203 there is
+  // no column and every ticket is legacy_5; any other read failure is unknown.
+  const [feeModel, setFeeModel] = useState<'legacy_5' | 'v3_15_35' | 'unknown' | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,12 +66,25 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
         if (cancelled) return;
         if (error || !data) { setNotFound(true); return; }
         setTicket(data as unknown as RefundTicketRow);
+        const fm = await Promise.resolve(supabase.from('tickets').select('fee_model').eq('id', ticketId).maybeSingle())
+          .then((v: any) => v, (err) => ({ data: null, error: err }));
+        if (cancelled) return;
+        const missingColumn = /fee_model/.test(String(fm?.error?.message ?? '')) && /does not exist|column/i.test(String(fm?.error?.message ?? ''));
+        const model = fm?.data?.fee_model;
+        setFeeModel(model === 'v3_15_35' || model === 'legacy_5' ? model : missingColumn ? 'legacy_5' : 'unknown');
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, [ticketId]);
+
+  // Hooks run before any early return. Per ticket row, exactly as refund_ticket computes it.
+  const refundQuote = useTicketQuote(
+    feeModel === 'v3_15_35' && ticket && Number(ticket.amount) > 0 ? ticket.amount : null,
+    1,
+    ticket?.discount_percentage || 0,
+  ).quote;
 
   if (loading) {
     return (
@@ -98,9 +116,24 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
   const isWallet = ticket.payment_method === 'wallet';
   const isDone = ticket.payment_status === 'refunded';
   const ticketPriceKobo = Math.round(ticket.amount * 100);
-  const feeKobo = Math.round(ticketPriceKobo * 0.05);
-  const discountKobo = Math.round(ticketPriceKobo * ((ticket.discount_percentage || 0) / 100));
-  const refundTotalKobo = ticketPriceKobo + feeKobo - discountKobo;
+  // What this ticket's attendee paid, per the model it was bought under:
+  // 1.5% tickets use the server's own quote (the same per-ticket arithmetic
+  // refund_ticket uses); legacy tickets keep their original 5% formula.
+  let feeKobo: number | null = null;
+  let discountKobo = 0;
+  let refundTotalKobo: number | null = null;
+  let feeLabel = 'Attendee service fee';
+  if (feeModel === 'v3_15_35' && refundQuote) {
+    feeKobo = refundQuote.service_fee_kobo;
+    discountKobo = refundQuote.discount_kobo;
+    refundTotalKobo = refundQuote.total_kobo;
+    feeLabel = serviceFeeLabel(refundQuote);
+  } else if (feeModel === 'legacy_5') {
+    refundTotalKobo = legacyTicketChargeKobo(ticket.amount, ticket.discount_percentage || 0);
+    discountKobo = Math.round(ticketPriceKobo * ((ticket.discount_percentage || 0) / 100));
+    feeKobo = refundTotalKobo - ticketPriceKobo + discountKobo;
+    feeLabel = 'Attendee service fee (5%, earlier tickets)';
+  }
 
   const eventTitle = ticket.events?.title || 'Event';
   const eventDate = ticket.events?.event_date
@@ -154,19 +187,19 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
             <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(ticketPriceKobo / 100)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-            <span style={{ color: ventsColors.ink2 }}>VENTS service fee</span>
-            <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(feeKobo / 100)}</span>
+            <span style={{ color: ventsColors.ink2 }}>{feeLabel}</span>
+            <span data-testid="refund-fee" style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{feeKobo == null ? '—' : formatKobo(feeKobo)}</span>
           </div>
           {discountKobo > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: ventsColors.ink2 }}>Promo discount</span>
-              <span style={{ color: ventsColors.success, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>-{formatPrice(discountKobo / 100)}</span>
+              <span style={{ color: ventsColors.success, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>-{formatKobo(discountKobo)}</span>
             </div>
           )}
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.09)', margin: '2px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <span style={{ fontSize: '15px', fontWeight: 700, color: ventsColors.white }}>Refund total</span>
-            <span style={{ fontSize: '20px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: ventsColors.success }}>{formatPrice(refundTotalKobo / 100)}</span>
+            <span style={{ fontSize: '20px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: ventsColors.success }} data-testid="refund-total">{refundTotalKobo == null ? '—' : formatKobo(refundTotalKobo)}</span>
           </div>
         </div>
 

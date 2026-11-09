@@ -168,10 +168,15 @@ describe('every function\'s latest definition inserts only allowed notification 
     expect(allowed.has('recruiter_invitation_response')).toBe(false);
   });
 
-  it('VENTS Earn invite and response notifications now use \'social\' (latest definitions are 0197)', () => {
-    for (const fn of ['invite_recruiter_partnership', 'respond_to_recruiter_invitation']) {
+  it('VENTS Earn invite and response notifications now use \'social\' (latest definitions: 0201 for the invite, 0197 for the response)', () => {
+    const latestFile: Record<string, string> = {
+      // 0201 redefines the invite for the fixed reward model (no commission wording).
+      invite_recruiter_partnership: '0201_vents_earn_representative_rewards.sql',
+      respond_to_recruiter_invitation: '0197_vents_earn_notifications_use_valid_type.sql',
+    };
+    for (const [fn, file] of Object.entries(latestFile)) {
       const latest = latestBodies.get(fn)!;
-      expect(latest.file).toBe('0197_vents_earn_notifications_use_valid_type.sql');
+      expect(latest.file).toBe(file);
       expect(notificationTypeExpressions(latest.body)).toEqual(["'social'"]);
     }
   });

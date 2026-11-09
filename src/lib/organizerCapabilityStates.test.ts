@@ -17,57 +17,71 @@ import { join } from 'node:path';
 // 'approved' request row immediately via isOrganizerEffective, independent
 // of the is_service_provider capability entirely.
 
+// The state machine now lives in workRoles.organizerRole (shared by the
+// VENTS Work hub and the Profile card chips) and the application form in
+// work/OrganizerRequestSheet.tsx; both are tested here by behavior.
+import { organizerRole, providerRole, type OrganizerInputs } from './workRoles';
+
+let sheetSrc: string;
+let hubSrc: string;
 let profileScreenSrc: string;
 
 beforeAll(() => {
-  profileScreenSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'ProfileScreen.tsx'), 'utf8');
+  const components = join(__dirname, '..', 'app', 'components');
+  sheetSrc = readFileSync(join(components, 'work', 'OrganizerRequestSheet.tsx'), 'utf8');
+  hubSrc = readFileSync(join(components, 'work', 'VentsWorkScreen.tsx'), 'utf8');
+  profileScreenSrc = readFileSync(join(components, 'ProfileScreen.tsx'), 'utf8');
 });
+
+const user = (o: Partial<OrganizerInputs> = {}): OrganizerInputs =>
+  ({ isOrganizer: false, isStaff: false, isVerified: false, request: 'none', ...o });
 
 describe('Become an Organizer: capability state machine', () => {
   it('a normal user (idle, no request) sees "Become an Organizer"', () => {
-    expect(profileScreenSrc).toMatch(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/);
-    expect(profileScreenSrc).toMatch(/'Application Submitted' : orgRequestStatus === 'rejected' \? 'Apply Again' : 'Become an Organizer'/);
+    const r = organizerRole(user());
+    expect(r.subtitle).toBe('Become an Organizer');
+    expect(r.action).toBe('organizer-apply');
   });
 
-  it('a pending applicant sees an accessible (clickable, non-dead-end) "Application Submitted" state', () => {
-    const block = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \([\s\S]*?\{\/\* Become Organizer modal/)?.[0] ?? '';
-    expect(block).toMatch(/onClick=\{\(\) => setShowOrgRequestModal\(true\)\}/);
-    // The old dead-click bug pattern (same class as the SP one).
-    expect(block).not.toMatch(/if \(orgRequestStatus === 'already' \|\| orgRequestStatus === 'sent'\) return;/);
-    expect(profileScreenSrc).toMatch(/orgRequestStatus === 'pending' \? \(/);
-    expect(profileScreenSrc).toMatch(/Your organizer request is under review/);
+  it('a pending applicant sees an accessible (clickable, non-dead-end) "Application submitted" state', () => {
+    const r = organizerRole(user({ request: 'pending' }));
+    expect(r.subtitle).toBe('Application submitted');
+    expect(r.pill.label).toBe('In review');
+    // Still opens the sheet, whose pending view shows the submitted application.
+    expect(r.action).toBe('organizer-apply');
+    expect(hubSrc).toMatch(/case 'organizer-apply': setShowOrgSheet\(true\); break;/);
+    expect(sheetSrc).toMatch(/orgRequestStatus === 'pending' \? \(/);
+    expect(sheetSrc).toMatch(/Your organizer request is under review/);
   });
 
   it('a rejected applicant can review the admin note and resubmit', () => {
-    expect(profileScreenSrc).toMatch(/orgRequestStatus === 'rejected' && orgRequestAdminNote/);
-    expect(profileScreenSrc).toMatch(/wasn't approved/);
-    expect(profileScreenSrc).toMatch(/onClick=\{submitOrgRequest\}/);
+    expect(organizerRole(user({ request: 'rejected' })).action).toBe('organizer-apply');
+    expect(sheetSrc).toMatch(/orgRequestStatus === 'rejected' && adminNote/);
+    expect(sheetSrc).toMatch(/wasn&apos;t approved/);
+    expect(sheetSrc).toMatch(/onClick=\{submitOrgRequest\}/);
   });
 
-  it('an approved organizer sees organizer access, not the application CTA -- trusted immediately via isOrganizerEffective, not only the role-sync poll', () => {
-    expect(profileScreenSrc).toMatch(/const isOrganizerEffective = isOrganizer \|\| orgRequestStatus === 'approved';/);
-    // Wallet is a single universal menu entry now (not a second,
-    // organizer-only button gated on isOrganizerEffective), routing to the
-    // real universal customer wallet -- the earnings view itself is gated
-    // inside CustomerWalletScreen's own showEarningsTab prop, not here.
+  it('an approved request is trusted immediately, before the role-sync poll flips isOrganizer', () => {
+    const r = organizerRole(user({ request: 'approved', isOrganizer: false }));
+    expect(r.pill.tone).toBe('on');
+    expect(r.action).not.toBe('organizer-apply');
+    // Wallet stays a single universal Profile menu entry.
     expect(profileScreenSrc).toMatch(/screen: 'customer-wallet',/);
   });
 
-  it('being a Service Provider does not block or hide the Become-an-Organizer capability (independent capabilities)', () => {
-    const gate = profileScreenSrc.match(/const isOrganizerEffective = [^\n]+;/)?.[0] ?? '';
-    expect(gate).not.toMatch(/is_service_provider/);
-    const ctaGate = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/)?.[0] ?? '';
-    expect(ctaGate).not.toMatch(/is_service_provider/);
+  it('being a Service Provider does not change the organizer state (independent capabilities)', () => {
+    // organizerRole takes no provider input at all.
+    expect(organizerRole(user())).toEqual(organizerRole({ ...user(), ...({ is_service_provider: true } as object) }));
   });
 
-  it('being an Organizer does not block or hide the Become-a-Service-Provider capability (independent capabilities)', () => {
-    const spGate = profileScreenSrc.match(/const canAccessProviderSetup = [^\n]+;/)?.[0] ?? '';
-    expect(spGate).not.toMatch(/isOrganizer/);
+  it('being an Organizer does not change the Service Provider state (independent capabilities)', () => {
+    expect(providerRole({ isProvider: false, isStaff: false, request: 'none', profileStatus: null }).action).toBe('provider-verify');
   });
 
   it('admin/sub-admin/root never see the Become-an-Organizer application CTA', () => {
-    const ctaGate = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/)?.[0] ?? '';
-    expect(ctaGate).toMatch(/!isAdmin && !isSubAdmin/);
+    for (const request of ['none', 'pending', 'rejected'] as const) {
+      expect(organizerRole(user({ isStaff: true, request })).action).not.toBe('organizer-apply');
+    }
   });
 });
 
@@ -80,6 +94,6 @@ describe('No duplicate organizer applications', () => {
   });
 
   it('the client treats a duplicate-submit race (23505) as "already pending", not a generic error', () => {
-    expect(profileScreenSrc).toMatch(/if \(err\?\.code === '23505'\) \{/);
+    expect(sheetSrc).toMatch(/if \(err\?\.code === '23505'\) \{/);
   });
 });

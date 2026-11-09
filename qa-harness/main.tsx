@@ -6,7 +6,7 @@ import '../src/styles/index.css';
 import { OrganizerDashboard } from '../src/app/components/OrganizerDashboard';
 import { ManageEventsScreen } from '../src/app/components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from '../src/app/components/SalesAnalyticsScreen';
-import { HomeScreen, mapDbEventToFrontend } from '../src/app/components/HomeScreen';
+import { HomeScreen, mapDbEventToFrontend, FeaturedCarousel } from '../src/app/components/HomeScreen';
 import { WelcomeScreen } from '../src/app/components/WelcomeScreen';
 import { EventDetailsScreen } from '../src/app/components/EventDetailsScreen';
 import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
@@ -42,6 +42,11 @@ import { ReferralScreen } from '../src/app/components/ReferralScreen';
 import { PromotionsScreen } from '../src/app/components/PromotionsScreen';
 import { AdminConsoleShell } from '../src/app/components/admin/AdminConsoleShell';
 import { RepresentativesScreen } from '../src/app/components/RepresentativesScreen';
+import { VentsWorkScreen } from '../src/app/components/work/VentsWorkScreen';
+import { VentsEarningsScreen } from '../src/app/components/work/VentsEarningsScreen';
+import { RepresentativeRewardsScreen } from '../src/app/components/work/RepresentativeRewardsScreen';
+import { RepresentativeDashboardScreen, type RepTab } from '../src/app/components/work/RepresentativeDashboardScreen';
+import { AdminEarnScreen } from '../src/app/components/admin/AdminEarnScreen';
 import { AdminDashboard } from '../src/app/components/admin/AdminDashboard';
 import { AdminUsersList } from '../src/app/components/admin/AdminUsersList';
 import { AdminUserDetail } from '../src/app/components/admin/AdminUserDetail';
@@ -105,6 +110,9 @@ const FIXTURE_EVENTS = [
   },
 ] as any[];
 
+// QA: record screen navigations for the viewport checks.
+const nav = (screen: string) => { ((window as any).__nav ??= []).push(screen); };
+
 const SCREENS: Record<string, () => JSX.Element> = {
   welcome: () => <WelcomeScreen onGetStarted={() => {}} onSignIn={() => {}} />,
   'organizer-dashboard': () => (
@@ -138,8 +146,29 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onCountryFilterChange={() => {}}
     />
   ),
+  // The Featured card over a bright flyer (QA only): shows whether anything
+  // dims or covers the flyer. Rendered directly (the home screen's own events
+  // query uses filters the fake client does not evaluate). Local SVG, no network.
+  'featured-card': () => {
+    const ev = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg', is_featured: true, featured_until: null,
+      ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] });
+    return (
+      <div style={{ background: '#060A14', minHeight: '100vh', paddingTop: 16, maxWidth: 1280, margin: '0 auto' }}>
+        <FeaturedCarousel events={[ev]} currentIndex={0} onIndexChange={() => {}} onEventPress={() => {}} isSaved={[]} onToggleSave={() => {}} />
+      </div>
+    );
+  },
+  // Event details over a bright flyer (QA only): shows whether anything
+  // dims the hero flyer. Local SVG, no network.
+  'event-details-flyer': () => {
+    const event = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg',
+      ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] });
+    return <EventDetailsScreen event={event} onBack={() => {}} onGetTickets={() => {}} isSaved={false} onToggleSave={() => {}} currentUserId="user-1" />;
+  },
   'event-details': () => {
-    const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] };
+    const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
+      // Legacy save (digits after the +234 picker); see src/lib/contactPhone.ts.
+      show_phone: true, contact_phone: '9152579794' };
     const event = mapDbEventToFrontend(dbEvent);
     return (
       <EventDetailsScreen
@@ -222,6 +251,44 @@ const SCREENS: Record<string, () => JSX.Element> = {
   notifications: () => (
     <NotificationsScreen currentUser={{ id: 'org-1' }} onBack={() => {}} />
   ),
+  // VENTS Work (approved mockups B-D). Navigations are recorded on
+  // window.__nav so the viewport QA can check every button opens a screen.
+  'vents-work-organizer': () => (
+    <VentsWorkScreen currentUser={{ id: 'org-1', role: 'user', isOrganizer: true, is_service_provider: false, is_verified: true }}
+      onBack={() => {}} onNavigate={nav} onOpenCreatorStudio={() => nav('creator-studio')} />
+  ),
+  'vents-work-provider-only': () => (
+    <VentsWorkScreen currentUser={{ id: 'org-1', role: 'user', isOrganizer: false, is_service_provider: true, is_verified: false }}
+      onBack={() => {}} onNavigate={nav} onOpenCreatorStudio={() => nav('creator-studio')} onOpenProviderBookings={() => nav('provider-service-bookings')} />
+  ),
+  'vents-work-rep': () => (
+    <VentsWorkScreen currentUser={{ id: 'rep-1', role: 'user', isOrganizer: false, is_service_provider: false, is_verified: false }}
+      onBack={() => {}} onNavigate={nav} onOpenCreatorStudio={() => nav('creator-studio')} />
+  ),
+  'vents-work': () => (
+    <VentsWorkScreen currentUser={{ id: 'org-1', role: 'user', isOrganizer: true, is_service_provider: false, is_verified: false }}
+      onBack={() => {}} onNavigate={() => {}} onOpenCreatorStudio={() => {}} />
+  ),
+  'vents-earnings': () => (
+    <VentsEarningsScreen currentUser={{ id: 'org-1' }} onBack={() => {}} onNavigate={nav} />
+  ),
+  'representative-dashboard': () => (
+    <RepresentativesScreen onBack={() => {}} currentUser={{ id: 'rep-1', role: 'user', full_name: 'Adaeze Okonkwo', username: 'adaeze' }}
+      onOpenRewards={() => {}} />
+  ),
+  ...Object.fromEntries((['overview', 'referrals', 'monthly', 'rewards', 'team', 'expenses'] as RepTab[]).map((t) => [
+    `rep-${t}`, () => <RepresentativeDashboardScreen currentUser={{ id: 'rep-1' }} onBack={() => {}} onNavigate={nav} initialTab={t} />,
+  ])),
+  'vents-work-provider': () => (
+    <VentsWorkScreen currentUser={{ id: 'org-1', role: 'user', isOrganizer: true, is_service_provider: true, is_verified: true }}
+      onBack={() => {}} onNavigate={() => {}} onOpenCreatorStudio={() => {}} onOpenProviderBookings={() => {}} />
+  ),
+  'representative-rewards': () => (
+    <RepresentativeRewardsScreen currentUser={{ id: 'rep-1' }} onBack={() => {}} onNavigate={() => {}} />
+  ),
+  'admin-vents-earn': () => (
+    <div style={{ background: '#0a0810', minHeight: '100vh', padding: 16 }}><AdminEarnScreen /></div>
+  ),
   'manage-provider-services': () => (
     <ManageProviderServicesScreen providerId="prov-1" accountCountry="NG" onBack={() => {}} />
   ),
@@ -260,7 +327,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
       <CheckoutScreen
         event={event}
         ticketType={ticketType}
-        quantity={1}
+        quantity={new URLSearchParams(window.location.search).get('qty') ? Number(new URLSearchParams(window.location.search).get('qty')) : 1}
         currentUser={FIXTURE_USER}
         onBack={() => {}}
         onSuccess={() => {}}

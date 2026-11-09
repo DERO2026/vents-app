@@ -11,7 +11,9 @@ import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
-import { computeTicketWalletChargeKobo, hasSufficientBalance } from '../../lib/walletMath';
+import { hasSufficientBalance } from '../../lib/walletMath';
+import { formatKobo } from '../../lib/ticketFees';
+import { useTicketQuote, serviceFeeLabel, amountMatchesQuote, QUOTE_UNAVAILABLE_MESSAGE, PRICE_CHANGED_MESSAGE } from '../../lib/ticketQuote';
 import { friendlyOperationalError } from '../../lib/operationalStatus';
 import { UserAutocomplete } from './shared/UserAutocomplete';
 
@@ -201,15 +203,24 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     setAdditionalAttendees((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
   };
 
-  const subtotal = ticketType.price * quantity;
-  const serviceFee = Math.round(subtotal * 0.05);
-  const discount = promoApplied ? Math.round(subtotal * (promoDiscountPct / 100)) : 0;
-  const total = Math.max(0, subtotal + serviceFee - discount);
-  // Matches confirm_ticket_payment_via_wallet's own expected-amount formula
-  // exactly (subtotal, not the discount-then-round `total` above, which can
-  // differ by a kobo from double-rounding) -- used only to preview/gate the
-  // wallet payment option; the server always recomputes and enforces this.
-  const totalKobo = computeTicketWalletChargeKobo(subtotal, promoApplied ? promoDiscountPct : 0);
+  // Every amount on this screen is the database's own quote (ticket_fee_quote,
+  // 0208) -- the same functions that charge, settle and refund. No fee rate
+  // lives in the app. Before payment, the server's amount for the purchase must
+  // equal this quote or nothing is charged (amountMatchesQuote, below).
+  const isFreeOrder = !(Number(ticketType.price) > 0);
+  const quoteState = useTicketQuote(isFreeOrder ? null : ticketType.price, quantity, promoApplied ? promoDiscountPct : 0);
+  const quote = quoteState.quote;
+  const quoteReady = isFreeOrder || !!quote;
+  const totalKobo = isFreeOrder ? 0 : (quote?.total_kobo ?? 0);
+  const breakdown = {
+    faceKobo: quote?.face_kobo ?? Math.round(Number(ticketType.price || 0) * 100) * quantity,
+    serviceFeeKobo: quote?.service_fee_kobo ?? 0,
+    discountKobo: quote?.discount_kobo ?? 0,
+  };
+  const subtotal = breakdown.faceKobo / 100;
+  // Paid orders stay paid (> 0) while the quote loads, so the paid UI renders.
+  const total = isFreeOrder ? 0 : quote ? quote.total_kobo / 100 : subtotal;
+  const priceText = (kobo: number) => (quoteReady ? formatKobo(kobo) : '…');
 
   // Wallet balance, fetched once a paid checkout is shown -- purely
   // informational (which payment method to default/offer, insufficient-
@@ -407,6 +418,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       reference = (data as any)?.payment_ref;
       amountKobo = Number((data as any)?.amount_kobo);
       if (!reference || !amountKobo || amountKobo <= 0) throw new Error('Could not prepare this purchase.');
+      // One price: never charge an amount the buyer was not shown.
+      if (!amountMatchesQuote(amountKobo, quote)) throw new Error(PRICE_CHANGED_MESSAGE);
     } catch (err: any) {
       payingRef.current = false;
       setPaymentLoading(false);
@@ -488,6 +501,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       paystackRef = (attemptData as any)?.reference;
       chargeAmountKobo = Number((attemptData as any)?.amount_kobo);
       if (!paystackRef || !chargeAmountKobo || chargeAmountKobo <= 0) throw new Error('Could not start this payment attempt.');
+      if (!amountMatchesQuote(chargeAmountKobo, quote)) throw new Error(PRICE_CHANGED_MESSAGE);
     } catch (err: any) {
       payingRef.current = false;
       setPaymentLoading(false);
@@ -594,7 +608,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <div style={{ width: '100%', marginTop: '30px', borderRadius: '20px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', padding: '6px 18px' }}>
           <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
             <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Attempted</span>
-            <span style={{ fontSize: '15px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: ventsColors.white }}>{formatPrice(total)}</span>
+            <span style={{ fontSize: '15px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: ventsColors.white }}>{priceText(totalKobo)}</span>
           </div>
           <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Method</span>
@@ -719,7 +733,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{event.title}</p>
             <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{ticketType.name} × {quantity}</p>
           </div>
-          <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{formatPrice(subtotal)}</p>
+          <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{priceText(breakdown.faceKobo)}</p>
         </div>
 
         {/* Attendee info */}
@@ -824,7 +838,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Payment Method</p>
             <div style={{ display: 'flex', gap: '8px' }}>
               {(['paystack', 'wallet'] as const).map((method) => {
-                const insufficientForWallet = method === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < total * 100;
+                const insufficientForWallet = method === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < totalKobo;
                 return (
                   <button
                     key={method}
@@ -856,8 +870,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                           : walletBalanceKobo === null
                           ? 'Balance unavailable'
                           : insufficientForWallet
-                          ? `Insufficient (${formatPrice(walletBalanceKobo / 100)} available)`
-                          : `${formatPrice(walletBalanceKobo / 100)} available`}
+                          ? `Insufficient (${formatKobo(walletBalanceKobo)} available)`
+                          : `${formatKobo(walletBalanceKobo)} available`}
                       </span>
                     )}
                   </button>
@@ -972,29 +986,37 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(subtotal)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Selected ticket</span>
+              <span data-testid="checkout-selected-ticket" style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{ticketType.name}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Service fee (5%)</span>
-              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Quantity</span>
+              <span data-testid="checkout-quantity" style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{quantity}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Ticket subtotal</span>
+              <span data-testid="checkout-subtotal" style={{ color: ventsColors.ink3, fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>{priceText(breakdown.faceKobo)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span data-testid="checkout-service-fee-label" style={{ color: ventsColors.ink3, fontSize: '14px' }}>{quote ? serviceFeeLabel(quote) : 'Attendee service fee'}</span>
+              <span data-testid="checkout-service-fee" style={{ color: ventsColors.ink3, fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>{priceText(breakdown.serviceFeeKobo)}</span>
             </div>
             {promoApplied && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: ventsColors.success, fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
-                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
+                <span style={{ color: ventsColors.success, fontSize: '14px' }}>Promo discount ({promoDiscountPct}% off)</span>
+                <span data-testid="checkout-discount" style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>-{priceText(breakdown.discountKobo)}</span>
               </div>
             )}
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total</span>
-              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(total)}</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total payable</span>
+              <span data-testid="checkout-total" style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{priceText(totalKobo)}</span>
             </div>
           </div>
         </div>
 
         <p style={{ color: ventsColors.ink2, fontSize: '11px', textAlign: 'center', marginTop: '10px' }}>
-          Paystack processing fees may apply and will be shown before you complete payment.
+          This total is the full amount charged. It is confirmed by VENTS before payment starts.
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '14px' }}>
@@ -1036,6 +1058,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           </div>
         )}
 
+        {!isFreeOrder && quoteState.status === 'unavailable' && (
+          <div data-testid="checkout-quote-unavailable" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
+            <AlertCircle size={14} color="#EF4444" />
+            <span style={{ color: '#EF4444', fontSize: '13px' }}>{QUOTE_UNAVAILABLE_MESSAGE}</span>
+          </div>
+        )}
         {total > 0 && paymentMethod === 'wallet' && walletBalanceKobo != null && !hasSufficientWalletBalance && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
             <AlertCircle size={14} color="#EF4444" />
@@ -1052,7 +1080,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         {(() => {
           const walletInsufficient = payMode === 'self' && paymentMethod === 'wallet' && walletBalanceKobo != null && !hasSufficientWalletBalance;
-          const disabled = paymentLoading;
+          const disabled = paymentLoading || !quoteReady;
           return (
             <button
               onClick={() => { if (walletInsufficient) { setShowInsufficientSheet(true); return; } handlePay(); }}
@@ -1088,10 +1116,10 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                   {total === 0
                     ? 'Get Free Ticket'
                     : payMode === 'someone-else'
-                    ? `Send Payment Request (${formatPrice(total)})`
+                    ? `Send Payment Request (${priceText(totalKobo)})`
                     : walletInsufficient
                     ? 'Insufficient Balance — See Options'
-                    : `Pay ${formatPrice(total)}`}
+                    : `Pay ${priceText(totalKobo)}`}
                 </>
               )}
             </button>
@@ -1116,24 +1144,24 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           >
             <div style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', margin: '0 auto 20px' }} />
             <h2 style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 8px' }}>
-              You're {formatPrice(Math.max(0, total - Math.round((walletBalanceKobo || 0) / 100)))} short
+              You're {formatKobo(Math.max(0, totalKobo - (walletBalanceKobo || 0)))} short
             </h2>
             <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.55, margin: '0 0 20px' }}>
-              Your wallet has {formatPrice(Math.round((walletBalanceKobo || 0) / 100))} and this order is {formatPrice(total)}. Pay the whole thing by card instead, or add funds to your wallet first from the Wallet tab.
+              Your wallet has {formatKobo(walletBalanceKobo || 0)} and this order is {priceText(totalKobo)}. Pay the whole thing by card instead, or add funds to your wallet first from the Wallet tab.
             </p>
             <div style={{ padding: '16px', borderRadius: '16px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                 <span style={{ color: ventsColors.ink2 }}>Order total</span>
-                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(total)}</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{priceText(totalKobo)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                 <span style={{ color: ventsColors.ink2 }}>Wallet balance</span>
-                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.round((walletBalanceKobo || 0) / 100))}</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatKobo(walletBalanceKobo || 0)}</span>
               </div>
               <div style={{ height: '1px', background: 'rgba(255,255,255,0.09)' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <span style={{ color: ventsColors.pending, fontSize: '15px', fontWeight: 700 }}>Top up needed</span>
-                <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.max(0, total - Math.round((walletBalanceKobo || 0) / 100)))}</span>
+                <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatKobo(Math.max(0, totalKobo - (walletBalanceKobo || 0)))}</span>
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1141,7 +1169,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 onClick={() => { setPaymentMethod('paystack'); setShowInsufficientSheet(false); }}
                 style={{ width: '100%', height: '54px', borderRadius: '16px', background: '#7B2FBE', border: 'none', color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
               >
-                Pay {formatPrice(total)} by card instead
+                Pay {priceText(totalKobo)} by card instead
               </button>
               <button
                 onClick={() => setShowInsufficientSheet(false)}
