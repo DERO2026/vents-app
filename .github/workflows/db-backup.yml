@@ -1,0 +1,169 @@
+# Daily encrypted backup of the VENTS production database (Supabase, PostgreSQL 17).
+#
+# backup job (schedule + manual "Run workflow"), on a throwaway GitHub VM:
+#   1. installs PostgreSQL 17 (client for pg_dump, local server for the drill);
+#   2. pg_dump of production through the Supabase session pooler. pg_dump only
+#      reads (READ ONLY transaction); no other SQL is sent to production;
+#   3. the custom-format archive (compressed) is streamed straight into
+#      AES-256 encryption -- the plain dump is never written to disk;
+#   4. validation: decrypt, pg_restore -l, restore into a LOCAL throwaway
+#      database, require every public table with exactly the backed-up rows;
+#   5. only then uploads the ENCRYPTED file + a manifest as an artifact
+#      (retention 30 days). Any failure fails the run (and GitHub emails it).
+# selftest job (pull requests touching this pipeline): the same scripts against
+#   a local fake database, no secrets, no environment.
+#
+# The repository is PUBLIC: logs and artifacts are visible to any signed-in
+# GitHub user. The log prints only pass/fail lines; the artifact is ciphertext.
+#
+# Secrets (environment o4-backup):
+#   DATABASE_URL                  required: session pooler URI, port 5432
+#   BACKUP_ENCRYPTION_PASSPHRASE  optional, recommended: if absent the key is
+#                                 derived from DATABASE_URL (scripts/ops/db-backup-key.sh)
+# How to decrypt and restore: docs/db-backup.md.
+name: Database backup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'   # 02:17 UTC = 03:17 Lagos, daily
+  workflow_dispatch:
+    inputs:
+      dump_scope:
+        description: 'full | public_auth_storage | public (narrow only if full hits "permission denied")'
+        type: choice
+        options: [full, public_auth_storage, public]
+        default: full
+      function_check:
+        description: 'report (daily) | enforce (O4: also require the 19 pre-0201 function fingerprints)'
+        type: choice
+        options: [report, enforce]
+        default: report
+  pull_request:
+    paths:
+      - '.github/workflows/db-backup.yml'
+      - 'scripts/ops/**'
+      - 'scripts/local-pg-test/run-db-backup-pipeline-selftest.sh'
+      - 'scripts/local-pg-test/run-backup-restore-selftest.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  selftest:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install PostgreSQL 17
+        run: bash scripts/ops/ci-install-pg17.sh
+      - name: Restore drill self-test
+        run: bash scripts/local-pg-test/run-backup-restore-selftest.sh
+      - name: Backup pipeline self-test (local fake database)
+        run: bash scripts/local-pg-test/run-db-backup-pipeline-selftest.sh
+
+  backup:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    environment: o4-backup
+    timeout-minutes: 60
+    env:
+      DUMP_SCOPE: ${{ inputs.dump_scope || 'full' }}
+      FUNCTION_CHECK: ${{ inputs.function_check || 'report' }}
+    steps:
+      # The runner context is not allowed in job-level env; set WORK here.
+      - name: Private work directory on this VM
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/backup/out" "$RUNNER_TEMP/backup/report"
+          echo "WORK=$RUNNER_TEMP/backup" >> "$GITHUB_ENV"
+          echo "STAMP=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17
+        run: bash scripts/ops/ci-install-pg17.sh
+
+      - name: Encryption key (value never printed)
+        env:
+          BACKUP_DB_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          bash scripts/ops/db-backup-key.sh "$WORK/key" "$WORK/key-mode"
+          if [ "$(cat "$WORK/key-mode")" != passphrase-secret ]; then
+            echo "::warning title=Backup key derived from DATABASE_URL::Add an environment secret BACKUP_ENCRYPTION_PASSPHRASE (o4-backup) so backups stay decryptable after a database password change. See docs/db-backup.md."
+          fi
+
+      - name: Encrypted pg_dump of production (read only)
+        env:
+          BACKUP_DB_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_SCOPE: ${{ env.DUMP_SCOPE }}
+        run: bash scripts/ops/db-backup-dump.sh "$WORK/out/vents-db-$STAMP.dump.gpg" "$WORK/key"
+
+      # No secret in this step's environment: the drill refuses to run if one is.
+      - name: Validate (decrypt, restore into a local throwaway database)
+        run: bash scripts/ops/db-backup-validate.sh "$WORK/out/vents-db-$STAMP.dump.gpg" "$WORK/key" "$WORK/report"
+
+      - name: Manifest
+        run: |
+          set -euo pipefail
+          f="vents-db-$STAMP.dump.gpg"
+          cd "$WORK/out"
+          sha256sum "$f" > "$f.sha256"
+          {
+            echo "file=$f"
+            echo "created_utc=$STAMP"
+            echo "bytes=$(wc -c < "$f" | tr -d ' ')"
+            echo "sha256=$(cut -d' ' -f1 "$f.sha256")"
+            echo "format=pg_dump custom (-Fc, compress 6), then gpg --symmetric AES256"
+            echo "pg_dump=$(pg_dump --version | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+            echo "scope=$DUMP_SCOPE"
+            echo "key_source=$(cat "$WORK/key-mode")"
+            echo "function_check=$FUNCTION_CHECK"
+            echo "commit=$GITHUB_SHA"
+            echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            cat "$WORK/report/summary.txt"
+          } > manifest.txt
+          cat manifest.txt
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vents-db-backup-${{ env.STAMP }}
+          path: |
+            ${{ env.WORK }}/out/vents-db-${{ env.STAMP }}.dump.gpg
+            ${{ env.WORK }}/out/vents-db-${{ env.STAMP }}.dump.gpg.sha256
+            ${{ env.WORK }}/out/manifest.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0   # already compressed and encrypted
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Database backup: ${{ job.status }}"
+            echo
+            if [ -f "$WORK/out/manifest.txt" ]; then echo '```'; cat "$WORK/out/manifest.txt"; echo '```'
+            else echo "No verified backup was produced by this run. See the failed step above."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up (always)
+        if: always()
+        run: |
+          [ -n "${WORK:-}" ] || exit 0
+          find "$WORK" -type f -exec shred -u {} + 2>/dev/null || true
+          rm -rf "$WORK"
+          sudo -u postgres psql -X -h /var/run/postgresql -p 5432 -d postgres -qtAc \
+            "SELECT datname FROM pg_database WHERE datname LIKE 'vents_local_pg%'" 2>/dev/null | while read -r db; do
+              [ -n "$db" ] && sudo -u postgres psql -X -h /var/run/postgresql -p 5432 -d postgres -qc "DROP DATABASE IF EXISTS \"$db\";"
+          done
+          echo "cleanup done: key, encrypted file, reports and local databases removed"
