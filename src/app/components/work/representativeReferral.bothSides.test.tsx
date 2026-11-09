@@ -6,7 +6,7 @@ import { createRoot, Root } from 'react-dom/client';
 // returns for the signed-in user (0209/0210) -- no mock counts, no locally
 // simulated connection, no commission wording.
 let responses: Record<string, { data: any; error: any }> = {};
-const rpc = vi.fn(async (fn: string) => responses[fn] ?? { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
+const rpc = vi.fn(async (fn: string, _args?: unknown) => responses[fn] ?? { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
 vi.mock('../../../lib/supabase', () => ({ supabase: { rpc: (fn: string, a: any) => rpc(fn, a) } }));
 import { RepresentativeConnectionCard } from './representativeConnection';
 import { RepresentativeInviteBanner } from './RepresentativeInviteBanner';
