@@ -148,7 +148,7 @@ INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, desc
   ('$ORG_ADMIN', 'credit', 2000000, 'ticket sales');
 SQL
 
-STATE_SQL="SELECT md5(string_agg(p.oid::regprocedure::text || ':' || p.prosrc || ':' || COALESCE(array_to_string(p.proacl, ','), ''), '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT md5(string_agg(conrelid::regclass::text || conname || pg_get_constraintdef(oid), '|' ORDER BY conrelid::regclass::text, conname)) FROM pg_constraint WHERE connamespace = 'public'::regnamespace) || '/' || (SELECT md5(string_agg(table_name || '.' || column_name || COALESCE(column_default, ''), '|' ORDER BY table_name, column_name)) FROM information_schema.columns WHERE table_schema = 'public') || '/' || (SELECT md5(string_agg(tgrelid::regclass::text || tgname, '|' ORDER BY tgrelid::regclass::text, tgname)) FROM pg_trigger WHERE NOT tgisinternal) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
+STATE_SQL="SELECT md5(string_agg(p.oid::regprocedure::text || ':' || p.prosrc || ':' || COALESCE(array_to_string(p.proacl, ','), ''), '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT md5(string_agg(conrelid::regclass::text || conname || pg_get_constraintdef(oid), '|' ORDER BY conrelid::regclass::text, conname)) FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conrelid::regclass::text NOT LIKE '%withdrawal_pin%') || '/' || (SELECT md5(string_agg(table_name || '.' || column_name || COALESCE(column_default, ''), '|' ORDER BY table_name, column_name)) FROM information_schema.columns WHERE table_schema = 'public' AND table_name NOT LIKE 'withdrawal_pin%') || '/' || (SELECT md5(string_agg(tgrelid::regclass::text || tgname, '|' ORDER BY tgrelid::regclass::text, tgname)) FROM pg_trigger WHERE NOT tgisinternal) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
 PRE_0211=$(val "$STATE_SQL")
 GUARD_0205=$(val "SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.organizer_withdrawal_requests_guard()'::regprocedure;")
 EXEC_0203=$(val "SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.execute_withdrawal_authorization(uuid)'::regprocedure;")
@@ -402,12 +402,24 @@ fi
 expect_value "ledger = available + pending for every wallet after all of the above" "$(reconciled)" "0"
 
 echo "== Rollback and re-apply =="
+APPROVALS_BEFORE_UNDO=$(val "SELECT count(*) FILTER (WHERE approved_by IS NOT NULL) || '/' || (SELECT count(*) FROM public.admin_action_requests WHERE action_type = 'authorize_withdrawal') FROM public.organizer_withdrawal_requests;")
+PINS_BEFORE_UNDO=$(val "SELECT (SELECT count(*) FROM public.withdrawal_pins) || '/' || (SELECT count(*) FROM public.withdrawal_pin_events);")
 expect_ok "undo_0211 runs" "SET vents.rollback_confirm = 'undo-0211'; $(cat "$REPO_ROOT/supabase/rollback/undo_0211.sql")"
 expect_value "after undo_0211 the database is exactly the pre-0211 state (functions, grants, constraints, columns, triggers)" "$(val "$STATE_SQL")" "$PRE_0211"
 "${PSQL[@]}" -tA -c "$FN_LIST" > "$TMP/fn_post"
 diff "$TMP/fn_pre" "$TMP/fn_post" >&2 || true
 expect_value "withdrawal history and money are untouched by the rollback" "$(val "SELECT count(*) FROM public.organizer_withdrawal_requests;")/$(reconciled)" "5/0"
+expect_value "approval history is untouched by the rollback" \
+  "$(val "SELECT count(*) FILTER (WHERE approved_by IS NOT NULL) || '/' || (SELECT count(*) FROM public.admin_action_requests WHERE action_type = 'authorize_withdrawal') FROM public.organizer_withdrawal_requests;")" "$APPROVALS_BEFORE_UNDO"
+expect_value "PIN data is kept by the rollback (hashes and audit trail)" \
+  "$(val "SELECT (SELECT count(*) FROM public.withdrawal_pins) || '/' || (SELECT count(*) FROM public.withdrawal_pin_events);")" "$PINS_BEFORE_UNDO"
+expect_value "...and stays closed to clients while rolled back" \
+  "$(val "SELECT has_table_privilege('authenticated', 'public.withdrawal_pins', 'SELECT')::text || '/' || has_table_privilege('anon', 'public.withdrawal_pin_events', 'SELECT')::text;")" "false/false"
+expect_value "after the rollback the previous (no-PIN) entry point works again for clients" \
+  "$(val "SELECT has_function_privilege('authenticated', 'public.request_organizer_payout(bigint,uuid,text)', 'EXECUTE')::text;")" "true"
 expect_ok "0211 re-applies after the rollback" "$(cat "$TMP_MIG")"
+expect_value "after re-applying, users keep their PIN (the old PIN is accepted, no new one needed)" \
+  "$(withdraw "$ORG" 100 "$BANK" 5820 after-reapply)" "amount_too_small"
 expect_value "re-applied state equals the first apply" "$(val "$STATE_SQL")" "$POST_0211"
 
 echo
