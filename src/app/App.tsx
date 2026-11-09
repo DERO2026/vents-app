@@ -94,7 +94,7 @@ import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 // Bump this on every release. Compared against app_config.min_client_version
 // on launch — if this build is older, the client shows a blocking update
 // screen instead of the app.
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 function isVersionOlder(current: string, minimum: string): boolean {
   const a = current.split('.').map((n) => parseInt(n, 10) || 0);

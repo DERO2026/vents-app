@@ -1,0 +1,134 @@
+# Android release build (Capacitor). This machine cannot build Android (no
+# SDK, no owner's signing key), so the build runs on a GitHub Ubuntu runner.
+#
+# pull_request (android/, capacitor config, this file): UNSIGNED compile check.
+#   No secrets, no environment. Proves the native project builds.
+# workflow_dispatch (Actions -> Android release -> Run workflow): SIGNED
+#   release AAB for Google Play, using the 'android-release' environment's
+#   secrets. Nothing is uploaded to Google Play: the signed .aab is a 14-day
+#   workflow artifact the owner downloads and uploads in the Play Console.
+#
+# Secrets (environment 'android-release'; add them in GitHub, never in chat):
+#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY   same values as Vercel Production
+#   VITE_PAYSTACK_PUBLIC_KEY                    the pk_live_ key (the build refuses anything else)
+#   VITE_GOOGLE_PLACES_API_KEY                  same as Vercel Production
+#   ANDROID_KEYSTORE_BASE64                     the upload keystore (.jks) as base64
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# The keystore is written to the runner's temp dir only for the build, then shredded.
+name: Android release
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - '.github/workflows/android-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'android-release' || null }}
+    env:
+      SIGNED: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Android SDK platform 36
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
+      - run: npm ci
+
+      - name: Web build (production values for a signed release; dev-mode build for the compile check)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_PAYSTACK_PUBLIC_KEY: ${{ secrets.VITE_PAYSTACK_PUBLIC_KEY }}
+          VITE_GOOGLE_PLACES_API_KEY: ${{ secrets.VITE_GOOGLE_PLACES_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "$SIGNED" = "true" ]; then
+            for v in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_PAYSTACK_PUBLIC_KEY VITE_GOOGLE_PLACES_API_KEY; do
+              [ -n "${!v}" ] || { echo "::error::Secret $v is missing in the android-release environment"; exit 1; }
+            done
+            npx vite build
+          else
+            npx vite build --mode development
+          fi
+
+      - name: Sync the web build into the Android project
+        run: npx cap sync android
+
+      - name: Signing key (signed release only; never printed)
+        if: env.SIGNED == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::A signing secret is missing in the android-release environment ($v)"; exit 1; }
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/upload.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/keystore.properties
+
+      - name: Build
+        working-directory: android
+        run: |
+          set -euo pipefail
+          if [ "$SIGNED" = "true" ]; then ./gradlew --no-daemon bundleRelease; else ./gradlew --no-daemon assembleRelease; fi
+
+      - name: Check the signed bundle
+        if: env.SIGNED == 'true'
+        run: |
+          set -euo pipefail
+          aab=android/app/build/outputs/bundle/release/app-release.aab
+          [ -s "$aab" ] || { echo "::error::No release bundle was produced"; exit 1; }
+          jarsigner -verify "$aab" > /dev/null || { echo "::error::The bundle is not signed"; exit 1; }
+          echo "ok: signed $(du -h "$aab" | cut -f1) bundle, versionName $(grep -oE 'versionName "[^"]+"' android/app/build.gradle | cut -d'"' -f2), versionCode $(grep -oE 'versionCode [0-9]+' android/app/build.gradle | cut -d' ' -f2)"
+
+      - name: Upload signed bundle
+        if: env.SIGNED == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vents-android-release-${{ github.sha }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove the signing key (always)
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/upload.jks" ] && shred -u "$RUNNER_TEMP/upload.jks"
+          [ -f android/keystore.properties ] && shred -u android/keystore.properties
+          echo "signing material removed"

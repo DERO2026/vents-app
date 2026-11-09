@@ -27,8 +27,8 @@ android {
         // versionCode must strictly increase on every Play Store upload.
         // Bumped from 2 to 3 because versionCode 2 was already consumed by
         // an existing Play Console draft before it was ever uploaded.
-        versionCode 3
-        versionName "1.1.1"
+        versionCode 4
+        versionName "1.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
