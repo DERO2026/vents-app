@@ -52,7 +52,11 @@ const scrimInfo = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)
 await page.goto('https://getvents.com/', { waitUntil: 'networkidle', timeout: 90000 });
 await page.waitForTimeout(5000);
 R.mainScript = await page.evaluate(() => document.querySelector('script[type=module]')?.getAttribute('src'));
-await page.screenshot({ path: `${OUT}/01-home.png` });
+await page.screenshot({ path: `${OUT}/01-welcome.png` });
+R.welcome = { flatBands: await findBands() };
+const guest = page.getByText('Browse as guest').first();
+if (await guest.count()) { await guest.click(); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(6000); }
+await page.screenshot({ path: `${OUT}/01b-home-feed.png` });
 R.featured = { count: await page.locator('[data-testid="featured-scrim"]').count(), scrims: await scrimInfo('[data-testid="featured-scrim"]'), flatBands: await findBands() };
 if (R.featured.count) {
   const card = page.locator('[data-testid="featured-scrim"]').first().locator('xpath=..');
