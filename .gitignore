@@ -72,14 +72,10 @@ android/app/*.jks
 android/app/*.keystore
 android/keystore.properties
 
-# The whole ios/ project (generated locally via `npx cap add ios`) stays
-# untracked — unlike android/, which is committed because it carries
-# intentional native config (AndroidManifest.xml intent-filters,
-# strings.xml). Any equivalent iOS-side config (Info.plist keys,
-# entitlements, signing) lives only on the machine that built it; redo
-# IOS_LAUNCH_CHECKLIST.md's steps if the project needs regenerating
-# elsewhere.
-ios/
+# ios/ is committed (since 1.2.0) so its Info.plist keys, entitlements,
+# version and signing team persist and CI can compile it. ios/.gitignore
+# keeps the generated parts (App/App/public, Pods, build, capacitor.config.json)
+# out. GoogleService-Info.plist stays ignored (rule above).
 
 # Native build outputs — android/ is committed, but generated build
 # artifacts under it never should be. android/ already has its own nested
