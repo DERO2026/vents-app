@@ -6,7 +6,7 @@ import '../src/styles/index.css';
 import { OrganizerDashboard } from '../src/app/components/OrganizerDashboard';
 import { ManageEventsScreen } from '../src/app/components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from '../src/app/components/SalesAnalyticsScreen';
-import { HomeScreen, mapDbEventToFrontend } from '../src/app/components/HomeScreen';
+import { HomeScreen, mapDbEventToFrontend, FeaturedCarousel } from '../src/app/components/HomeScreen';
 import { WelcomeScreen } from '../src/app/components/WelcomeScreen';
 import { EventDetailsScreen } from '../src/app/components/EventDetailsScreen';
 import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
@@ -146,6 +146,18 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onCountryFilterChange={() => {}}
     />
   ),
+  // The Featured card over a bright flyer (QA only): shows whether anything
+  // dims or covers the flyer. Rendered directly (the home screen's own events
+  // query uses filters the fake client does not evaluate). Local SVG, no network.
+  'featured-card': () => {
+    const ev = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg', is_featured: true, featured_until: null,
+      ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] });
+    return (
+      <div style={{ background: '#060A14', minHeight: '100vh', paddingTop: 16, maxWidth: 1280, margin: '0 auto' }}>
+        <FeaturedCarousel events={[ev]} currentIndex={0} onIndexChange={() => {}} onEventPress={() => {}} isSaved={[]} onToggleSave={() => {}} />
+      </div>
+    );
+  },
   'event-details': () => {
     const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
       // Legacy save (digits after the +234 picker); see src/lib/contactPhone.ts.
