@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import { Ticket, Calendar, MapPin, QrCode, RefreshCw, Send, Check, X, Clock, AlertCircle, CheckCircle, XCircle, Ban } from 'lucide-react';
 import { PurchasedTicket, TicketTransfer } from './types';
@@ -894,16 +895,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     alt={ticket.event.title}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: '50%',
-                      background: 'rgba(10,6,18,0.8)',
-                    }}
-                  />
+                  <div aria-hidden style={flyerScrim(55)} />
                   <div
                     style={{
                       position: 'absolute',

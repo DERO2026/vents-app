@@ -1,4 +1,5 @@
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
@@ -773,10 +774,7 @@ export function FeaturedCarousel({
               out half of every flyer. The flyer stays fully visible above;
               the scrim starts transparent and only darkens (VENTS background
               #060A14) behind the title, date, place and CTA. */}
-          <div data-testid="featured-scrim" aria-hidden style={{
-            position: 'absolute', left: 0, right: 0, bottom: 0, height: '40%', pointerEvents: 'none',
-            background: 'linear-gradient(to bottom, rgba(6,10,20,0) 0%, rgba(6,10,20,0.5) 45%, rgba(6,10,20,0.88) 100%)',
-          }} />
+          <div data-testid="featured-scrim" aria-hidden style={flyerScrim(40)} />
           {/* FEATURED badge -- handoff anatomy: dark glass pill, JetBrains
               Mono caps, not a purple gradient pill. */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>

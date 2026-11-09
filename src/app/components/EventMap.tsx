@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MapPin, Navigation } from 'lucide-react';
-import { loadGoogleMaps, onGoogleMapsAuthFailure } from '../../lib/googleMaps';
+import { loadGoogleMaps, onGoogleMapsAuthFailure, watchForGoogleMapsErrorUi } from '../../lib/googleMaps';
 import { SecondaryButton } from './shared/Button';
 import { Sentry } from '../../lib/sentry';
 import { buildMapEmbedUrl, listenToMapEmbed, shouldUseMapEmbed } from '../../lib/mapEmbed';
@@ -58,6 +58,8 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
     const unsubscribe = onGoogleMapsAuthFailure(() => {
       if (cancelled) return;
       mapRef.current = null;
+      // Remove Google's error box itself, not just cover it.
+      if (mapDivRef.current) mapDivRef.current.replaceChildren();
       setStatus('unavailable');
     });
     return () => { cancelled = true; unsubscribe(); };
@@ -117,6 +119,9 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
       // white Google InfoWindow just duplicated it while clashing hard with
       // the dark theme. Still opens normally on marker tap.
     }
+    // Google's own error box (billing / API not enabled / key restriction)
+    // switches this card to its no-map fallback instead of staying grey.
+    return watchForGoogleMapsErrorUi(mapDivRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, hasCoords]);
 

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { Capacitor } from '@capacitor/core';
 import { VentsLogo } from './VentsLogo';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
@@ -131,7 +132,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
             }}
           >
             <img src={card.src} alt={card.caption ?? 'Events'} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%', background: 'rgba(0,0,0,0.65)' }} />
+            <div aria-hidden style={flyerScrim(45)} />
             {card.side === 'center' ? (
               <>
                 <span style={{ position: 'absolute', top: '16px', left: '16px', fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', padding: '5px 9px', borderRadius: '7px', background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.16)', color: '#fff' }}>

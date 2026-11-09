@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Download, Share2, CheckCircle, MapPin, Clock, Zap } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -256,10 +257,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
               {/* Event image header */}
               <div className="relative" style={{ height: '140px' }}>
                 <img src={ticket.event.image} alt={ticket.event.title} className="w-full h-full object-cover" />
-                <div
-                  className="absolute inset-x-0 bottom-0"
-                  style={{ height: '55%', background: 'rgba(7,3,15,0.85)' }}
-                />
+                <div aria-hidden style={flyerScrim(55)} />
                 <div className="absolute bottom-3 left-4 right-4">
                   <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1.2, textShadow: '0 0 20px rgba(167,139,250,0.6)' }}>
                     {ticket.event.title}

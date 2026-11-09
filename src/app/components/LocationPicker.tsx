@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader, WifiOff } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { loadGoogleMaps, onGoogleMapsAuthFailure } from '../../lib/googleMaps';
+import { loadGoogleMaps, onGoogleMapsAuthFailure, watchForGoogleMapsErrorUi } from '../../lib/googleMaps';
 import { matchNigeriaState } from '../../lib/nigeriaLocations';
 import { isOnline } from '../../lib/isOnline';
 import { Sentry } from '../../lib/sentry';
@@ -307,6 +307,9 @@ export function LocationPicker({
       placeMarker(lat, lng);
       reverseGeocode(lat, lng);
     });
+    // Google's own error box (billing / API not enabled / key restriction)
+    // turns the picker into manual address entry instead of staying grey.
+    return watchForGoogleMapsErrorUi(mapDivRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import {
@@ -741,18 +742,9 @@ export function EventDetailsScreen({
             style={{ width: '100%', height: '100%', cursor: 'zoom-in' }}
           />
 
-          {/* Solid translucent band so the category pill and tap hint stay legible */}
-          <div
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: '40%',
-              background: 'rgba(2,0,5,0.7)',
-              pointerEvents: 'none',
-            }}
-          />
+          {/* Bottom-only gradient so the category pill and tap hint stay
+              legible; the flyer above stays bright (was a flat dark band). */}
+          <div data-testid="event-hero-scrim" aria-hidden style={flyerScrim(35)} />
 
           {/* Back button (top-left) */}
           <button

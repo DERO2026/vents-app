@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import { CheckCircle, Download, Share2, Link as LinkIcon, Home, Calendar, MapPin, Ticket, Send, AlertCircle, X } from 'lucide-react';
 import { PurchasedTicket } from './types';
@@ -303,16 +304,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               alt=""
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: '45%',
-                background: 'rgba(19,22,41,0.7)',
-              }}
-            />
+            <div aria-hidden style={flyerScrim(50)} />
             <div style={{ position: 'absolute', bottom: '12px', left: '16px' }}>
               <span
                 style={{

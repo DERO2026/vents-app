@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ArrowLeft, Minus, Plus, CheckCircle, Maximize2 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
@@ -142,14 +143,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           alt={event.title}
           style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block' }}
         />
-        <div style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: '45%',
-          background: 'rgba(6,10,18,0.75)',
-        }} />
+        <div aria-hidden style={flyerScrim(45)} />
         {/* Back button */}
         <button
           onClick={onBack}

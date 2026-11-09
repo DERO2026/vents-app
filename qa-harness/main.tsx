@@ -158,6 +158,13 @@ const SCREENS: Record<string, () => JSX.Element> = {
       </div>
     );
   },
+  // Event details over a bright flyer (QA only): shows whether anything
+  // dims the hero flyer. Local SVG, no network.
+  'event-details-flyer': () => {
+    const event = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg',
+      ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] });
+    return <EventDetailsScreen event={event} onBack={() => {}} onGetTickets={() => {}} isSaved={false} onToggleSave={() => {}} currentUserId="user-1" />;
+  },
   'event-details': () => {
     const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
       // Legacy save (digits after the +234 picker); see src/lib/contactPhone.ts.
