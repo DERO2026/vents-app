@@ -2,10 +2,15 @@
 -- Restores the 0203 / 0205 / live bodies 0211 replaced (verbatim), gives
 -- clients back request_organizer_payout, and drops what 0211 added.
 --
--- Money, withdrawal requests, their approvals, admin requests and the ledger
--- are NOT touched. Withdrawal PINs ARE deleted (withdrawal_pins and its
--- event log are dropped): after a rollback the app must also be rolled back
--- to a build that does not ask for a PIN. Approvals given by a sub-admin
+-- NOT touched: money, wallets, the ledger, withdrawal requests, their
+-- approvals, admin requests, admin logs, notifications -- and the PIN data:
+-- withdrawal_pins and withdrawal_pin_events are KEPT (no client role can
+-- read them, and nothing uses them while 0211 is rolled back), so
+-- re-applying 0211 brings every user's PIN, lock state and audit trail back.
+-- To erase PINs permanently after a final rollback, run separately:
+--   DROP TABLE public.withdrawal_pin_events; DROP TABLE public.withdrawal_pins;
+-- After a rollback the app keeps working: without 0211's functions it uses
+-- the previous withdrawal flow (no PIN). Approvals given by a sub-admin
 -- under 0211 stay valid (an approval never changes); new second approvals
 -- again need a super admin.
 -- Refuses unless the operator confirms: SET vents.rollback_confirm = 'undo-0211';
@@ -188,8 +193,8 @@ DROP FUNCTION IF EXISTS public.withdrawal_pin_is_weak(text);
 DROP FUNCTION IF EXISTS public.withdrawal_pin_matches(uuid, text, text);
 DROP FUNCTION IF EXISTS public.withdrawal_pin_hash(uuid, text);
 DROP FUNCTION IF EXISTS public.withdrawal_pin_policy();
-DROP TABLE IF EXISTS public.withdrawal_pin_events;
-DROP TABLE IF EXISTS public.withdrawal_pins;
+-- withdrawal_pins / withdrawal_pin_events intentionally kept (see header).
+REVOKE ALL ON public.withdrawal_pins, public.withdrawal_pin_events FROM PUBLIC, anon, authenticated;
 DROP FUNCTION IF EXISTS public.get_my_withdrawals(integer);
 DROP FUNCTION IF EXISTS public.admin_list_withdrawals(text, integer);
 DROP FUNCTION IF EXISTS public.admin_cancel_withdrawal_first_approval(uuid, text);

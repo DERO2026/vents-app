@@ -69,8 +69,10 @@ select has_function_privilege('authenticated', 'public.request_organizer_payout(
 ```
 
 **Rollback:** `SET vents.rollback_confirm = 'undo-0211';` then run `supabase/rollback/undo_0211.sql`.
-- It deletes all PINs.
-- Money, withdrawals and approvals are untouched.
-- Roll the app back at the same time.
+- PINs are kept (closed and unused), so re-applying 0211 restores them.
+- Money, withdrawals, approvals and the ledger are untouched.
+- The app falls back to the previous flow by itself; no redeploy is needed.
 
-**Tests:** `scripts/local-pg-test/run-withdrawal-pin-approval-verification.sh` (122 checks, local throwaway database only).
+Full sequence: `docs/withdrawal-rollout-checklist.md`.
+
+**Tests:** `scripts/local-pg-test/run-withdrawal-pin-approval-verification.sh` (127 checks, local throwaway database only).
