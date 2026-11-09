@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { RepresentativeInviteBanner } from './work/RepresentativeInviteBanner';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
@@ -2191,6 +2192,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 <h1 style={{ margin: 0, color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
                   Create your account
                 </h1>
+                {/* Opened a VENTS Representative's referral link: show who invited them (server-verified). */}
+                <div style={{ marginTop: '14px' }}><RepresentativeInviteBanner /></div>
               </div>
             ) : mode === 'login' ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', marginBottom: '40px', textAlign: 'center' }}>
