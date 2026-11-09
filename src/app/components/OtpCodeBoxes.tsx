@@ -32,9 +32,10 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 // <input> kept capturing keystrokes and forwarding them to onChange
 // regardless (verification still succeeded), so this was purely a display
 // bug, invisible to any test that only asserts the resulting value.
-function Slot({ slot, hasError }: { slot: { char: string | null; isActive: boolean; hasFakeCaret: boolean }; hasError: boolean }) {
+function Slot({ slot, hasError, mask }: { slot: { char: string | null; isActive: boolean; hasFakeCaret: boolean }; hasError: boolean; mask?: boolean }) {
   const isActive = slot.isActive;
-  const char = slot.char ?? '';
+  // Masked (withdrawal PIN): a dot, never the digit, on screen.
+  const char = slot.char == null ? '' : mask ? '•' : slot.char;
   const border = hasError
     ? '1px solid rgba(248,113,113,0.6)'
     : isActive
@@ -76,6 +77,8 @@ export function OtpCodeBoxes({
   hasError,
   autoFocus,
   inputRef,
+  mask,
+  ariaLabel,
 }: {
   length: number;
   value: string;
@@ -84,6 +87,9 @@ export function OtpCodeBoxes({
   hasError: boolean;
   autoFocus?: boolean;
   inputRef?: React.Ref<HTMLInputElement>;
+  /** Show dots instead of digits (withdrawal PIN), and never offer one-time-code autofill. */
+  mask?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <>
@@ -96,11 +102,13 @@ export function OtpCodeBoxes({
         onKeyDown={onKeyDown}
         autoFocus={autoFocus}
         inputMode="numeric"
+        {...(mask ? { autoComplete: 'off', 'data-private': 'true' } : {})}
+        {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
         containerClassName="flex gap-2 w-full"
         render={({ slots }) => (
           <>
             {slots.map((slot, i) => (
-              <Slot key={i} slot={slot} hasError={hasError} />
+              <Slot key={i} slot={slot} hasError={hasError} mask={mask} />
             ))}
           </>
         )}

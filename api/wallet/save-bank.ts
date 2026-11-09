@@ -21,8 +21,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
   const body = req.body || {};
-  const action: 'add' | 'set_default' | 'remove' = body.action || 'add';
-  if (!['add', 'set_default', 'remove'].includes(action)) {
+  // 'reset_withdrawal_pin' (0211): change or forgotten withdrawal PIN. Lives
+  // here (not a new route) because it needs exactly this endpoint's password
+  // re-confirmation and rate limit, and the project is at its serverless
+  // function limit.
+  const action: 'add' | 'set_default' | 'remove' | 'reset_withdrawal_pin' = body.action || 'add';
+  if (!['add', 'set_default', 'remove', 'reset_withdrawal_pin'].includes(action)) {
     return res.status(400).json({ error: 'Invalid action' });
   }
 
@@ -55,6 +59,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   try {
+    // ── reset_withdrawal_pin (0211) ───────────────────────────────────────
+    if (action === 'reset_withdrawal_pin') {
+      const { pin, pin_confirm } = body;
+      if (typeof pin !== 'string' || !/^\d{4}$/.test(pin) || typeof pin_confirm !== 'string') {
+        return res.status(400).json({ error: 'Your withdrawal PIN must be exactly 4 digits' });
+      }
+      // The database re-checks everything (format, weak PINs, match) and
+      // refuses unless this session's password was entered seconds ago.
+      // The PIN is never logged or echoed back.
+      const status = await callRpc('reset_my_withdrawal_pin', { p_pin: pin, p_pin_confirm: pin_confirm });
+      return res.status(200).json({ ok: true, pin_status: status });
+    }
+
     // ── set_default / remove ──────────────────────────────────────────────
     if (action === 'set_default' || action === 'remove') {
       if (!body.account_id || typeof body.account_id !== 'string') {
@@ -109,6 +126,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ account_name: verifiedAccountName, recipient_code: recipientCode });
   } catch (err: any) {
-    return res.status(err?.status || 500).json({ error: err?.message || 'Failed to update bank account' });
+    return res.status(err?.status || 500).json({
+      error: err?.message || (action === 'reset_withdrawal_pin' ? 'Could not change your withdrawal PIN.' : 'Failed to update bank account'),
+    });
   }
 }

@@ -16,8 +16,15 @@ import { notifyByEmail } from './adminAuditLog';
 import { apiUrl } from '../../../lib/apiBase';
 import { withTimeoutFallback } from '../../../lib/withTimeoutFallback';
 import { Sentry } from '../../../lib/sentry';
+import { isBackendUnavailable } from '../../../lib/workRoles';
+import {
+  fetchAdminWithdrawals, adminFirstApprove, adminSecondApprove, adminCancelFirstApproval,
+  stageInfo, STAGE_TONE_COLORS, type AdminWithdrawal,
+} from '../../../lib/withdrawals';
 
-export function AdminPayoutsScreen() {
+// isSuperAdmin only shapes labels and the legacy (pre-0211) view; on 0211
+// every button comes from the server's can_* columns for THIS admin.
+export function AdminPayoutsScreen({ isSuperAdmin = false }: { isSuperAdmin?: boolean } = {}) {
   const [requests, setRequests] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   // 0203: held earnings of one organizer/provider, opened from the wallets list.
@@ -49,6 +56,13 @@ export function AdminPayoutsScreen() {
   // compare-and-swap, confirmed live), so this is a misclick safety net,
   // not a duplicate-transfer fix.
   const [approveConfirmId, setApproveConfirmId] = useState<string | null>(null);
+  // 0211: true when the rows come from admin_list_withdrawals (one
+  // authoritative state for admins and sub-admins); false on a database
+  // without 0211 (legacy view below).
+  const [authoritative, setAuthoritative] = useState<boolean>(false);
+  const [firstApproveRow, setFirstApproveRow] = useState<AdminWithdrawal | null>(null);
+  const [secondApproveRow, setSecondApproveRow] = useState<AdminWithdrawal | null>(null);
+  const [withdrawFirstRow, setWithdrawFirstRow] = useState<AdminWithdrawal | null>(null);
   // 0203 maker-checker: a withdrawal is paid only after one admin requests
   // authorization and a different super admin approves it (Admin Actions).
   // null = the database has no approval columns yet (0203 not applied); the
@@ -76,9 +90,19 @@ export function AdminPayoutsScreen() {
     setLoading(true);
     setLoadError(null);
     try {
+      // 0211: the authoritative list first; the legacy reads only when the
+      // database does not have it yet.
+      let authoritativeRows: AdminWithdrawal[] | null = null;
+      try {
+        authoritativeRows = await fetchAdminWithdrawals(statusFilter === 'pending' ? 'open' : 'all');
+      } catch (e: any) {
+        if (!isBackendUnavailable(e)) throw e;
+      }
+      setAuthoritative(authoritativeRows !== null);
       const [reqRes, walRes, memberWalRes] = await withTimeoutFallback(
         Promise.all([
-          statusFilter === 'pending'
+          authoritativeRows !== null ? Promise.resolve({ data: authoritativeRows, error: null } as any)
+          : statusFilter === 'pending'
             ? supabase.rpc('admin_list_pending_payouts' as any)
             : supabase
                 .from('organizer_withdrawal_requests')
@@ -130,7 +154,9 @@ export function AdminPayoutsScreen() {
       setRequests(normalized);
       setWallets(wals);
       const pendingIds = normalized.filter((r: any) => r.status === 'pending').map((r: any) => r.request_id);
-      if (pendingIds.length === 0) {
+      if (authoritativeRows !== null) {
+        setApprovals(null);
+      } else if (pendingIds.length === 0) {
         setApprovals({});
       } else {
         const [{ data: me }, apprRes, actRes] = await Promise.all([
@@ -241,6 +267,25 @@ export function AdminPayoutsScreen() {
     } catch (e: any) { flash(false, e.message || 'Could not request authorization'); } finally { setActionLoading(null); actionInFlightRef.current = null; }
   };
 
+  // 0211 two-admin approval. Each call is refused by the server unless THIS
+  // admin may do it; the list is re-read afterwards, so what is shown is
+  // always the database's state, never an optimistic guess.
+  const runWithdrawalAction = async (id: string, fn: () => Promise<void>, ok: string) => {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = id;
+    setActionLoading(id);
+    try {
+      await fn();
+      flash(true, ok);
+    } catch (e: any) {
+      flash(false, e?.message || 'That action was refused');
+    } finally {
+      setActionLoading(null);
+      actionInFlightRef.current = null;
+      await load();
+    }
+  };
+
   const handleReject = async (id: string, reason: string) => {
     if (!reason.trim()) return;
     if (actionInFlightRef.current) return;
@@ -333,8 +378,60 @@ export function AdminPayoutsScreen() {
     if (holdsFor) await loadHolds(holdsFor);
   };
 
+  // 0211: the approval trail and the actions THIS admin may take, all from
+  // admin_list_withdrawals.
+  const authoritativeActions = (r: AdminWithdrawal, marginTop: number) => {
+    const busy = actionLoading === r.request_id;
+    const btn = (testId: string, label: string, onClick: () => void, tone: 'blue' | 'green' | 'neutral' | 'red') => {
+      const c = tone === 'blue' ? { bg: 'rgba(96,165,250,.15)', bd: 'rgba(96,165,250,.3)', fg: adminTheme.blue }
+        : tone === 'green' ? { bg: 'rgba(52,211,153,.15)', bd: 'rgba(52,211,153,.3)', fg: adminTheme.green }
+        : tone === 'red' ? { bg: 'rgba(248,113,113,.12)', bd: 'rgba(248,113,113,.3)', fg: adminTheme.red }
+        : { bg: adminTheme.borderChip, bd: adminTheme.border, fg: adminTheme.text };
+      return (
+        <button key={testId} data-testid={`${testId}-${r.request_id}`} onClick={onClick} disabled={busy}
+          style={{ flex: '1 1 120px', background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 10, padding: 8, color: c.fg, fontWeight: 700, fontSize: 13, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+          {busy ? 'Working…' : label}
+        </button>
+      );
+    };
+    const who = (name: string | null, tier: string | null) => `${name || 'An admin'}${tier === 'sub' ? ' (sub-admin)' : tier === 'full' ? ' (admin)' : ''}`;
+    const when = (t: string | null) => (t ? new Date(t).toLocaleString('en-NG') : '');
+    return (
+      <div data-testid={`withdrawal-approvals-${r.request_id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop }}>
+        <div style={{ fontSize: 12, color: adminTheme.textMuted, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span data-testid={`withdrawal-first-approval-${r.request_id}`}>
+            1st approval: {r.first_approved_by ? <b style={{ color: adminTheme.text }}>{who(r.first_approved_by_name, r.first_approved_by_tier)} · {when(r.first_approved_at)}</b> : 'not yet'}
+          </span>
+          <span data-testid={`withdrawal-second-approval-${r.request_id}`}>
+            2nd approval: {r.second_approved_by ? <b style={{ color: adminTheme.text }}>{who(r.second_approved_by_name, null)} · {when(r.second_approved_at)}</b> : 'not yet'}
+          </span>
+        </div>
+        {r.action_note && (
+          <p data-testid={`withdrawal-action-note-${r.request_id}`} style={{ margin: 0, fontSize: 12, color: adminTheme.amber }}>{r.action_note}</p>
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {r.can_first_approve && btn('withdrawal-first-approve', 'Approve (1st)', () => setFirstApproveRow(r), 'blue')}
+          {r.can_second_approve && btn('withdrawal-second-approve', 'Approve (2nd)', () => setSecondApproveRow(r), 'blue')}
+          {r.can_pay && btn('withdrawal-pay', 'Pay now', () => setApproveConfirmId(r.request_id), 'green')}
+          {r.can_cancel_first_approval && btn('withdrawal-withdraw-first', 'Withdraw 1st approval', () => setWithdrawFirstRow(r), 'neutral')}
+          {r.can_reject && btn('withdrawal-reject', 'Reject', () => setRejectConfirmId(r.request_id), 'red')}
+        </div>
+        {r.status === 'pending' && !r.can_reject && !r.action_note && (
+          <p style={{ margin: 0, fontSize: 11, color: adminTheme.textFaint }}>Only a full admin can reject a withdrawal.</p>
+        )}
+        {r.status === 'pending' && !r.second_approved_by && (
+          <button data-testid={`withdrawal-reassign-toggle-${r.request_id}`} onClick={() => setReassignFor((v) => (v === r.request_id ? null : r.request_id))} title="If the organizer's bank account was deactivated: move this request to another of their verified accounts (two admins, 0207). Moves no money." style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', padding: 0, color: adminTheme.textMuted, fontSize: 11.5, textDecoration: 'underline', cursor: 'pointer' }}>
+            {reassignFor === r.request_id ? 'Hide' : 'Move to another bank account'}
+          </button>
+        )}
+        {reassignFor === r.request_id && <WithdrawalReassignForm requestId={r.request_id} organizerId={r.organizer_id} />}
+      </div>
+    );
+  };
+
   // Buttons for a pending withdrawal: authorize (two admins) -> pay -> or reject.
   const pendingActions = (r: any, marginTop: number) => {
+    if (authoritative && 'stage' in r) return authoritativeActions(r as AdminWithdrawal, marginTop);
     const a = approvals?.[r.request_id];
     const busy = actionLoading === r.request_id || payoutsDisabled;
     const canPay = approvals === null || !!a?.approved;
@@ -524,11 +621,17 @@ export function AdminPayoutsScreen() {
               <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: adminTheme.textStrong }}>{r.organizer_name || r.organizer_id?.slice(0, 8)}</p>
               <p style={{ margin: '2px 0 0', fontSize: 11, color: adminTheme.textMuted }}>{r.organizer_email}{r.organizer_phone ? ` · ${r.organizer_phone}` : ''}</p>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: statusColor[r.status] || adminTheme.textMuted, background: `${statusColor[r.status]}22`, borderRadius: 6, padding: '3px 8px' }}>{r.status.toUpperCase()}</span>
+            {authoritative && r.stage ? (
+              <span data-testid={`withdrawal-stage-${r.request_id}`} style={{ fontSize: 11, fontWeight: 700, color: STAGE_TONE_COLORS[stageInfo(r.stage).tone].fg, background: STAGE_TONE_COLORS[stageInfo(r.stage).tone].bg, borderRadius: 6, padding: '3px 8px' }}>{stageInfo(r.stage).admin.toUpperCase()}</span>
+            ) : (
+              <span style={{ fontSize: 11, fontWeight: 700, color: statusColor[r.status] || adminTheme.textMuted, background: `${statusColor[r.status]}22`, borderRadius: 6, padding: '3px 8px' }}>{r.status.toUpperCase()}</span>
+            )}
           </div>
           <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: adminTheme.accentFrom }}>{fmt(r.amount_kobo)}</p>
           {r.bank_name && <p style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted }}>{r.bank_name} · {r.account_number} · {r.account_name}</p>}
           {r.recipient_code && <p style={{ margin: 0, fontSize: 10, color: adminTheme.textFainter, fontFamily: 'monospace' }}>{r.recipient_code}</p>}
+          {authoritative && r.status === 'pending' && r.bank_account_active === false && <p style={{ margin: 0, fontSize: 11, color: adminTheme.red }}>This bank account is no longer active.</p>}
+          {authoritative && r.admin_note && r.status !== 'pending' && <p style={{ margin: 0, fontSize: 11, color: adminTheme.textMuted }}>Note: {r.admin_note}</p>}
           <p style={{ margin: 0, fontSize: 11, color: adminTheme.textFainter }}>{new Date(r.created_at).toLocaleString('en-NG')}</p>
           {r.status === 'pending' && pendingActions(r, 4)}
           {r.status === 'processing' && (
@@ -539,9 +642,9 @@ export function AdminPayoutsScreen() {
             <p data-testid="payout-awaiting-paystack" style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted }}>
               Sent to Paystack — not paid until Paystack confirms. Use Reconcile to settle it.
             </p>
-              <button onClick={() => setCancelConfirmId(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} title="Only for an older request that never reached Paystack; the server refuses it otherwise" style={{ flex: 1, background: adminTheme.red, border: '1px solid #F87171', borderRadius: 10, padding: 10, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+              {(isSuperAdmin || !authoritative) && <button onClick={() => setCancelConfirmId(r.request_id)} disabled={actionLoading === r.request_id || payoutsDisabled} title="Only for an older request that never reached Paystack; the server refuses it otherwise" style={{ flex: 1, background: adminTheme.red, border: '1px solid #F87171', borderRadius: 10, padding: 10, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
                 {actionLoading === r.request_id ? 'Refunding…' : '⚠ Refund (never sent to Paystack)'}
-              </button>
+              </button>}
             </div>
           )}
         </div>
@@ -549,11 +652,41 @@ export function AdminPayoutsScreen() {
 
       {approveConfirmId && (
         <ConfirmModal
-          title="Approve this payout?"
-          message="This will immediately send a real transfer to the organizer's bank account via Paystack. This cannot be undone from here."
-          confirmLabel="Approve & Pay" danger typedConfirmationText="APPROVE" requireReason={false}
+          title={authoritative ? 'Send this withdrawal to the bank?' : 'Approve this payout?'}
+          message={authoritative
+            ? 'Two different admins approved it. This immediately sends a real transfer to the approved bank account via Paystack. It is marked paid only when Paystack confirms it.'
+            : "This will immediately send a real transfer to the organizer's bank account via Paystack. This cannot be undone from here."}
+          confirmLabel={authoritative ? 'Pay now' : 'Approve & Pay'} danger typedConfirmationText={authoritative ? 'PAY' : 'APPROVE'} requireReason={false}
           onConfirm={() => { const id = approveConfirmId; setApproveConfirmId(null); handleApprove(id); }}
           onCancel={() => setApproveConfirmId(null)}
+        />
+      )}
+      {firstApproveRow && (
+        <ConfirmModal
+          title="Give the first approval?"
+          message={`${firstApproveRow.organizer_name || 'This user'} asked to withdraw ${fmt(firstApproveRow.amount_kobo)} to ${firstApproveRow.bank_name || 'their bank'} · ${firstApproveRow.account_number || ''} (${firstApproveRow.account_name || ''}). Nothing is paid yet: a different admin must give the second approval, and at least one of you must be a full admin.`}
+          confirmLabel="Approve (1st)" danger={false} requireReason={false}
+          onConfirm={() => { const r = firstApproveRow; setFirstApproveRow(null); runWithdrawalAction(r.request_id, () => adminFirstApprove(r.request_id, r.amount_kobo), 'First approval recorded — a different admin must give the second.'); }}
+          onCancel={() => setFirstApproveRow(null)}
+        />
+      )}
+      {secondApproveRow && (
+        <ConfirmModal
+          title="Give the second approval?"
+          message={`${fmt(secondApproveRow.amount_kobo)} to ${secondApproveRow.bank_name || 'their bank'} · ${secondApproveRow.account_number || ''} (${secondApproveRow.account_name || ''}). First approved by ${secondApproveRow.first_approved_by_name || 'another admin'}. After this it is ready to pay; nothing is sent until someone presses Pay now.`}
+          confirmLabel="Approve (2nd)" danger typedConfirmationText="APPROVE" requireReason={false}
+          onConfirm={() => { const r = secondApproveRow; setSecondApproveRow(null); runWithdrawalAction(r.request_id, () => adminSecondApprove(r.request_id), 'Second approval recorded — the withdrawal is approved and ready to pay.'); }}
+          onCancel={() => setSecondApproveRow(null)}
+        />
+      )}
+      {withdrawFirstRow && (
+        <ConfirmModal
+          title="Withdraw the first approval?"
+          message="The withdrawal goes back to waiting for its first approval. No money moves."
+          confirmLabel="Withdraw approval" danger={false} requireReason
+          reasonPlaceholder="Why (kept in the audit log)"
+          onConfirm={(reason) => { const r = withdrawFirstRow; setWithdrawFirstRow(null); runWithdrawalAction(r.request_id, () => adminCancelFirstApproval(r.request_id, reason || ''), 'First approval withdrawn.'); }}
+          onCancel={() => setWithdrawFirstRow(null)}
         />
       )}
       {rejectConfirmId && (

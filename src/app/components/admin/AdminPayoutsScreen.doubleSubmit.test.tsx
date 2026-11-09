@@ -66,6 +66,8 @@ vi.mock('../../../lib/supabase', () => {
       },
       rpc: (name: string) => {
         if (name === 'admin_list_pending_payouts') return Promise.resolve({ data: [PENDING_RPC_ROW], error: null });
+        // A database without 0211: these tests cover the legacy view.
+        if (name === 'admin_list_withdrawals') return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.admin_list_withdrawals' } });
         return Promise.resolve({ data: [], error: null });
       },
       auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 'tok' } } }) },

@@ -143,7 +143,7 @@ export function AdminConsoleShell({ currentUser, onBack }: AdminConsoleShellProp
         <AdminOrganizersList isMobile={isMobile} isSuperAdmin={isSuperAdmin} onSelectOrganizer={setSelectedOrganizerId} />
       )
     ) : view === 'finance' ? (
-      <AdminPayoutsScreen />
+      <AdminPayoutsScreen isSuperAdmin={isSuperAdmin} />
     ) : view === 'vcents' ? (
       <AdminVCScreen />
     ) : view === 'ventsEarn' ? (
