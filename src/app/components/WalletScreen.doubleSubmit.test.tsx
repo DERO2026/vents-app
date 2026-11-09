@@ -35,7 +35,11 @@ vi.mock('../../lib/supabase', () => ({
       if (table === 'organizer_bank_accounts') return makeQuery({ data: [BANK_ACCOUNT], error: null });
       return makeQuery({ data: null, error: null });
     },
-    rpc: (...args: any[]) => rpcMock(...args),
+    // A database without 0211: these tests cover the pre-PIN flow the screen
+    // keeps until the migration is applied (the PIN flow has its own tests).
+    rpc: (...args: any[]) => (['get_my_withdrawal_pin_status', 'get_my_withdrawals', 'request_withdrawal'].includes(args[0])
+      ? Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.' + args[0] } })
+      : rpcMock(...args)),
   },
   getAuthToken: vi.fn(async () => 'token'),
 }));

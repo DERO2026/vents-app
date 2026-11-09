@@ -1,13 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { ventsColors, ventsStatusColors } from '../../lib/ventsDesignTokens';
-import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { PickerSheet } from './shared/PickerSheet';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
 import { friendlyOperationalError } from '../../lib/operationalStatus';
+import { OtpCodeBoxes } from './OtpCodeBoxes';
+import { isBackendUnavailable } from '../../lib/workRoles';
+import {
+  PIN_LENGTH, pinProblem, fetchPinStatus, createPin, requestWithdrawal, fetchMyWithdrawals,
+  stageInfo, STAGE_TONE_COLORS, type WithdrawalPinStatus, type WithdrawalStage,
+} from '../../lib/withdrawals';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; is_service_provider?: boolean } | null;
@@ -105,6 +110,8 @@ interface WithdrawalRequest {
   admin_note: string | null;
   created_at: string;
   updated_at: string;
+  /** 0211: the authoritative stage from get_my_withdrawals (first/second approval, ...). */
+  stage?: WithdrawalStage | null;
 }
 
 // A unified, sortable feed item -- either a ledger row (organizer_transactions)
@@ -214,17 +221,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // Which account a withdrawal pays out to (defaults to the org's default).
   const [withdrawAccountId, setWithdrawAccountId] = useState<string | null>(null);
 
-  // Password/biometric confirmation gate for every bank mutation. When set, a
-  // modal collects the password; on confirm we run `action(password)`.
+  // Password confirmation gate for every bank mutation and for changing the
+  // withdrawal PIN (0211: Face ID / biometrics removed from the withdrawal
+  // flow). When set, a modal collects the password; on confirm we run
+  // `action(password)`.
   const [confirm, setConfirm] = useState<{ label: string; action: (password: string) => Promise<void> } | null>(null);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [confirmError, setConfirmError] = useState('');
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-  // In-memory only (never persisted): lets a biometric unlock reuse the
-  // password the organizer already typed once this session.
-  const cachedPassword = useRef<string | null>(null);
   // null while loading; the RPC checks auth.users.email_verified for the
   // caller — the same platform flag InsForge itself gates login on. Wallet
   // actions are also enforced server-side (request_organizer_payout /
@@ -258,6 +263,32 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // withdrawal instead of creating a second one. Cleared on success/close
   // so the next withdrawal gets its own key.
   const withdrawIdempotencyKeyRef = useRef<string | null>(null);
+
+  // Withdrawal PIN (0211). pinSupported is null until known; false only when
+  // the database does not have 0211 yet, in which case the previous flow
+  // (no PIN) is kept so a frontend deployed first never blocks withdrawals.
+  const [pinSupported, setPinSupported] = useState<boolean | null>(null);
+  const [pinStatus, setPinStatus] = useState<WithdrawalPinStatus | null>(null);
+  const [withdrawPin, setWithdrawPin] = useState('');
+  // Creating the first PIN: enter it, then enter it again.
+  const [newPin, setNewPin] = useState('');
+  const [newPinConfirm, setNewPinConfirm] = useState('');
+  const [pinStep, setPinStep] = useState<'enter' | 'confirm'>('enter');
+  const [pinError, setPinError] = useState('');
+  const [pinBusy, setPinBusy] = useState(false);
+  // Change / forgot PIN: new PIN twice, then the password gate.
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [pinNotice, setPinNotice] = useState('');
+  const loadPinStatus = async () => {
+    try {
+      setPinStatus(await fetchPinStatus());
+      setPinSupported(true);
+    } catch (e: any) {
+      if (isBackendUnavailable(e)) { setPinSupported(false); return; }
+      setPinSupported(true);
+      console.error('Withdrawal PIN status error:', e);
+    }
+  };
 
   // Bank account flow
   const [showAddBank, setShowAddBank] = useState(false);
@@ -356,7 +387,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         setTxns(tRes.data || []);
         setTxnsHasMore((tRes.data || []).length === PAGE_SIZE);
       }
-      setWithdrawalRequests(wrRes.data || []);
+      const requests: WithdrawalRequest[] = (wrRes.data as WithdrawalRequest[]) || [];
+      setWithdrawalRequests(requests);
+      void loadPinStatus();
+      // The authoritative stage of each withdrawal (0211). Optional: without
+      // it the feed still shows the plain status.
+      fetchMyWithdrawals(100).then((mine) => {
+        const byId = new Map(mine.map((m) => [m.request_id, m.stage]));
+        setWithdrawalRequests((prev) => prev.map((r) => ({ ...r, stage: byId.get(r.id) ?? r.stage ?? null })));
+      }).catch(() => {});
       const accounts: BankAccount[] = (bRes.data as BankAccount[]) || [];
       setBankAccounts(accounts);
       // Preselect the default (or first) account for withdrawals.
@@ -417,30 +456,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     ...withdrawalRequests.map((row): FeedItem => ({ kind: 'withdrawal_request', sortKey: row.updated_at || row.created_at, row })),
   ].sort((a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime());
 
-  // Detect a real platform authenticator (Face ID / Touch ID / Android
-  // biometric) so the "Use biometrics" button is only offered when it can
-  // actually run — we never pretend it exists. Native previously just
-  // assumed availability from Capacitor.isNativePlatform() alone (the
-  // WebAuthn check below it only runs on web, where PublicKeyCredential
-  // exists) — "biometrics" on native was never actually checked, and
-  // confirmWithBiometrics() below silently fell through to the cached
-  // password with no real biometric prompt at all.
-  useEffect(() => {
-    let alive = true;
-    if (Capacitor.isNativePlatform()) {
-      import('@capgo/capacitor-native-biometric').then(({ NativeBiometric }) =>
-        NativeBiometric.isAvailable().then((r) => { if (alive) setBiometricAvailable(r.isAvailable); }).catch(() => {})
-      );
-      return () => { alive = false; };
-    }
-    const w: any = (window as any).PublicKeyCredential;
-    if (w?.isUserVerifyingPlatformAuthenticatorAvailable) {
-      w.isUserVerifyingPlatformAuthenticatorAvailable().then((ok: boolean) => { if (alive) setBiometricAvailable(!!ok); }).catch(() => {});
-    }
-    return () => { alive = false; };
-  }, []);
-
-  // Open the password/biometric confirmation gate for a sensitive bank action.
+  // Open the password confirmation gate for a sensitive wallet action.
   const requestConfirm = (label: string, action: (password: string) => Promise<void>) => {
     setConfirmError('');
     setConfirmPassword('');
@@ -456,7 +472,6 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     setConfirmError('');
     try {
       await confirm!.action(password);
-      cachedPassword.current = password; // in-memory only, for biometric reuse
       setConfirm(null);
       setConfirmPassword('');
     } catch (e: any) {
@@ -464,82 +479,6 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     } finally {
       confirmBusyRef.current = false;
       setConfirmBusy(false);
-    }
-  };
-
-  // Real biometric user-verification. On success we reuse the password the
-  // organizer typed earlier this session (never stored anywhere) — the server
-  // still verifies that password. If none is cached yet, ask them to type it
-  // once so biometrics can carry it forward afterwards.
-  const confirmWithBiometrics = async () => {
-    setConfirmError('');
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const { NativeBiometric, BiometricAuthError } = await import('@capgo/capacitor-native-biometric');
-        await NativeBiometric.verifyIdentity({
-          reason: 'Confirm this wallet action',
-          title: 'Biometric Confirmation',
-        }).catch((err: any) => {
-          // The plugin rejects with a numeric `code` (as a string) identifying
-          // exactly why — previously every rejection here was flattened to
-          // "cancelled", which mislabeled real failures (wrong face/fingerprint,
-          // lockout, no biometrics enrolled) as a user cancel.
-          const code = Number(err?.code);
-          if (
-            code === BiometricAuthError.USER_CANCEL ||
-            code === BiometricAuthError.APP_CANCEL ||
-            code === BiometricAuthError.SYSTEM_CANCEL ||
-            code === BiometricAuthError.USER_FALLBACK
-          ) {
-            // User dismissed the prompt themselves (Cancel, app switch, device
-            // lock, "use password" fallback) — not a failure, stays silent.
-            const cancelled = new Error('');
-            (cancelled as any).cancelled = true;
-            throw cancelled;
-          }
-          if (code === BiometricAuthError.USER_LOCKOUT || code === BiometricAuthError.USER_TEMPORARY_LOCKOUT) {
-            throw new Error('Too many failed attempts. Please use your password.');
-          }
-          if (
-            code === BiometricAuthError.BIOMETRICS_UNAVAILABLE ||
-            code === BiometricAuthError.BIOMETRICS_NOT_ENROLLED ||
-            code === BiometricAuthError.PASSCODE_NOT_SET
-          ) {
-            throw new Error('Biometrics are unavailable on this device. Please use your password.');
-          }
-          if (code === BiometricAuthError.AUTHENTICATION_FAILED) {
-            throw new Error('Biometric check failed. Please try again or use your password.');
-          }
-          throw new Error('Biometric confirmation is unavailable — please use your password.');
-        });
-      } else {
-        const anyWin = window as any;
-        if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
-          const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
-          await navigator.credentials.get({
-            publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
-          } as any).catch((err: any) => {
-            // WebAuthn rejects NotAllowedError for both an explicit user
-            // cancel and a plain timeout — no reliable way to split those,
-            // so both stay silent rather than showing a scary error for a
-            // timeout the user didn't cause.
-            if (err?.name === 'NotAllowedError') {
-              const cancelled = new Error('');
-              (cancelled as any).cancelled = true;
-              throw cancelled;
-            }
-            throw new Error('Biometric confirmation is unavailable — please use your password.');
-          });
-        }
-      }
-      if (!cachedPassword.current) {
-        setConfirmError('Enter your password once to enable biometric confirmation.');
-        return;
-      }
-      await runConfirm(cachedPassword.current);
-    } catch (e: any) {
-      if (e?.cancelled) return;
-      setConfirmError(e?.message || 'Biometric confirmation is unavailable — please use your password.');
     }
   };
 
@@ -615,6 +554,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     if (!wallet || kobo > wallet.balance_kobo) { setWithdrawError('Insufficient balance'); return; }
     const payoutAccountId = withdrawAccountId || bankAccounts.find(a => a.is_default)?.id || bankAccounts[0]?.id;
     if (!payoutAccountId) { setWithdrawError('Add a bank account first'); return; }
+    const usePin = pinSupported !== false;
+    if (usePin && withdrawPin.length !== PIN_LENGTH) { setWithdrawError('Enter your 4-digit withdrawal PIN'); return; }
 
     if (!withdrawIdempotencyKeyRef.current) {
       withdrawIdempotencyKeyRef.current = (crypto as any)?.randomUUID
@@ -625,18 +566,33 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     withdrawingRef.current = true;
     setWithdrawing(true);
     try {
-      const { error } = await supabase.rpc('request_organizer_payout', {
-        p_amount_kobo: kobo,
-        p_bank_account_id: payoutAccountId,
-        p_idempotency_key: withdrawIdempotencyKeyRef.current,
-      });
-      if (error) throw new Error(error.message);
+      if (usePin) {
+        // The PIN goes only to the database, which compares it with its
+        // hash; it is cleared from this screen whatever the outcome.
+        const result = await requestWithdrawal(kobo, payoutAccountId, withdrawPin, withdrawIdempotencyKeyRef.current);
+        setWithdrawPin('');
+        if (!result.ok) {
+          setWithdrawError(result.message);
+          void loadPinStatus(); // attempts left, lock, reset required
+          // A refusal that is not about the request itself keeps its key, so a
+          // corrected retry is still recognised as the same withdrawal.
+          return;
+        }
+      } else {
+        const { error } = await supabase.rpc('request_organizer_payout', {
+          p_amount_kobo: kobo,
+          p_bank_account_id: payoutAccountId,
+          p_idempotency_key: withdrawIdempotencyKeyRef.current,
+        });
+        if (error) throw new Error(error.message);
+      }
       analytics.withdrawalRequested(kobo);
       withdrawIdempotencyKeyRef.current = null;
       setShowWithdraw(false);
       setWithdrawAmount('');
       await load();
     } catch (e: any) {
+      setWithdrawPin('');
       setWithdrawError(friendlyOperationalError(e?.message) || e.message || 'Withdrawal failed');
     } finally {
       withdrawingRef.current = false;
@@ -644,7 +600,54 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     }
   };
 
-  // Adding a bank account — gated by password/biometric confirmation.
+  // First withdrawal PIN: entered twice, then saved (hashed) by the server.
+  const handleCreatePin = async () => {
+    setPinError('');
+    if (pinStep === 'enter') {
+      const problem = pinProblem(newPin);
+      if (problem) { setPinError(problem); setNewPin(''); return; }
+      setPinStep('confirm');
+      return;
+    }
+    const problem = pinProblem(newPin, newPinConfirm);
+    if (problem) { setPinError(problem); setNewPin(''); setNewPinConfirm(''); setPinStep('enter'); return; }
+    setPinBusy(true);
+    try {
+      setPinStatus(await createPin(newPin, newPinConfirm));
+      setPinNotice('Withdrawal PIN created. Enter it below to withdraw.');
+    } catch (e: any) {
+      setPinError(e?.message || 'Could not create your PIN');
+      setPinStep('enter');
+    } finally {
+      setNewPin(''); setNewPinConfirm(''); setPinStep('enter'); setPinBusy(false);
+    }
+  };
+
+  // Change or forgotten PIN: the new PIN twice here, then the password gate;
+  // the API confirms the password and the database stores the new hash.
+  const handleChangePin = () => {
+    setPinError('');
+    if (pinStep === 'enter') {
+      const problem = pinProblem(newPin);
+      if (problem) { setPinError(problem); setNewPin(''); return; }
+      setPinStep('confirm');
+      return;
+    }
+    const problem = pinProblem(newPin, newPinConfirm);
+    if (problem) { setPinError(problem); setNewPin(''); setNewPinConfirm(''); setPinStep('enter'); return; }
+    const pin = newPin, pinConfirm = newPinConfirm;
+    setNewPin(''); setNewPinConfirm(''); setPinStep('enter');
+    setShowChangePin(false);
+    requestConfirm('Change your withdrawal PIN', async (password) => {
+      const json = await authedFetch('/api/v1/wallet/save-bank', { action: 'reset_withdrawal_pin', password, pin, pin_confirm: pinConfirm });
+      await loadPinStatus();
+      setPinNotice(json?.pin_status?.withdrawals_paused_until
+        ? 'Withdrawal PIN changed. For your security, new withdrawals are paused for 24 hours.'
+        : 'Withdrawal PIN saved.');
+    });
+  };
+
+  // Adding a bank account — gated by password confirmation.
   const handleSaveBank = () => {
     if (!selectedBank || !resolvedName || resolving) return;
     if (!emailVerified) { setBankSaveError('Please verify your email before adding a payout bank account'); return; }
@@ -791,6 +794,30 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             </>
           )}
 
+          {/* Withdrawal PIN (0211): create / change / reset */}
+          {isEarner && pinSupported && pinStatus && (
+            <div data-testid="withdrawal-pin-row" style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <ShieldCheck size={18} color={pinStatus.has_pin && !pinStatus.locked ? ventsColors.success : ventsColors.pending} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 600 }}>Withdrawal PIN</p>
+                <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2, lineHeight: 1.4 }}>
+                  {!pinStatus.has_pin ? 'Not set — you will create it before your first withdrawal'
+                    : pinStatus.must_reset ? 'Locked — reset it with your password'
+                    : pinStatus.locked ? 'Temporarily locked after wrong attempts'
+                    : pinStatus.withdrawals_paused_until ? 'Changed recently — withdrawals paused for 24 hours'
+                    : 'Set — required for every withdrawal'}
+                </p>
+                {pinNotice && !showWithdraw && <p style={{ margin: '4px 0 0', fontSize: '11px', color: ventsColors.success }}>{pinNotice}</p>}
+              </div>
+              <button data-testid="change-withdrawal-pin-open" onClick={() => {
+                setPinError(''); setPinStep('enter'); setNewPin(''); setNewPinConfirm('');
+                if (pinStatus.has_pin) { setShowChangePin(true); } else { withdrawIdempotencyKeyRef.current = null; setShowWithdraw(true); }
+              }} style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '8px 12px', color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                {!pinStatus.has_pin ? 'Create' : pinStatus.must_reset || pinStatus.locked ? 'Reset' : 'Change'}
+              </button>
+            </div>
+          )}
+
           {/* Payout bank accounts (multiple; one Default) */}
           {/* Linked accounts stay visible (and removable) even if the
               earnings that made this an earner were later reversed. */}
@@ -885,7 +912,14 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ margin: 0, fontSize: '13px', color: isReversed ? ventsColors.ink2 : ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WITHDRAWAL_REQUEST_LABELS[wr.status]}</p>
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(wr.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>
+                          {new Date(wr.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}
+                          {wr.stage && (
+                            <span data-testid={`withdrawal-stage-${wr.id}`} style={{ marginLeft: 6, color: STAGE_TONE_COLORS[stageInfo(wr.stage).tone].fg, fontWeight: 600 }}>
+                              · {stageInfo(wr.stage).user}
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <span style={{ color: isReversed ? ventsColors.ink2 : ventsColors.pending, fontWeight: 700, fontSize: '14px', flexShrink: 0, textDecoration: isReversed ? 'line-through' : 'none' }}>
                         -{fmt(wr.amount_kobo)}
@@ -916,8 +950,25 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {showWithdraw && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            {pinSupported && pinStatus && !pinStatus.has_pin ? (
+              <PinEntrySheet
+                testId="create-withdrawal-pin"
+                title="Create your withdrawal PIN"
+                subtitle={pinStep === 'enter'
+                  ? 'Choose a 4-digit PIN. You will enter it for every withdrawal. It is not your password and VENTS will never ask you for it.'
+                  : 'Enter the same PIN again to confirm it.'}
+                value={pinStep === 'enter' ? newPin : newPinConfirm}
+                onChange={pinStep === 'enter' ? setNewPin : setNewPinConfirm}
+                error={pinError}
+                busy={pinBusy}
+                submitLabel={pinStep === 'enter' ? 'Continue' : 'Create PIN'}
+                onSubmit={handleCreatePin}
+                onCancel={() => { setShowWithdraw(false); setNewPin(''); setNewPinConfirm(''); setPinStep('enter'); setPinError(''); }}
+              />
+            ) : (<>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Withdraw Funds</p>
             <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
+            {pinNotice && <p data-testid="pin-notice" style={{ fontSize: '12px', color: ventsColors.success, margin: '-12px 0 14px' }}>{pinNotice}</p>}
             <input
               type="number"
               placeholder="Amount in ₦ (e.g. 5000)"
@@ -946,18 +997,72 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 </div>
               </div>
             )}
+            {pinSupported === true && !pinStatus && (
+              <p data-testid="withdrawal-pin-unavailable" style={{ fontSize: '12px', color: ventsColors.error, margin: '0 0 12px', lineHeight: 1.5 }}>
+                Could not load your withdrawal PIN. Check your connection, close this and try again.
+              </p>
+            )}
+            {pinSupported !== false && pinStatus?.has_pin && (
+              <div data-testid="withdrawal-pin-entry" style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '12px', color: ventsColors.ink2, margin: '0 0 8px' }}>Withdrawal PIN</p>
+                {pinStatus.must_reset || pinStatus.locked ? (
+                  <p data-testid="withdrawal-pin-locked" style={{ fontSize: '12px', color: ventsColors.error, margin: 0, lineHeight: 1.5 }}>
+                    {pinStatus.must_reset
+                      ? 'Your PIN is locked after too many wrong attempts. Reset it with your password to withdraw.'
+                      : `Too many wrong PINs. Try again after ${pinStatus.locked_until ? new Date(pinStatus.locked_until).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' }) : 'a while'}, or reset your PIN.`}
+                  </p>
+                ) : (
+                  <OtpCodeBoxes length={PIN_LENGTH} value={withdrawPin} onChange={setWithdrawPin} hasError={!!withdrawError && /PIN/i.test(withdrawError)} mask ariaLabel="Withdrawal PIN" />
+                )}
+                {pinStatus.withdrawals_paused_until && (
+                  <p style={{ fontSize: '11px', color: ventsColors.pending, margin: '8px 0 0', lineHeight: 1.5 }}>
+                    Your PIN was changed recently. Withdrawals resume {new Date(pinStatus.withdrawals_paused_until).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}.
+                  </p>
+                )}
+                <button type="button" data-testid="forgot-withdrawal-pin" onClick={() => { setShowWithdraw(false); setPinError(''); setPinStep('enter'); setShowChangePin(true); }}
+                  style={{ background: 'none', border: 'none', padding: '8px 0 0', color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                  {pinStatus.must_reset || pinStatus.locked ? 'Reset PIN with your password' : 'Forgot PIN?'}
+                </button>
+              </div>
+            )}
+            <p style={{ fontSize: '11px', color: ventsColors.ink2, margin: '0 0 12px', lineHeight: 1.5 }}>
+              Two different VENTS admins review every withdrawal before it is sent to your bank.
+            </p>
             {withdrawError && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+              <div data-testid="withdraw-error" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
                 <AlertCircle size={14} color={ventsColors.error} />
                 <span style={{ color: ventsColors.error, fontSize: '13px' }}>{withdrawError}</span>
               </div>
             )}
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleWithdraw} disabled={withdrawing} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
+              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); setWithdrawPin(''); setPinNotice(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button data-testid="withdraw-submit" onClick={handleWithdraw} disabled={withdrawing || (pinSupported !== false && (!pinStatus?.has_pin || pinStatus.locked || pinStatus.must_reset))} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
                 {withdrawing ? 'Processing…' : 'Withdraw'}
               </button>
             </div>
+            </>)}
+          </div>
+        </div>
+      )}
+
+      {/* Change / forgot withdrawal PIN (then the password gate) */}
+      {showChangePin && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <PinEntrySheet
+              testId="change-withdrawal-pin"
+              title={pinStatus?.has_pin ? 'Change your withdrawal PIN' : 'Create your withdrawal PIN'}
+              subtitle={pinStep === 'enter'
+                ? 'Choose a new 4-digit PIN. Next you will confirm it and enter your account password. New withdrawals pause for 24 hours after a change.'
+                : 'Enter the new PIN again to confirm it.'}
+              value={pinStep === 'enter' ? newPin : newPinConfirm}
+              onChange={pinStep === 'enter' ? setNewPin : setNewPinConfirm}
+              error={pinError}
+              busy={false}
+              submitLabel={pinStep === 'enter' ? 'Continue' : 'Continue to password'}
+              onSubmit={handleChangePin}
+              onCancel={() => { setShowChangePin(false); setNewPin(''); setNewPinConfirm(''); setPinStep('enter'); setPinError(''); }}
+            />
           </div>
         </div>
       )}
@@ -1046,7 +1151,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         />
       )}
 
-      {/* Security gate: password / biometric confirmation for bank mutations */}
+      {/* Security gate: password confirmation for bank changes and PIN changes */}
       {confirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9800, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
@@ -1054,7 +1159,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <ShieldCheck size={20} color={ventsColors.accent} />
               <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>Confirm it's you</p>
             </div>
-            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password{biometricAvailable ? ' or use biometrics' : ''} to continue.</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password to continue.</p>
 
             <div style={{ position: 'relative', marginBottom: '10px' }}>
               <input
@@ -1072,12 +1177,6 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 {showConfirmPw ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
-
-            {biometricAvailable && (
-              <button onClick={confirmWithBiometrics} disabled={confirmBusy} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '12px', padding: '12px', color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}>
-                <Fingerprint size={17} /> Use Face ID / Touch ID
-              </button>
-            )}
 
             {confirmError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
@@ -1233,10 +1332,10 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       { label: 'Account number', value: maskAccountNumber(wr.account_number) },
       { label: 'Account name', value: na(wr.account_name) },
       { label: 'Withdrawal reference', value: na(wr.paystack_reference || wr.transfer_code) },
-      { label: 'Status', value: wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: STATUS_COLORS[wr.status] },
+      { label: 'Status', value: wr.stage ? stageInfo(wr.stage).user : wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: wr.stage ? STAGE_TONE_COLORS[stageInfo(wr.stage).tone].fg : STATUS_COLORS[wr.status] },
       // Never imply the money has arrived before the bank confirms it.
       ...(wr.status === 'pending' || wr.status === 'processing'
-        ? [{ label: 'Paid?', value: wr.status === 'pending' ? 'Not yet — waiting for VENTS to approve' : 'Not yet — sent to the bank, waiting for confirmation', muted: true }]
+        ? [{ label: 'Paid?', value: wr.stage ? `Not yet — ${stageInfo(wr.stage).detail}` : (wr.status === 'pending' ? 'Not yet — waiting for two VENTS admins to approve' : 'Not yet — sent to the bank, waiting for confirmation'), muted: true }]
         : []),
       { label: 'Requested', value: fmtDateTime(wr.created_at) },
       ...(wr.updated_at && wr.updated_at !== wr.created_at ? [{ label: isReversed ? 'Resolved' : 'Last updated', value: fmtDateTime(wr.updated_at) }] : []),
@@ -1299,6 +1398,45 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
         <p style={{ margin: '16px 0 0', fontSize: '11px', color: ventsColors.ink3, textAlign: 'center', lineHeight: 1.6 }}>
           Card numbers, bank credentials, and other sensitive payment details are never shown here.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// One 4-digit PIN step (create, confirm or change). Digits are masked on
+// screen; the value lives only in this screen's state until it is submitted.
+export function PinEntrySheet({ testId, title, subtitle, value, onChange, error, busy, submitLabel, onSubmit, onCancel }: {
+  testId: string;
+  title: string;
+  subtitle: string;
+  value: string;
+  onChange: (v: string) => void;
+  error: string;
+  busy: boolean;
+  submitLabel: string;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const ready = value.length === PIN_LENGTH && !busy;
+  return (
+    <div data-testid={testId}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+        <ShieldCheck size={20} color={ventsColors.accent} />
+        <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>{title}</p>
+      </div>
+      <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>{subtitle}</p>
+      <OtpCodeBoxes length={PIN_LENGTH} value={value} onChange={onChange} hasError={!!error} autoFocus mask ariaLabel={title} />
+      {error && (
+        <div data-testid={`${testId}-error`} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px' }}>
+          <AlertCircle size={14} color={ventsColors.error} />
+          <span style={{ color: ventsColors.error, fontSize: '13px' }}>{error}</span>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+        <button onClick={onCancel} disabled={busy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+        <button data-testid={`${testId}-submit`} onClick={onSubmit} disabled={!ready} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.6 }}>
+          {busy ? 'Saving…' : submitLabel}
+        </button>
       </div>
     </div>
   );
