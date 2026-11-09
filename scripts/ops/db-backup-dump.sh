@@ -27,6 +27,9 @@ SCOPE="${BACKUP_SCOPE:-full}"
 scrub() { sed -E 's#postgres(ql)?://[^[:space:]"]*#<connection string removed>#g; s#(password|PGPASSWORD)=[^[:space:]]*#\1=<removed>#Ig'; }
 
 URL="${BACKUP_DB_URL:-}"
+# A pasted secret often carries a trailing newline or spaces; strip them
+# (a real URI never contains whitespace).
+URL="$(printf '%s' "$URL" | tr -d '[:space:]')"
 [ -n "$URL" ] || { echo "STOP: the DATABASE_URL secret is empty or not available to this job (o4-backup environment)" >&2; exit 1; }
 PROD_RE='^postgres(ql)?://postgres\.slrtjxtzhowhwhebjprv:[^@/]+@[a-z0-9.-]+\.pooler\.supabase\.com:5432/postgres(\?sslmode=(require|verify-ca|verify-full))?$'
 TEST_RE='^postgresql://vents_backup_selftest:[^@/]+@127\.0\.0\.1:5432/vents_local_pg_[a-z_]+\?sslmode=disable$'
@@ -39,6 +42,15 @@ else
   echo "STOP: DATABASE_URL is not the VENTS Supabase session pooler URI. Expected the shape" >&2
   echo "  postgresql://postgres.slrtjxtzhowhwhebjprv:<password>@<region>.pooler.supabase.com:5432/postgres[?sslmode=require]" >&2
   echo "  (password URL-encoded; no sslmode=disable/allow/prefer; not the direct db.* host, not port 6543)" >&2
+  # Which part differs -- yes/no only, never the value itself.
+  chk() { if printf '%s' "$URL" | grep -qE "$2"; then echo "  ok:    $1" >&2; else echo "  WRONG: $1" >&2; fi; }
+  chk "scheme postgresql://"                           '^postgres(ql)?://'
+  chk "user postgres.slrtjxtzhowhwhebjprv"              '^postgres(ql)?://postgres\.slrtjxtzhowhwhebjprv:'
+  chk "password present, no unencoded @ or /"          '^postgres(ql)?://[^:/@]+:[^@/]+@[^@]+$'
+  chk "host <region>.pooler.supabase.com (session pooler)" '@[a-z0-9.-]+\.pooler\.supabase\.com:'
+  chk "port 5432 (not 6543)"                           ':5432/'
+  chk "database /postgres"                             ':5432/postgres(\?|$)'
+  chk "no query options other than sslmode=require"     ':5432/postgres(\?sslmode=(require|verify-ca|verify-full))?$'
   exit 1
 fi
 # Mask the password on its own too (GitHub masks the whole secret already).
