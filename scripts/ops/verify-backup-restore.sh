@@ -8,8 +8,13 @@
 #   * whether each of the 19 functions 0201-0203 replace is present with the
 #     expected pre-apply md5 (the md5 table in
 #     supabase/rollback/pre_0201_0203_functions.sql).
-#   * whether every public table in the backup was restored.
-# Exit 0 only when every function matches and every public table restored. Usage:
+#   * whether every public table in the backup was restored;
+#   * whether every public table holds exactly as many rows as the backup
+#     carries for it (rows are counted, never printed).
+# Exit 0 only when every public table restored with every row and (unless
+# FUNCTION_CHECK=report) every function matches. FUNCTION_CHECK=report prints
+# the 19 fingerprints without failing on them: once 0201-0203 are applied they
+# no longer match by design, so the daily backup reports them only. Usage:
 #   scripts/ops/verify-backup-restore.sh path/to/backup.dump   (pg_dump -Fc)
 #   scripts/ops/verify-backup-restore.sh path/to/backup.sql    (plain SQL)
 # A Supabase dump also contains roles, extensions and schemas a local server
@@ -23,13 +28,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SNAP="$REPO_ROOT/supabase/rollback/pre_0201_0203_functions.sql"
 DB_NAME="${VERIFY_DB_NAME:-vents_local_pg_backup_restore}"
+FUNCTION_CHECK="${FUNCTION_CHECK:-enforce}"
 
 die() { echo "REFUSING TO RUN: $1" >&2; exit 2; }
-for var in DATABASE_URL PROJECT_ADMIN_DATABASE_URL SUPABASE_DB_URL POSTGRES_URL POSTGRES_PRISMA_URL \
+for var in DATABASE_URL BACKUP_DB_URL BACKUP_ENCRYPTION_PASSPHRASE PROJECT_ADMIN_DATABASE_URL SUPABASE_DB_URL POSTGRES_URL POSTGRES_PRISMA_URL \
            PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGDATABASE PGPASSWORD PGPASSFILE PGSSLMODE; do
   if [ -n "${!var:-}" ]; then die "\$$var is set. Unset it; this drill only restores into a local server."; fi
 done
 [[ "$DB_NAME" =~ ^vents_local_pg_[a-z_]+$ ]] || die "database name '$DB_NAME' is not a local test name."
+case "$FUNCTION_CHECK" in enforce|report) ;; *) die "FUNCTION_CHECK must be enforce or report." ;; esac
 # Linux or macOS (Homebrew) local server: see _local_pg.sh.
 . "$SCRIPT_DIR/_local_pg.sh" || { echo "REFUSING TO RUN: scripts/ops/_local_pg.sh missing" >&2; exit 2; }
 vents_require_local_server
@@ -66,6 +73,27 @@ TBL_MISSING=$(printf '%s' "$MISSING_TABLES" | grep -c . || true)
 echo "== Public tables restored: $((TBL_TOTAL - TBL_MISSING))/$TBL_TOTAL =="
 [ -z "$MISSING_TABLES" ] || printf '  NOT RESTORED  %s\n' $MISSING_TABLES
 
+# Every restored public table must hold exactly the rows the backup carries
+# for it. The data section is streamed through awk, which keeps only a count
+# per table; no row is written to disk or printed.
+if head -c 5 "$TMP/backup" | grep -q "PGDMP"; then
+  pgtool pg_restore -f - --data-only --schema=public "$TMP/backup" 2>/dev/null
+else
+  cat "$TMP/backup"
+fi | awk '
+  incopy && $0 == "\\." { incopy = 0; next }
+  incopy { n[t]++; next }
+  /^COPY public\./ { t = $2; sub(/^public\./, "", t); gsub(/"/, "", t); n[t] += 0; incopy = 1 }
+  END { for (k in n) print k, n[k] }' | sort >"$TMP/expected_rows"
+ROW_OK=0; ROW_BAD=0; ROW_BAD_NAMES=""
+while read -r t; do
+  want=$(awk -v t="$t" '$1 == t { print $2 }' "$TMP/expected_rows"); want="${want:-0}"
+  got=$(pg -d "$DB_NAME" -tA -c "SELECT count(*) FROM ONLY public.\"$t\";" 2>/dev/null | tail -n1)
+  if [ "$got" = "$want" ]; then ROW_OK=$((ROW_OK+1)); else ROW_BAD=$((ROW_BAD+1)); ROW_BAD_NAMES="$ROW_BAD_NAMES $t"; fi
+done < <(comm -12 "$TMP/expected_tables" "$TMP/restored_tables")
+echo "== Public table rows matching the backup: $ROW_OK/$((ROW_OK+ROW_BAD)) =="
+[ -z "$ROW_BAD_NAMES" ] || printf '  ROW MISMATCH  %s\n' $ROW_BAD_NAMES
+
 echo "== Money tables (compare with the counts captured at backup time) =="
 for t in organizer_wallets organizer_transactions organizer_withdrawal_requests organizer_bank_accounts tickets pending_purchases service_bookings user_wallets admin_action_requests admin_logs; do
   n=$(pg -d "$DB_NAME" -tA -c "SELECT CASE WHEN to_regclass('public.$t') IS NULL THEN 'missing' ELSE (SELECT count(*)::text FROM public.$t) END;" 2>/dev/null | tail -n1)
@@ -80,5 +108,6 @@ while read -r fn md5; do
   if [ "$got" = "$md5" ]; then OK=$((OK+1)); printf '  ok        %s\n' "$fn"
   else BAD=$((BAD+1)); printf '  MISMATCH  %s (got %s, expected %s)\n' "$fn" "${got:-missing}" "$md5"; fi
 done < <(grep -oE '^-- [a-z_0-9]+  \(production md5 [0-9a-f]{32}' "$SNAP" | sed -E 's/^-- ([a-z_0-9]+)  \(production md5 ([0-9a-f]{32})/\1 \2/')
-echo "Functions matching: $OK/$((OK+BAD))"
-[ "$BAD" -eq 0 ] && [ "$TBL_MISSING" -eq 0 ] && [ "$TBL_TOTAL" -gt 0 ]
+echo "Functions matching: $OK/$((OK+BAD)) (check: $FUNCTION_CHECK)"
+[ "$FUNCTION_CHECK" = report ] || [ "$BAD" -eq 0 ] || exit 1
+[ "$TBL_MISSING" -eq 0 ] && [ "$TBL_TOTAL" -gt 0 ] && [ "$ROW_BAD" -eq 0 ]

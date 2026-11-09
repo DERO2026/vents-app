@@ -12,6 +12,8 @@ SRC_DB="vents_local_pg_backup_src"
 # Linux or macOS (Homebrew) local server: see scripts/ops/_local_pg.sh.
 . "$REPO_ROOT/scripts/ops/_local_pg.sh" || { echo "REFUSING TO RUN: scripts/ops/_local_pg.sh missing" >&2; exit 2; }
 vents_require_local_server
+# Files are fed on stdin: psql runs as the postgres OS user, which may not be
+# able to open files in the checkout (CI: /home/runner is not traversable).
 pg() { pgtool psql -X -h "$SOCKET_DIR" -p 5432 -v ON_ERROR_STOP=1 "$@"; }
 
 TMP="$(vents_mktemp)"
@@ -22,12 +24,12 @@ pass() { echo "PASS: $1"; PASSES=$((PASSES+1)); }
 fail() { echo "FAIL: $1" >&2; FAILS=$((FAILS+1)); }
 
 pg -d postgres -q -c "DROP DATABASE IF EXISTS $SRC_DB;" -c "CREATE DATABASE $SRC_DB;" >/dev/null
-for f in schema-vents-earn.sql; do pg -d "$SRC_DB" -q -f "$SCRIPT_DIR/$f" >/dev/null; done
+for f in schema-vents-earn.sql; do pg -d "$SRC_DB" -q -f - <"$SCRIPT_DIR/$f" >/dev/null; done
 for m in 0193_vents_earn_foundation 0196_recruiter_invite_target_uses_organizer_capability 0197_vents_earn_notifications_use_valid_type; do
-  pg -d "$SRC_DB" -q -f "$MIG/$m.sql" >/dev/null
+  pg -d "$SRC_DB" -q -f - <"$MIG/$m.sql" >/dev/null
 done
 for f in schema-representative-rewards.sql schema-live-payout-extras.sql schema-earnings-policies.sql live-money-functions.sql; do
-  pg -d "$SRC_DB" -q -f "$SCRIPT_DIR/$f" >/dev/null
+  pg -d "$SRC_DB" -q -f - <"$SCRIPT_DIR/$f" >/dev/null
 done
 # The production pre-apply state of all 19 functions.
 pg -d "$SRC_DB" -q -1 -c "SET check_function_bodies = off; SET vents.rollback_confirm = 'restore-pre-0201-0203';" \
