@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+  <!-- QA-only test flyer: bright colours to the very bottom, so any overlay that dims the flyer is obvious. -->
+  <rect width="800" height="1000" fill="#ff3d7f"/>
+  <rect y="250" width="800" height="250" fill="#ffb800"/>
+  <rect y="500" width="800" height="250" fill="#00c2ff"/>
+  <rect y="750" width="800" height="250" fill="#7dff4f"/>
+  <circle cx="620" cy="330" r="150" fill="#8e5cf7"/>
+  <text x="60" y="180" font-family="Arial Black, Arial" font-size="96" font-weight="900" fill="#ffffff">AFRO</text>
+  <text x="60" y="440" font-family="Arial Black, Arial" font-size="96" font-weight="900" fill="#1a0b2e">BEATS</text>
+  <text x="60" y="660" font-family="Arial Black, Arial" font-size="72" font-weight="900" fill="#ffffff">LIVE · LAGOS</text>
+  <text x="60" y="880" font-family="Arial Black, Arial" font-size="64" font-weight="900" fill="#1a0b2e">DJ LINEUP + GUESTS</text>
+</svg>
