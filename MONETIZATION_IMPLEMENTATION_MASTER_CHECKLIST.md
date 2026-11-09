@@ -7,7 +7,7 @@ Legend:
 - `[~]` partially built;
 - `[ ]` not built.
 
-**Built is not live.** Nothing below is live in production unless it says so. Migrations 0201–0210 are unapplied, and getvents.com serves an older build, until the owner authorises the release window (runbook W4–W6f, W7).
+**Release state (2026-11-09).** Migrations 0201–0210 are applied in production, and getvents.com serves `main` at `06810d4` (PR #91). Purchases and payouts are enabled; sign-ups stay disabled until the owner opens them. The store apps are not yet updated: see section 12.
 
 ## Approved model (2026-11-09)
 
@@ -46,10 +46,8 @@ Legend:
 ### 1. Ticketing fees
 - [x] **Attendee service fee, 1.5% per ticket** (0208 `ticket_fee_buyer_charge_kobo`, `ticket_fee_quote`). Tested: fee suite 64/64.
   - Supersedes the earlier 4%-attendee proposal. 0208 removes the 4% + 5% model entirely.
-  - **Production still charges the legacy 5% attendee fee** until 0203 + 0208 are applied.
 - [x] **Organizer platform deduction, 3.5% per ticket** (0208 `ticket_fee_organizer_deduction_kobo`; settlement credits face − deduction into the 48 h hold, 0203).
   - Supersedes the earlier "5% organizer commission".
-  - **Production still credits organizers the full face** until the release.
 - [x] **Combined VENTS ticket revenue, 5%** (1.5% + 3.5%). Reported by `ticket_fee_quote` as `vents_platform_fees_kobo`; VENTS-funded promo discounts are reported separately (`vents_funded_discount_kobo`).
 - [x] **Checkout shows the selected ticket, quantity, subtotal, attendee service fee, promo and total payable.**
   - Paystack starts only if the server amount equals the quote shown.
@@ -90,7 +88,7 @@ Legend:
 ### 7. VENTS Wallet and payouts
 - [~] Wallet deposits: ₦0 VENTS fee; account for payment-processing cost.
 - [ ] Wallet withdrawal fee (₦50–₦100) and wallet-to-wallet transfer (₦0–₦50). Proposals, not approved.
-- [x] Earnings ledger, holds, recovery and two-admin withdrawals for organizers, providers and representative rewards (0202, 0203, 0205–0207). Built and tested; not applied.
+- [x] Earnings ledger, holds, recovery and two-admin withdrawals for organizers, providers and representative rewards (0202, 0203, 0205–0207). Built, tested and applied.
 - [x] Server-side idempotency for purchases, settlement, reward credits and payouts. Proven by the local suites.
 
 ### 8. Additional paid event services (proposed, not built)
@@ -119,7 +117,7 @@ Legend:
   - rewards stay blocked until management records the reconciliation;
   - 0210 makes new commission splits impossible and keeps the old values as history.
 - [ ] **Owner decision:** record the reconciliation, including what to tell the two representatives who accepted under the old programme.
-- [ ] **Release:** apply 0201–0210 and promote the build (owner authorisation).
+- [x] **Release:** 0201–0210 applied and the build promoted (2026-11-09).
 
 ### 11. Admin and financial controls
 - [~] Central fee configuration. Ticket fees live only in the database (0208), and the app has no fee rates (a test enforces this). Other streams still hard-code their prices.
@@ -132,7 +130,8 @@ Legend:
 
 ### 12. Testing, release and deployment
 - [x] Local suites: all 24 database suites, plus vitest 343 files / 3,162 tests on the business-model change.
-- [ ] Owner-authorised release window. Its own runbook step requires a verified backup (now automated by the daily backup workflow; first real run pending).
+- [x] Release window: migrations applied and web deployed (2026-11-09). The off-site backup workflow runs daily; see docs/db-backup.md for its status.
+- [ ] Store apps 1.2.0: signed Android AAB (needs the android-release secrets) and the iOS build (needs Apple signing and GoogleService-Info.plist).
 - [ ] Production verification after release with authoritative evidence. A code change is not production activation.
 
 ## Corrections made on 2026-11-09

@@ -1,0 +1,67 @@
+# iOS compile check (Capacitor, Swift Package Manager). Unsigned simulator
+# build on a GitHub macOS runner: proves the committed ios/ project, its
+# plugins and the current web build compile together. No secrets, no Apple
+# account, nothing is uploaded.
+#
+# A signed App Store build still needs, from the owner: an Apple Developer
+# membership for team V7774S7GHB, an App Store Connect record for
+# com.getvents.app, and ios/App/App/GoogleService-Info.plist (Firebase) --
+# without that file the app stops at launch (FirebaseMessaging calls
+# FirebaseApp.configure()). See IOS_LAUNCH_CHECKLIST.md.
+name: iOS build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Web build (development mode; no production values needed to compile)
+        run: npx vite build --mode development
+
+      - name: Sync the web build into the iOS project
+        run: npx cap sync ios
+
+      - name: Versions match the web app
+        run: |
+          set -euo pipefail
+          web=$(grep -oE "APP_VERSION = '[0-9.]+'" src/app/App.tsx | grep -oE "[0-9.]+")
+          ios=$(grep -oE "MARKETING_VERSION = [0-9.]+;" ios/App/App.xcodeproj/project.pbxproj | sort -u | grep -oE "[0-9.]+" )
+          android=$(grep -oE 'versionName "[0-9.]+"' android/app/build.gradle | grep -oE "[0-9.]+")
+          echo "web $web, iOS $ios, Android $android"
+          [ "$web" = "$ios" ] && [ "$web" = "$android" ] || { echo "::error::App versions differ (web $web, iOS $ios, Android $android)"; exit 1; }
+
+      - name: Compile for the iOS simulator (unsigned)
+        working-directory: ios/App
+        run: |
+          set -euo pipefail
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build | tail -n 40

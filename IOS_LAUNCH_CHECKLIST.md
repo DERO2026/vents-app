@@ -1,7 +1,24 @@
 # VENTS — iOS Launch Checklist
 
-Everything code-side is done. This is what's left, and it all has to happen
-on a Mac with Xcode. Follow in order.
+**Status (1.2.0):** the iOS project is now committed in `ios/` (Capacitor 8,
+Swift Package Manager — no CocoaPods). Already done in the repository:
+Info.plist usage strings (camera, microphone, location, photo library, Face
+ID), `ITSAppUsesNonExemptEncryption = NO`, the `vents://` URL scheme, remote
+notification background mode, `App.entitlements` (push + `applinks:getvents.com`),
+version 1.2.0, team `V7774S7GHB`, bundle `com.getvents.app`, icons and launch
+screens. `.github/workflows/ios-build.yml` compiles it unsigned on a macOS
+runner. What is left needs the owner's Apple/Firebase accounts:
+
+1. `ios/App/App/GoogleService-Info.plist` from the Firebase console (iOS app
+   `com.getvents.app`). **Required**: without it the app stops at launch.
+2. An APNs auth key (.p8) uploaded to Firebase Cloud Messaging.
+3. A Mac with Xcode (or a CI signing setup) signed in to team V7774S7GHB:
+   Product → Archive → Distribute → App Store Connect.
+4. The App Store Connect app record, screenshots, privacy answers, review.
+
+The sections below are the original step-by-step notes; steps 1–4 and §6's
+AASA file are already satisfied by the committed project.
+
 
 ## 1. Generate the iOS project
 

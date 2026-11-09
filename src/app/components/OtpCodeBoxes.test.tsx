@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 import { OtpCodeBoxes } from './OtpCodeBoxes';
@@ -42,6 +42,19 @@ function render(ui: React.ReactElement) {
   });
   return container;
 }
+
+// input-otp re-dispatches an "input" event on 0/10/50 ms timers after every
+// value change. Unmount each test's tree and let those timers drain while
+// jsdom is still alive; otherwise the last ones could fire after the file's
+// environment was torn down and fail the whole run with an unhandled
+// "parameter 1 is not of type 'Event'" error (seen intermittently).
+afterEach(async () => {
+  act(() => { root?.unmount(); });
+  container?.remove();
+  root = null;
+  container = null;
+  await new Promise((r) => setTimeout(r, 80));
+});
 
 function hiddenInput(el: HTMLDivElement): HTMLInputElement {
   return el.querySelector('input[inputmode="numeric"]') as HTMLInputElement;

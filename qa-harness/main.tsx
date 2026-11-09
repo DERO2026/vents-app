@@ -8,6 +8,8 @@ import { ManageEventsScreen } from '../src/app/components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from '../src/app/components/SalesAnalyticsScreen';
 import { HomeScreen, mapDbEventToFrontend, FeaturedCarousel } from '../src/app/components/HomeScreen';
 import { WelcomeScreen } from '../src/app/components/WelcomeScreen';
+import { TicketSelectScreen } from '../src/app/components/TicketSelectScreen';
+import { PaymentSuccessScreen } from '../src/app/components/PaymentSuccessScreen';
 import { EventDetailsScreen } from '../src/app/components/EventDetailsScreen';
 import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
 import { ServicesHomeScreen } from '../src/app/components/ServicesHomeScreen';
@@ -164,6 +166,20 @@ const SCREENS: Record<string, () => JSX.Element> = {
     const event = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg',
       ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] });
     return <EventDetailsScreen event={event} onBack={() => {}} onGetTickets={() => {}} isSaved={false} onToggleSave={() => {}} currentUserId="user-1" />;
+  },
+  // Flyer QA (bright local SVG): ticket selection hero, payment success
+  // card and a profile cover -- each must show only the bottom gradient.
+  'ticket-select-flyer': () => {
+    const event = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg',
+      ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] });
+    return <TicketSelectScreen event={event} onBack={() => {}} onContinue={() => {}} />;
+  },
+  'payment-success-flyer': () => {
+    const event = mapDbEventToFrontend({ ...FIXTURE_EVENTS[0], image_url: '/qa-flyer.svg' });
+    const ticket = { event, ticketType: { id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 },
+      quantity: 1, ticketId: 'tkt-1', purchasedAt: new Date().toISOString(), totalAmount: 15225,
+      holderName: 'Test Buyer', holderEmail: 'buyer@example.com', checkedIn: false };
+    return <PaymentSuccessScreen ticket={ticket as any} onViewTickets={() => {}} onGoHome={() => {}} />;
   },
   'event-details': () => {
     const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
@@ -369,7 +385,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   profile: () => (
     <ProfileScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, is_verified: true }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, is_verified: true, cover_url: '/qa-flyer.svg' }}
       onSignOut={() => {}}
       tickets={[]}
       savedCount={2}
@@ -464,7 +480,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   profile: () => (
     <ProfileScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, cover_url: '/qa-flyer.svg' }}
       onSignOut={() => {}}
       tickets={[]}
       savedCount={3}

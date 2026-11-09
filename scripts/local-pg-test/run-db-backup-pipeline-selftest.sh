@@ -63,13 +63,21 @@ if [ $RC -ne 0 ] && [[ "$OUT" == *"not the VENTS Supabase session pooler URI"* ]
   pass "without the self-test flag, a non-production URL is refused before any connection"
 else fail "non-production URL: rc=$RC"; fi
 for bad in "postgresql://postgres.slrtjxtzhowhwhebjprv:pw@aws-0-eu-central-1.pooler.supabase.com:6543/postgres" \
-           "postgresql://postgres:pw@db.slrtjxtzhowhwhebjprv.supabase.co:5432/postgres" \
            "postgresql://postgres.slrtjxtzhowhwhebjprv:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=disable" \
            "postgresql://postgres.otherproject:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"; do
   OUT=$(env BACKUP_DB_URL="$bad" bash "$OPS/db-backup-dump.sh" "$W/x.gpg" "$OPS/db-backup-key.sh" 2>&1); RC=$?
   if [ $RC -eq 0 ] || [[ "$OUT" != *"not the VENTS Supabase session pooler URI"* ]]; then fail "accepted a wrong URL shape (rc=$RC)"; fi
 done
-[ "$FAILS" -eq 0 ] && pass "transaction pooler, direct host, sslmode=disable and another project are all refused"
+# The dashboard's direct connection string (IPv6-only) is converted to the
+# session pooler with the same password, never dialled directly. The candidate
+# host here does not exist, so nothing real is contacted.
+OUT=$(env BACKUP_DB_URL="postgresql://postgres:pw@db.slrtjxtzhowhwhebjprv.supabase.co:5432/postgres" \
+      POOLER_HOSTS="selftest-nonexistent.pooler.supabase.com" \
+      bash "$OPS/db-backup-dump.sh" "$W/x.gpg" "$OPS/db-backup-key.sh" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"using the session pooler with the same password"* ]] && [[ "$OUT" != *"db.slrtjxtzhowhwhebjprv.supabase.co"* ]]; then
+  pass "the direct connection string is converted to the session pooler, never dialled"
+else fail "direct connection string not converted (rc=$RC)"; fi
+[ "$FAILS" -eq 0 ] && pass "transaction pooler, sslmode=disable and another project are all refused"
 OUT=$(env BACKUP_DB_URL="" bash "$OPS/db-backup-dump.sh" "$W/x.gpg" "$OPS/db-backup-key.sh" 2>&1); RC=$?
 if [ $RC -ne 0 ] && [[ "$OUT" == *"secret is empty"* ]]; then pass "an empty DATABASE_URL fails loudly"; else fail "empty URL: rc=$RC"; fi
 

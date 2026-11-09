@@ -79,7 +79,7 @@ const FIXTURES: Record<string, Row[]> = {
       id: 'prov-1', user_id: 'org-1', business_name: 'Ada Photography', category: 'Photography',
       location: 'Victoria Island, Lagos', latitude: null, longitude: null, country: 'NG',
       description: 'Full studio and event photography with same-day previews. Over 200 shoots across Lagos.',
-      photo_urls: [], starting_price: 85000, starting_price_currency: 'NGN',
+      photo_urls: ['/qa-flyer.svg'], starting_price: 85000, starting_price_currency: 'NGN',
       services_offered: ['Portraits', 'Events', 'Weddings'],
       offers_home_service: true, offers_delivery: false, offers_same_day: true,
       status: 'approved', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
