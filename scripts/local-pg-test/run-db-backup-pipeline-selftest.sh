@@ -27,6 +27,11 @@ pass() { echo "PASS: $1"; PASSES=$((PASSES+1)); }
 fail() { echo "FAIL: $1" >&2; FAILS=$((FAILS+1)); }
 # The workflow never exports these to the validation step; neither do we.
 unset DATABASE_URL BACKUP_DB_URL BACKUP_ENCRYPTION_PASSPHRASE
+# On a GitHub runner the scripts print "::add-mask::<value>" on stdout, which the
+# runner consumes (never shown). Capturing stdout here would see it, so the
+# "never printed" checks run with GITHUB_ACTIONS unset; section 6 checks the
+# CI-mode output separately.
+unset GITHUB_ACTIONS
 
 # --- a source database shaped like production (19 pre-apply functions) -----
 pg -d postgres -q -c "DROP DATABASE IF EXISTS $SRC_DB;" -c "CREATE DATABASE $SRC_DB;" >/dev/null
@@ -139,6 +144,17 @@ if [ $RC -eq 0 ] && [[ "$VOUT" == *"Functions matching: 18/19 (check: report)"* 
 else fail "report mode: rc=$RC $VOUT"; fi
 VOUT=$(FUNCTION_CHECK=enforce bash "$OPS/db-backup-validate.sh" "$W/drifted.gpg" "$W/key" "$W/r7" 2>&1); RC=$?
 if [ $RC -ne 0 ] && [[ "$VOUT" == *"not 19/19"* ]]; then pass "O4 mode (enforce) fails on a drifted function"; else fail "enforce mode: rc=$RC"; fi
+
+# --- 6. CI mode: secrets appear only on ::add-mask:: lines ------------------
+OUT=$(env GITHUB_ACTIONS=true BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" "$W/key6" "$W/mode6" 2>&1)
+K6="$(cat "$W/key6")"
+if echo "$OUT" | grep -qxF "::add-mask::$K6" && [ -z "$(echo "$OUT" | grep -F "$K6" | grep -v '^::add-mask::')" ]; then
+  pass "in CI the derived key is registered as a mask and appears on no other line"
+else fail "CI-mode key output"; fi
+OUT=$(env GITHUB_ACTIONS=true BACKUP_SELFTEST=1 BACKUP_DB_URL="$URL" bash "$OPS/db-backup-dump.sh" "$W/ci.gpg" "$W/key6" 2>&1); RC=$?
+if [ $RC -eq 0 ] && echo "$OUT" | grep -qxF "::add-mask::$PW" && [ -z "$(echo "$OUT" | grep -F "$PW" | grep -v '^::add-mask::')" ]; then
+  pass "in CI the database password is registered as a mask and appears on no other line"
+else fail "CI-mode dump output: rc=$RC"; fi
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES DB BACKUP PIPELINE SELF-TEST CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi
