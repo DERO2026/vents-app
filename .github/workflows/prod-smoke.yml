@@ -1,0 +1,40 @@
+# Production smoke check: opens the live getvents.com as a guest on a phone
+# viewport (public pages only; no sign-in, no form is submitted) and reports
+# flyer overlays and whether Google Maps loads. Results are in the job log and
+# summary. Run after a deploy or after changing the Google Cloud project:
+# Actions -> Production smoke check -> Run workflow.
+name: Production smoke check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Playwright (isolated from the app's dependencies)
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          npm init -y > /dev/null && npm i playwright@1.49.1 > /dev/null
+          npx playwright install --with-deps chromium > /dev/null
+          cp "$GITHUB_WORKSPACE/scripts/ops/prod-smoke.mjs" .
+      - name: Check getvents.com
+        working-directory: ${{ runner.temp }}/smoke
+        run: |
+          set -o pipefail
+          node prod-smoke.mjs | tee result.txt
+      - name: Summary
+        if: always()
+        working-directory: ${{ runner.temp }}/smoke
+        run: |
+          { echo "### Production smoke check"; echo '```'; cat result.txt 2>/dev/null || echo "no result"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
