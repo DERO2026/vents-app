@@ -67,6 +67,26 @@ window.gm_authFailure = function () {
   postToParent({ type: 'vents:authFailure' });
 };
 
+// Same as watchForGoogleMapsErrorUi in src/lib/googleMaps.ts: Google paints
+// its own error box for project-level refusals (billing, API not enabled,
+// key restrictions) without calling gm_authFailure, so report it to the
+// parent app, which then shows its manual-entry / no-map fallback.
+function watchForGoogleErrorUi(el) {
+  if (!el || typeof MutationObserver === 'undefined') return;
+  var reported = false;
+  var check = function () {
+    if (reported) return;
+    if (el.querySelector('.gm-err-container, .gm-err-message, .gm-err-title, .dismissButton') ||
+        /can.t load Google Maps correctly|Oops! Something went wrong/i.test(el.textContent || '')) {
+      reported = true;
+      observer.disconnect();
+      postToParent({ type: 'vents:authFailure' });
+    }
+  };
+  var observer = new MutationObserver(check);
+  observer.observe(el, { childList: true, subtree: true, characterData: true });
+}
+
 if (!API_KEY || API_KEY.charAt(0) === '%') {
   // The build-time placeholder was never substituted (e.g. this file was
   // opened directly, bypassing the Vite build) -- fail loudly to the
@@ -129,6 +149,7 @@ function initMap() {
   const startLng = initialLng != null ? initialLng : 3.3792; // Lagos default, matches LocationPicker.tsx
   const hasStart = initialLat != null && initialLng != null;
 
+  watchForGoogleErrorUi(document.getElementById('map'));
   map = new google.maps.Map(document.getElementById('map'), {
     center: { lat: startLat, lng: startLng },
     zoom: hasStart ? 15 : 6,

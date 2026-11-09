@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check, Bookmark, Share2, Link as LinkIcon } from 'lucide-react';
 import { shareLink } from '../../lib/shareLink';
 import { ServiceProvider, ProviderService } from './types';
@@ -355,7 +356,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           {coverPhoto && (
             <img src={coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           )}
-          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '50%', background: 'rgba(2,0,5,0.75)' }} />
+          <div aria-hidden style={flyerScrim(45)} />
           <div style={{ position: 'absolute', top: 'calc(16px + env(safe-area-inset-top))', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between' }}>
             <button onClick={onBack} style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <ArrowLeft size={16} color="#fff" />

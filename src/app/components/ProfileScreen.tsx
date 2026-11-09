@@ -1,4 +1,5 @@
 import { RepresentativeBadge } from './RepresentativeBadge';
+import { flyerScrim } from '../../lib/flyerScrim';
 import { useState, useEffect, useRef } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
@@ -328,7 +329,7 @@ export function ProfileScreen({
           {effectiveCoverUrl && !coverLoadFailed && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '90px', borderRadius: '0 0 24px 24px', overflow: 'hidden' }}>
               <img src={effectiveCoverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={() => setCoverLoadFailed(true)} />
-              <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%', background: 'rgba(6,10,18,0.75)' }} />
+              <div aria-hidden style={flyerScrim(50)} />
             </div>
           )}
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: effectiveCoverUrl && !coverLoadFailed ? '30px' : 0 }}>
