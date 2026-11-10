@@ -17,6 +17,8 @@ import {
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; is_service_provider?: boolean } | null;
   onBack: () => void;
+  /** Rendered inside the unified wallet's Earnings tab: no own header/back button. */
+  embedded?: boolean;
 }
 
 interface WalletData {
@@ -195,7 +197,7 @@ async function authedFetch(path: string, body: any) {
   return json;
 }
 
-export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
+export function WalletScreen({ currentUser, onBack, embedded = false }: WalletScreenProps) {
   // Earnings/withdrawal/bank-account sections only apply to accounts that
   // can actually earn -- a plain attendee has no organizer_wallets row, so
   // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
@@ -701,13 +703,13 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   return (
     <div style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden', position: 'relative' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* Header (the unified wallet supplies its own when embedded) */}
+      {!embedded && <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>My Wallet</span>
-      </div>
+      </div>}
 
       {loading ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -784,7 +786,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 <button
                   onClick={openAddBank}
                   disabled={emailVerified === false || bankAccounts.length >= 3}
-                  style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
+                  style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', minHeight: '44px', padding: '0 4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
                   title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
                 >
                   <Plus size={13} color={ventsColors.accentSoft} />
@@ -805,7 +807,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                     : pinStatus.must_reset ? 'Locked — reset it with your password'
                     : pinStatus.locked ? 'Temporarily locked after wrong attempts'
                     : pinStatus.withdrawals_paused_until ? 'Changed recently — withdrawals paused for 24 hours'
-                    : 'Set — required for every withdrawal'}
+                    : 'Set — required for every withdrawal and money transfer'}
                 </p>
                 {pinNotice && !showWithdraw && <p style={{ margin: '4px 0 0', fontSize: '11px', color: ventsColors.success }}>{pinNotice}</p>}
               </div>

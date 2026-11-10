@@ -4,7 +4,7 @@
 // isolation. No side effects, no imports.
 
 export interface ClassifiableWalletTransaction {
-  type: 'deposit' | 'spend' | 'refund';
+  type: 'deposit' | 'spend' | 'refund' | 'vc_conversion' | 'transfer_out' | 'transfer_in' | string;
   referenceId: string | null;
 }
 
@@ -16,13 +16,15 @@ export interface ClassifiableWalletTransaction {
 // attempts reference ('wdep_...', 0065). Classifying by these existing,
 // already-authoritative conventions rather than fragile description-string
 // matching, and never inventing a classification the data doesn't support.
-export type WalletTransactionKind = 'deposit' | 'ticket_purchase' | 'service_purchase' | 'ticket_refund' | 'other';
+export type WalletTransactionKind = 'deposit' | 'ticket_purchase' | 'service_purchase' | 'ticket_refund' | 'transfer_in' | 'transfer_out' | 'vc_conversion' | 'other';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function classifyWalletTransaction(tx: ClassifiableWalletTransaction): WalletTransactionKind {
   const ref = tx.referenceId || '';
   if (tx.type === 'deposit') return 'deposit';
+  // 0215 transfers and 0146 VC conversions carry their own ledger type.
+  if (tx.type === 'transfer_in' || tx.type === 'transfer_out' || tx.type === 'vc_conversion') return tx.type;
   if (tx.type === 'refund') {
     // A refund's reference_id is a bare ticket UUID only for the ticket
     // refund path (0067) -- there is no service-booking refund path yet

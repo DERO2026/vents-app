@@ -60,8 +60,8 @@ import { OrganizerDashboard } from './components/OrganizerDashboard';
 import { CreateEventScreen } from './components/CreateEventScreen';
 import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
-import { WalletScreen } from './components/WalletScreen';
-import { CustomerWalletScreen } from './components/CustomerWalletScreen';
+import { UnifiedWalletScreen } from './components/wallet/UnifiedWalletScreen';
+import { PAY_PARAM, PAY_TO_STORAGE_KEY, usernameFromPayParam } from '../lib/walletTransfers';
 import { TicketRefundScreen } from './components/TicketRefundScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
@@ -718,6 +718,20 @@ export default function App() {
           setViewingPaymentRequestRef(paymentRequestRef);
           setScreenStack([]);
           setScreen('payment-request');
+        }
+
+        // "Send me money" link / Receive QR code (?pay=<username>, 0215):
+        // remembered for this tab, opened in the wallet's Send Money sheet,
+        // where the sender still confirms the recipient, amount and PIN.
+        const payTo = usernameFromPayParam(params.get(PAY_PARAM));
+        if (params.has(PAY_PARAM)) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+        if (payTo) {
+          try { sessionStorage.setItem(PAY_TO_STORAGE_KEY, payTo); } catch { /* storage unavailable */ }
+          setScreenStack([]);
+          setScreen('customer-wallet');
         }
 
         // VENTS Representative organizer referral (?rep=CODE, migration 0209):
@@ -2605,6 +2619,7 @@ export default function App() {
     if (data.screen === 'notifications') { setScreenStack([]); setScreen('notifications'); return; }
     if (data.screen === 'my-tickets') { setScreenStack([]); setScreen('my-tickets'); return; }
     if (data.screen === 'wallet') { setScreenStack([]); setScreen('wallet'); return; }
+    if (data.screen === 'customer-wallet') { setScreenStack([]); setScreen('customer-wallet'); return; }
   };
 
   // Stable identity (never recreated) wrapping the always-current
@@ -3895,21 +3910,22 @@ export default function App() {
             />
           )}
 
-          {/* ── ORGANIZER/PROVIDER EARNINGS WALLET (withdrawable) ── */}
-          {screen === 'wallet' && (
-            <WalletScreen currentUser={currentUser} onBack={goBack} />
-          )}
-
-          {/* ── UNIVERSAL CUSTOMER WALLET (spendable, not withdrawable) ── */}
-          {screen === 'customer-wallet' && (
-            <CustomerWalletScreen
+          {/* ── ONE WALLET, TWO TABS: Wallet Balance (spendable, never
+              withdrawable) and Earnings (withdrawable). 'wallet' is the
+              historical Earnings entry point (organizer dashboards, payout
+              notifications): it opens the Earnings tab for anyone who earns,
+              and Wallet Balance for everyone else (e.g. a buyer sent here
+              after paying for a ticket). ── */}
+          {(screen === 'wallet' || screen === 'customer-wallet') && (
+            <UnifiedWalletScreen
+              key={screen}
               currentUser={currentUser}
               onBack={goBack}
-              showEarningsTab={
+              initialTab={screen === 'wallet' && (
                 !!currentUser?.isOrganizer || currentUser?.is_service_provider === true ||
                 currentUser?.role === 'admin' || currentUser?.role === 'sub-admin'
-              }
-              onOpenEarnings={() => navigateTo('wallet')}
+              ) ? 'earnings' : 'balance'}
+              onOpenVentsCents={() => navigateTo('referral')}
             />
           )}
 

@@ -32,7 +32,7 @@ beforeAll(() => {
   const componentsDir = join(__dirname, '..', 'app', 'components');
   adminSystemSrc = readFileSync(join(componentsDir, 'admin', 'AdminSystemScreen.tsx'), 'utf8');
   checkoutSrc = readFileSync(join(componentsDir, 'CheckoutScreen.tsx'), 'utf8');
-  customerWalletSrc = readFileSync(join(componentsDir, 'CustomerWalletScreen.tsx'), 'utf8');
+  customerWalletSrc = readFileSync(join(componentsDir, 'wallet', 'UnifiedWalletScreen.tsx'), 'utf8');
   walletScreenSrc = readFileSync(join(componentsDir, 'WalletScreen.tsx'), 'utf8');
   serviceBookingsSrc = readFileSync(join(__dirname, 'serviceBookings.ts'), 'utf8');
   operationalStatusSrc = readFileSync(join(__dirname, 'operationalStatus.ts'), 'utf8');
@@ -188,7 +188,7 @@ describe('Client-facing messaging: VENTS-branded, no internal detail leaked', ()
     expect(messageValues.length).toBeGreaterThan(0);
   });
 
-  it('CheckoutScreen, CustomerWalletScreen, WalletScreen and the service-booking data layer all translate a disabled-operation error before showing it', () => {
+  it('CheckoutScreen, the unified wallet (deposits), WalletScreen and the service-booking data layer all translate a disabled-operation error before showing it', () => {
     for (const src of [checkoutSrc, customerWalletSrc, walletScreenSrc, serviceBookingsSrc]) {
       expect(src).toMatch(/friendlyOperationalError/);
     }

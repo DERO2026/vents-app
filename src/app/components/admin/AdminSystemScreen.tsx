@@ -14,6 +14,7 @@ import { adminTheme } from './adminConsoleTheme';
 import { ConfirmModal } from './adminShared';
 import { writeAuditLog } from './adminAuditLog';
 import { appVersionLabel } from '../../../lib/appVersion';
+import { WalletTransfersSwitch } from './WalletTransfersSwitch';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -312,6 +313,8 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
         const disabled = !!killSwitches[def.key];
         return toggleRow(def.icon, def.label, !disabled, def.desc(disabled), () => handleToggleKillSwitch(def), adminTheme.green);
       })}
+
+      <WalletTransfersSwitch />
 
       <div style={{ background: adminTheme.panel, borderRadius: 16, border: `1px solid ${adminTheme.border}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -166,7 +166,9 @@ describe('Conversion section is distinguished from ticket redemption and never e
     renderModal();
     const text = container.textContent || '';
     expect(text).toMatch(/separate from.*ticket discount|not the same as, redeeming/i);
-    expect(text).toMatch(/does not pay out directly to a bank account/i);
+    expect(text).toMatch(/cannot be withdrawn to a bank account/i);
+    expect(text).toMatch(/VENTS Cents themselves are never\s+withdrawable/i);
+    expect(text).not.toMatch(/withdraw from your Wallet/i);
   });
 
   it('never mentions database tables, RPC names, or security architecture', () => {
