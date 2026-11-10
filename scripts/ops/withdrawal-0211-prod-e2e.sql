@@ -1,4 +1,4 @@
--- Production end-to-end check of 0211. Everything below runs in ONE
+-- Production end-to-end check of 0211 (and 0212). Everything below runs in ONE
 -- statement that ends by RAISING an exception, so Postgres rolls back every
 -- row it wrote (test users, wallets, PINs, requests, approvals, queued pg_net
 -- pushes). Only test accounts (uuid ...e2xx, @example.invalid) are touched;
@@ -86,8 +86,13 @@ BEGIN
   PERFORM pg_temp.chk('payouts kill switch is off', public.payouts_disabled()::text, 'false');
 
   -- ---------------- 1. old paths closed ----------------
-  PERFORM pg_temp.chk_like('old entry point request_organizer_payout is closed to clients',
-    pg_temp.q(ORG, format('SELECT public.request_organizer_payout(500000, %L, %L)::text', BANK, 'bypass')), 'ERR:permission denied for function request_organizer_payout%');
+  -- Since 0212 the old entry point only tells old app builds to update.
+  PERFORM pg_temp.chk_like('old app call: told to update the app, not "permission denied"',
+    pg_temp.q(ORG, format('SELECT public.request_organizer_payout(500000, %L, %L)::text', BANK, 'bypass')), 'ERR:Please update VENTS to withdraw.%getvents.com.');
+  PERFORM pg_temp.chk('...and it created no withdrawal and moved no money',
+    (SELECT count(*)::text FROM public.organizer_withdrawal_requests WHERE organizer_id = ORG) || '/' || pg_temp.wallet(ORG), '0/10000000/0');
+  PERFORM pg_temp.chk_like('clients cannot call the real function (request_organizer_payout_core)',
+    pg_temp.q(ORG, format('SELECT public.request_organizer_payout_core(500000, %L, %L)::text', BANK, 'bypass')), 'ERR:permission denied for function request_organizer_payout_core%');
   PERFORM pg_temp.chk_like('anon cannot call request_withdrawal',
     pg_temp.q(NULL, format('SELECT public.request_withdrawal(500000, %L, %L, %L)::text', BANK, '7391', 'anon'), NULL, 'anon'), 'ERR:permission denied%');
   PERFORM pg_temp.chk_like('clients cannot insert withdrawal rows directly',
