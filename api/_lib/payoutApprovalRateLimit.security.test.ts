@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // (api/wallet/admin-payout-action.ts, action==='approve') fires a real
 // Paystack transfer and is single-admin-gated (is_admin() allows role
 // 'admin' or 'sub-admin') with no pacing safeguard of its own. The atomic
-// claim (admin_claim_payout_for_processing) already prevents the SAME
+// claim (admin_authorize_and_claim_payout) already prevents the SAME
 // request from being double-transferred -- these tests cover the
 // different, narrower gap this change closes: nothing previously stopped
 // one admin session from approving many DIFFERENT, individually legitimate
@@ -42,18 +42,18 @@ function req(body: any, authorization = 'Bearer tok') {
   return { method: 'POST', headers: { authorization }, body } as any;
 }
 
-const APPROVE_BODY = { action: 'approve', request_id: 'req-1' };
+const APPROVE_BODY = { action: 'authorize_pay', request_id: 'req-1', amount_kobo: 50000, pin: '4826193057', idempotency_key: 'payout-test-key-000001' };
 
 function makeSupabaseFetchMock() {
   const calls: { url: string; body: any }[] = [];
   const fn = vi.fn(async (url: string, opts: any) => {
     calls.push({ url, body: opts?.body ? JSON.parse(opts.body) : null });
-    if (url.includes('admin_claim_payout_for_processing')) {
+    if (url.includes('admin_authorize_and_claim_payout')) {
       return {
         ok: true,
         json: async () => [{
           request_id: 'req-1', organizer_id: 'org-1', amount_kobo: 50000,
-          recipient_code: 'RCP_abc', status: 'processing', claimed: true,
+          recipient_code: 'RCP_abc', status: 'processing', ok: true, claimed: true,
         }],
       } as any;
     }
@@ -127,11 +127,11 @@ describe('admin-payout-action: approval rate limit', () => {
     vi.unstubAllGlobals();
   });
 
-  it('4. the rate-limit check runs before admin_claim_payout_for_processing -- a rejected check never claims the request either', async () => {
+  it('4. the rate-limit check runs before admin_authorize_and_claim_payout -- a rejected check never claims the request either', async () => {
     mockCallProjectAdminRpc.mockRejectedValue(new Error('rate_limited'));
-    const claimFn = vi.fn(async () => ({ ok: true, json: async () => ([{ claimed: true }]) } as any));
+    const claimFn = vi.fn(async () => ({ ok: true, json: async () => ([{ ok: true, claimed: true }]) } as any));
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (String(url).includes('admin_claim_payout_for_processing')) return claimFn(url);
+      if (String(url).includes('admin_authorize_and_claim_payout')) return claimFn(url);
       return { ok: true, json: async () => ({}) } as any;
     }));
     const res = makeRes();
@@ -146,8 +146,8 @@ describe('admin-payout-action: approval rate limit', () => {
     const paystackFetch = vi.fn(async () => ({ ok: true, json: async () => ({ status: true, data: {} }) } as any));
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).includes('api.paystack.co')) return paystackFetch(url);
-      if (String(url).includes('admin_claim_payout_for_processing')) {
-        return { ok: true, json: async () => ([{ request_id: 'req-1', status: 'processing', claimed: false }]) } as any;
+      if (String(url).includes('admin_authorize_and_claim_payout')) {
+        return { ok: true, json: async () => ([{ request_id: 'req-1', status: 'processing', ok: true, claimed: false }]) } as any;
       }
       return { ok: true, json: async () => ({}) } as any;
     }));
@@ -163,18 +163,18 @@ describe('admin-payout-action: approval rate limit', () => {
     const paystackFetch = vi.fn(async () => ({ ok: true, json: async () => ({ status: true, data: { transfer_code: 'TRF_x' } }) } as any));
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).includes('api.paystack.co')) return paystackFetch(url);
-      if (String(url).includes('admin_claim_payout_for_processing')) {
-        return { ok: true, json: async () => ([{ request_id: 'req-x', status: 'processing', claimed: true, recipient_code: 'RCP_x', amount_kobo: 1000, organizer_id: 'org-x' }]) } as any;
+      if (String(url).includes('admin_authorize_and_claim_payout')) {
+        return { ok: true, json: async () => ([{ request_id: 'req-x', status: 'processing', ok: true, claimed: true, recipient_code: 'RCP_x', amount_kobo: 1000, organizer_id: 'org-x' }]) } as any;
       }
       return { ok: true, json: async () => ({}) } as any;
     }));
 
     const res1 = makeRes();
-    await handler(req({ action: 'approve', request_id: 'req-A' }), res1);
+    await handler(req({ action: 'authorize_pay', request_id: 'req-A', amount_kobo: 50000, pin: '4826193057', idempotency_key: 'payout-test-key-000001' }), res1);
     expect(res1.status).toHaveBeenCalledWith(200);
 
     const res2 = makeRes();
-    await handler(req({ action: 'approve', request_id: 'req-B' }), res2);
+    await handler(req({ action: 'authorize_pay', request_id: 'req-B', amount_kobo: 50000, pin: '4826193057', idempotency_key: 'payout-test-key-000001' }), res2);
     expect(res2.status).toHaveBeenCalledWith(200);
 
     expect(mockCallProjectAdminRpc).toHaveBeenCalledWith('check_rate_limit', ['payout_approve:admin-1', 20, 3600]);

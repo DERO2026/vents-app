@@ -1,9 +1,17 @@
-// Withdrawals (0211): one vocabulary for every screen. The stage always
-// comes from the database (admin_list_withdrawals / get_my_withdrawals);
-// nothing here decides who may do what -- the server refuses anything else.
+// Withdrawals (0211, 0213): one vocabulary for every screen. The stage
+// always comes from the database (admin_list_withdrawals /
+// get_my_withdrawals); nothing here decides who may do what -- the server
+// refuses anything else.
 import { supabase } from './supabase';
+import { apiUrl } from './apiBase';
 
 export type WithdrawalStage =
+  // 0213: the VENTS Admin is the final payout authority.
+  | 'pending_review'
+  | 'forwarded_to_vents_admin'
+  | 'rejection_recommended'
+  | 'vents_admin_approved'
+  // 0211 (two admins), still shown correctly by an older backend.
   | 'pending_first_approval'
   | 'pending_second_approval'
   | 'approved'
@@ -17,6 +25,22 @@ export type WithdrawalStage =
 export type StageTone = 'wait' | 'progress' | 'ok' | 'bad' | 'neutral';
 
 export const WITHDRAWAL_STAGES: Record<WithdrawalStage, { user: string; admin: string; tone: StageTone; detail: string }> = {
+  pending_review: {
+    user: 'Waiting for review', admin: 'Pending review', tone: 'wait',
+    detail: 'VENTS reviews every withdrawal before it is paid.',
+  },
+  forwarded_to_vents_admin: {
+    user: 'Waiting for review', admin: 'Awaiting VENTS Admin', tone: 'wait',
+    detail: 'Reviewed and forwarded to the VENTS Admin for approval.',
+  },
+  rejection_recommended: {
+    user: 'Waiting for review', admin: 'Flagged · awaiting VENTS Admin', tone: 'bad',
+    detail: 'A reviewer recommends rejecting it. The VENTS Admin decides.',
+  },
+  vents_admin_approved: {
+    user: 'Approved · sending soon', admin: 'Approved · awaiting PIN authorization', tone: 'progress',
+    detail: 'Approved by VENTS. It will be sent to your bank shortly.',
+  },
   pending_first_approval: {
     user: 'Waiting for first approval', admin: 'Needs 1st approval', tone: 'wait',
     detail: 'Two different VENTS admins must approve every withdrawal.',
@@ -150,7 +174,167 @@ export async function fetchMyWithdrawals(limit = 50): Promise<MyWithdrawal[]> {
   return (Array.isArray(data) ? data : []) as MyWithdrawal[];
 }
 
-// ── Admin ────────────────────────────────────────────────────────────────
+// ── Admin (0213) ─────────────────────────────────────────────────────────
+export interface WithdrawalReview {
+  reviewer_name: string;
+  reviewer_tier: 'admin' | 'sub';
+  decision: 'forwarded' | 'rejection_recommended';
+  note: string;
+  created_at: string;
+  /** false once the amount or bank recipient changed after this review */
+  current: boolean;
+}
+
+export interface PayoutRequest {
+  request_id: string;
+  organizer_id: string;
+  organizer_name: string | null;
+  organizer_email: string | null;
+  organizer_phone: string | null;
+  amount_kobo: number;
+  status: string;
+  stage: WithdrawalStage;
+  /** who acts next: 'review_or_vents_admin' | 'vents_admin' | 'paystack' | null */
+  next_action: string | null;
+  bank_name: string | null;
+  account_number_masked: string | null;
+  /** full number: full admins and the VENTS Admin only */
+  account_number: string | null;
+  account_name: string | null;
+  bank_account_active: boolean;
+  account_verified: boolean;
+  wallet_balance_kobo: number | null;
+  wallet_pending_kobo: number | null;
+  created_at: string;
+  updated_at: string | null;
+  withdrawal_reference: string;
+  admin_note: string | null;
+  reviews: WithdrawalReview[];
+  has_current_review: boolean;
+  approved_by: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  approval_current: boolean;
+  authorized_by_name: string | null;
+  authorized_at: string | null;
+  paystack_reference: string | null;
+  transfer_started: boolean;
+  pin_required: boolean;
+  can_review: boolean;
+  can_approve: boolean;
+  can_authorize_pay: boolean;
+  can_reject: boolean;
+  action_note: string | null;
+}
+
+export interface PayoutOverview {
+  stages: Partial<Record<WithdrawalStage, { count: number; amount_kobo: number }>>;
+  outstanding_kobo: number;
+  outstanding_count: number;
+  processing_kobo: number;
+  paid_kobo: number;
+  wallet_pending_kobo: number;
+  is_vents_admin: boolean;
+  viewer_tier: 'root' | 'admin' | 'sub' | null;
+  payouts_disabled: boolean;
+  computed_at: string;
+}
+
+export async function fetchPayoutRequests(scope: 'open' | 'closed' | 'all', limit = 200): Promise<PayoutRequest[]> {
+  const { data, error } = await supabase.rpc('admin_list_withdrawals' as any, { p_scope: scope, p_limit: limit });
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []).map((r: any) => ({ ...r, reviews: Array.isArray(r.reviews) ? r.reviews : [] })) as PayoutRequest[];
+}
+
+export async function fetchPayoutOverview(): Promise<PayoutOverview> {
+  const { data, error } = await supabase.rpc('admin_payout_overview' as any);
+  if (error) throw error;
+  return data as PayoutOverview;
+}
+
+export async function reviewWithdrawal(requestId: string, amountKobo: number, decision: 'forward' | 'recommend_reject', note: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_review_withdrawal' as any, { p_request_id: requestId, p_amount_kobo: amountKobo, p_decision: decision, p_note: note });
+  if (error) throw new Error(error.message);
+}
+
+export async function approveForPayment(requestId: string, amountKobo: number, note?: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_approve_withdrawal_for_payment' as any, { p_request_id: requestId, p_amount_kobo: amountKobo, p_note: note ?? null });
+  if (error) throw new Error(error.message);
+}
+
+export interface AdminPayoutPinStatus {
+  has_pin: boolean;
+  locked: boolean;
+  locked_until: string | null;
+  must_reset: boolean;
+  attempts_left: number;
+  payouts_paused_until: string | null;
+}
+
+export const ADMIN_PIN_LENGTH = 10;
+
+/** Mirrors the server's checks for the 10-digit Admin Payout PIN. The server is the authority. */
+export function adminPinProblem(pin: string, confirm?: string): string | null {
+  if (!/^\d{10}$/.test(pin)) return 'The Admin Payout PIN must be exactly 10 digits';
+  if (confirm !== undefined && confirm !== pin) return 'The two PINs do not match';
+  if (/^(\d{1,5})\1+$/.test(pin) || '01234567890123456789'.includes(pin) || '98765432109876543210'.includes(pin)) {
+    return 'That PIN is too easy to guess (repeated or sequential digits). Choose another';
+  }
+  return null;
+}
+
+export async function fetchAdminPayoutPinStatus(): Promise<AdminPayoutPinStatus> {
+  const { data, error } = await supabase.rpc('admin_payout_pin_status' as any);
+  if (error) throw new Error(error.message);
+  return data as AdminPayoutPinStatus;
+}
+
+async function bearer(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  return `Bearer ${data.session?.access_token ?? ''}`;
+}
+
+/** Create, change or reset the Admin Payout PIN: the account password is re-checked by the server. */
+export async function setAdminPayoutPin(password: string, pin: string, pinConfirm: string): Promise<AdminPayoutPinStatus> {
+  const res = await fetch(apiUrl('/api/v1/wallet/save-bank'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: await bearer() },
+    body: JSON.stringify({ action: 'set_admin_payout_pin', password, pin, pin_confirm: pinConfirm }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || 'Could not set the Admin Payout PIN');
+  return json.pin_status as AdminPayoutPinStatus;
+}
+
+export interface AuthorizePayResult {
+  ok: boolean;
+  status?: string;
+  reference?: string;
+  code?: string;
+  message?: string;
+  attemptsLeft?: number;
+}
+
+/** A fresh key per Authorize & Pay attempt; a retry of the same attempt reuses it. */
+export function newPayoutIdempotencyKey(): string {
+  const c: any = (globalThis as any).crypto;
+  const raw = c?.randomUUID ? c.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  return `pay-${raw}`.replace(/[^A-Za-z0-9_-]/g, '');
+}
+
+/** Authorize & Pay: the PIN goes to the server, which claims this one request and starts the Paystack transfer. */
+export async function authorizeAndPay(requestId: string, amountKobo: number, pin: string, idempotencyKey: string): Promise<AuthorizePayResult> {
+  const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: await bearer() },
+    body: JSON.stringify({ action: 'authorize_pay', request_id: requestId, amount_kobo: amountKobo, pin, idempotency_key: idempotencyKey }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, status: json.status, reference: json.reference };
+  return { ok: false, code: json.code, message: json.error || 'Payout not authorized', attemptsLeft: json.attempts_left, status: json.status, reference: json.reference };
+}
+
+// ── Admin (0211, superseded by 0213) ─────────────────────────────────────
 export interface AdminWithdrawal {
   request_id: string;
   organizer_id: string;
