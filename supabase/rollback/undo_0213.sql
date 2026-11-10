@@ -25,6 +25,9 @@ BEGIN
   IF to_regprocedure('public.admin_authorize_and_claim_payout(uuid,bigint,text,text)') IS NULL THEN
     RAISE EXCEPTION 'undo_0213: 0213 is not applied';
   END IF;
+  IF to_regprocedure('public.admin_list_withdrawals(text,integer,timestamptz,uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION 'undo_0213: 0214 is applied; run undo_0214 first';
+  END IF;
   SELECT count(*) INTO n FROM public.organizer_withdrawal_requests
    WHERE status = 'pending' AND approved_by IS NOT NULL AND approval_request_id IS NULL;
   IF n > 0 THEN
