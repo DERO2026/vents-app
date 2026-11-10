@@ -24,7 +24,7 @@ The admin chunk changed hash on most deploys on 2026-11-10 (`C4c6HPWg` → `DAp5
 
 ## Fix
 
-1. **`vercel.json`:** the SPA rewrite is `/((?!assets/).*)`. A missing hashed file now gets a 404 instead of a year-cacheable copy of index.html. index.html itself stays `no-cache, must-revalidate`, so a reload always fetches the current deployment's file names.
+1. **`vercel.json`:** the SPA rewrite is `/((?!(?:[^/]+/)*assets/).*)` (originally `/((?!assets/).*)`; widened so an `.../assets/...` request at any depth is never answered with HTML). A missing hashed file now gets a 404 instead of a year-cacheable copy of index.html. index.html itself stays `no-cache, must-revalidate`, so a reload always fetches the current deployment's file names.
 2. **`src/lib/chunkRecovery.ts`** recognises the WebKit, Chrome and Firefox chunk-failure messages, and HTML served as JS. On a chunk failure it:
    - reloads the page **once per tab per 10 minutes**, guarded by a `sessionStorage` marker. If storage is unavailable or fails, it never reloads, so it can't loop;
    - keeps the URL (path, query and hash) and remembers the in-app screen. An admin who was opening the Admin Console is returned to it after the reload;
@@ -41,3 +41,11 @@ There is no service worker. Vercel Skew Protection, which keeps serving older de
 
 - `src/lib/chunkRecovery.test.ts`: error detection, one reload, no loop, no-storage safety, screen resume, the lazy wrapper, the global handlers, and the `vercel.json` routing and caching rules.
 - A manual Chromium check against the built app: a missing chunk gives exactly one reload with the URL kept, and a second failure gives no reload.
+
+## Nested URLs (follow-up)
+
+`vite.config.ts` had `base: './'`, so index.html loaded `./assets/main-*.js`. Opening a nested URL directly (`/event/abc`, or refreshing there) made the browser request `/event/assets/main-*.js`. The SPA rewrite answered with index.html, and the page stayed blank.
+
+The base is now `/`. Both the web app (domain root) and the native app (WebView root: `https://localhost/`, `capacitor://localhost/`) are served from `/`.
+
+Tests: `src/lib/nestedRouteAssets.test.ts`.
