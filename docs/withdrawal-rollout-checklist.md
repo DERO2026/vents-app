@@ -392,7 +392,9 @@ Use a small real withdrawal (for example ₦100) from an organizer account that 
 
 **Native builds on `main` (`3999b70`):**
 - **iOS compile check** (unsigned, simulator): success.
-- **Android, unsigned verification:** see the run recorded below.
+- **Android, unsigned verification** (run 42794755494): success.
+  - The AAB is versionName 1.3.0, versionCode 5, and its bundled web app contains the PIN flow.
+  - Artifact `vents-android-UNSIGNED-not-for-store-3999b70…` (6.98 MB, 3 days). It is not for the store.
 - **Android, signed** (run 42786560303): stopped at the secrets check. Missing in `android-release`:
   - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_GOOGLE_PLACES_API_KEY`;
   - `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`;
