@@ -5,6 +5,7 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // Runs as part of `npm test`; the main config excludes these files.
 export default defineConfig({
   define: {
+    __VENTS_BUILD_ID__: JSON.stringify('test-build'),
     __VENTS_VERCEL_PREVIEW__: 'true',
     __VENTS_PREVIEW_READ_ONLY__: 'true',
   },

@@ -4,3 +4,5 @@
 // Both are `false` in production and native builds.
 declare const __VENTS_VERCEL_PREVIEW__: boolean;
 declare const __VENTS_PREVIEW_READ_ONLY__: boolean;
+// Short commit SHA of this deployment ('local' outside Vercel).
+declare const __VENTS_BUILD_ID__: string;

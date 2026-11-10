@@ -77,9 +77,11 @@ import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
 // reach, with zero behavior change: the Suspense fallback only ever shows
 // for the brief moment the chunk downloads the first time an admin actually
 // opens the console, not on the app's normal cold start.
-const AdminConsoleShell = lazy(() =>
+// Wrapped so a tab opened before a deploy (whose chunk name no longer
+// exists) gets one controlled reload instead of a crash screen.
+const AdminConsoleShell = lazy(lazyImportWithRecovery(() =>
   import('./components/admin/AdminConsoleShell').then((m) => ({ default: m.AdminConsoleShell }))
-);
+));
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
@@ -91,6 +93,7 @@ import { RepresentativeRewardsScreen } from './components/work/RepresentativeRew
 import { RepresentativeDashboardScreen } from './components/work/RepresentativeDashboardScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
+import { lazyImportWithRecovery, isChunkLoadError, setRecoveryScreenGetter, consumeResumeScreen } from '../lib/chunkRecovery';
 
 // APP_VERSION (src/lib/appVersion.ts) is compared against
 // app_config.min_client_version on launch — if this build is older, the
@@ -129,6 +132,23 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   public render() {
+    if (this.state.hasError && isChunkLoadError(this.state.error)) {
+      // A stale page after a deploy: recovery already reloaded once (or
+      // could not), so say what happened instead of "Application Crash".
+      return (
+        <div data-testid="stale-version" style={{ width: '100%', height: '100%', background: '#060A12', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center', boxSizing: 'border-box' }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '8px' }}>
+            VENTS was updated
+          </h1>
+          <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px', maxWidth: 320 }}>
+            This page is from an older version and could not load part of the app. Reload to get the latest version. If it keeps happening, check your connection.
+          </p>
+          <button onClick={() => window.location.reload()} style={{ background: '#7B2FBE', border: 'none', borderRadius: '14px', padding: '12px 28px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
+            Reload VENTS
+          </button>
+        </div>
+      );
+    }
     if (this.state.hasError) {
       return (
         <div style={{
@@ -193,6 +213,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('splash');
+  // Stale-chunk recovery (src/lib/chunkRecovery.ts) remembers the screen
+  // across its one reload (read through screenRef, below); the Admin
+  // Console is resumed once the admin's account has loaded.
+  const [resumeScreen] = useState<string | null>(() => consumeResumeScreen());
   // Flips true the first time the user reaches Home, then stays true for
   // the rest of the session -- see the HomeScreen render call site below,
   // which uses this (instead of `screen === 'home'`) to decide whether to
@@ -272,6 +296,7 @@ export default function App() {
   // Kept in sync below so the backButton listener (registered once on mount)
   // always sees current values without re-subscribing on every navigation.
   const screenRef = useRef(screen);
+  useEffect(() => { setRecoveryScreenGetter(() => screenRef.current); }, []);
   const screenStackRef = useRef(screenStack);
   const goBackRef = useRef<() => void>(() => {});
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; is_service_provider?: boolean; country?: string } | null>(null);
@@ -2849,6 +2874,17 @@ export default function App() {
   // visible for them; individual screens handle their own auth prompts.
   const navScreens = ['home', 'explore', 'my-tickets', 'profile', 'services-home'];
   const showBottomNav = navScreens.includes(screen);
+
+  // Back to the Admin Console after a stale-chunk recovery reload (only for
+  // an admin-tier account, once).
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current || resumeScreen !== 'admin-console' || screen !== 'home') return;
+    const adminTier = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID;
+    if (!adminTier) return;
+    resumedRef.current = true;
+    setScreen('admin-console');
+  }, [resumeScreen, screen, currentUser]);
 
   if (updateRequired) {
     const target = updateTarget(Capacitor.getPlatform());

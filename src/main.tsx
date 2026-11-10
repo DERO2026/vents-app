@@ -8,10 +8,14 @@ import { HelpPage } from './app/components/HelpPage';
 import { DeleteAccountScreen } from './app/components/DeleteAccountScreen';
 import './styles/index.css';
 import { initSentry } from './lib/sentry';
+import { installChunkRecovery } from './lib/chunkRecovery';
 import { initAnalytics } from './lib/analytics';
 import { hideNativeSplash } from './lib/native';
 
 initSentry();
+// One controlled reload when a stale tab asks for a file a newer deploy
+// removed (src/lib/chunkRecovery.ts).
+installChunkRecovery();
 // Preview deployments never send analytics (the constant is `false` in
 // production builds, so production is unchanged).
 if (!__VENTS_VERCEL_PREVIEW__) initAnalytics(import.meta.env.VITE_POSTHOG_KEY || '');
