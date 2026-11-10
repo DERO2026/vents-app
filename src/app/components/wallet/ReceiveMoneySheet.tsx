@@ -44,7 +44,7 @@ export function ReceiveMoneySheet({ username, displayName, onClose }: { username
           <p style={{ margin: 0, fontSize: 13, color: ventsColors.ink2, textAlign: 'center', lineHeight: 1.5 }}>
             Friends send money to your username. It lands in your VENTS Wallet balance, ready for tickets and services.
           </p>
-          <div style={{ background: '#fff', padding: 12, borderRadius: 18, boxShadow: '0 0 40px rgba(142,92,247,0.35)', width: 'min(240px, 70vw)', aspectRatio: '1 / 1', boxSizing: 'border-box' }}>
+          <div style={{ background: '#fff', padding: 12, borderRadius: 28, boxShadow: '0 0 40px rgba(142,92,247,0.35)', width: 'min(240px, 70vw)', aspectRatio: '1 / 1', boxSizing: 'border-box' }}>
             {qr ? <img data-testid="receive-qr" src={qr} alt={`QR code to send money to @${username}`} style={{ width: '100%', height: '100%', display: 'block' }} />
               : <div style={{ width: '100%', height: '100%' }} aria-hidden />}
           </div>

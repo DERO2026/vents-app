@@ -6,7 +6,7 @@ import { ventsColors } from '../../../lib/ventsDesignTokens';
 export const walletCard: React.CSSProperties = {
   background: ventsColors.surface,
   border: `1px solid ${ventsColors.border}`,
-  borderRadius: 18,
+  borderRadius: 24,
   padding: 16,
   boxSizing: 'border-box',
   minWidth: 0,
@@ -23,7 +23,7 @@ export function Sheet({ title, onClose, children, testId, busy }: { title: strin
       onClick={() => !busy && onClose()}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 9500 }}>
       <div onClick={(e) => e.stopPropagation()}
-        style={{ background: '#110D1B', border: `1px solid ${ventsColors.border}`, borderBottom: 'none', borderRadius: '22px 22px 0 0', width: '100%', maxWidth: 480,
+        style={{ background: '#110D1B', border: `1px solid ${ventsColors.border}`, borderBottom: 'none', borderRadius: '32px 32px 0 0', width: '100%', maxWidth: 480,
           maxHeight: 'calc(100dvh - 24px - env(safe-area-inset-top))', overflowY: 'auto', boxSizing: 'border-box',
           padding: '20px 20px calc(20px + env(safe-area-inset-bottom))', boxShadow: '0 -10px 50px rgba(124,58,237,0.25)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 14 }}>
@@ -43,7 +43,7 @@ export function PrimaryButton({ children, onClick, disabled, testId, tone = 'pur
   const color = tone === 'danger' ? ventsColors.error : ventsColors.white;
   return (
     <button type={type} data-testid={testId} onClick={onClick} disabled={disabled}
-      style={{ width: '100%', minHeight: 48, borderRadius: 14, border: tone === 'ghost' ? `1px solid ${ventsColors.border}` : 'none', background: bg, color,
+      style={{ width: '100%', minHeight: 48, borderRadius: 999, border: tone === 'ghost' ? `1px solid ${ventsColors.border}` : 'none', background: bg, color,
         fontWeight: 800, fontSize: 15, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, boxSizing: 'border-box' }}>
       {children}
     </button>
@@ -55,7 +55,7 @@ export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: 
 }
 
 export const inputStyle: React.CSSProperties = {
-  width: '100%', minHeight: 48, padding: '12px 14px', borderRadius: 12, border: `1px solid ${ventsColors.glassBorder}`,
+  width: '100%', minHeight: 48, padding: '12px 16px', borderRadius: 18, border: `1px solid ${ventsColors.glassBorder}`,
   background: '#0B0912', color: ventsColors.ink1, fontSize: 16, boxSizing: 'border-box', outline: 'none',
 };
 
@@ -72,7 +72,7 @@ export function Notice({ tone, children, testId }: { tone: 'info' | 'warn' | 'er
   const c = tone === 'error' ? ventsColors.error : tone === 'warn' ? ventsColors.pending : tone === 'ok' ? ventsColors.success : ventsColors.accentSoft;
   return (
     <div data-testid={testId} role={tone === 'error' ? 'alert' : 'status'}
-      style={{ border: `1px solid ${c}55`, background: `${c}14`, color: c, borderRadius: 12, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45 }}>
+      style={{ border: `1px solid ${c}55`, background: `${c}14`, color: c, borderRadius: 18, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.45 }}>
       {children}
     </div>
   );

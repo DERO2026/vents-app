@@ -124,7 +124,7 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
               onChange={(e) => { setUsername(e.target.value); setRecipient(null); setLookupError(null); }}
               placeholder="@username" style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
             <button type="submit" data-testid="send-find" disabled={searching} aria-label="Find user"
-              style={{ minWidth: 48, minHeight: 48, borderRadius: 12, border: 'none', background: ventsColors.accentStrong, color: '#fff', cursor: 'pointer' }}>
+              style={{ minWidth: 48, minHeight: 48, borderRadius: 999, border: 'none', background: ventsColors.accentStrong, color: '#fff', cursor: 'pointer' }}>
               <Search size={18} />
             </button>
           </form>
@@ -132,7 +132,7 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
           {searching && <p style={{ fontSize: 13, color: ventsColors.ink2 }}>Searching…</p>}
           {lookupError && <div style={{ marginTop: 10 }}><Notice tone="error" testId="send-lookup-error">{lookupError}</Notice></div>}
           {recipient && (
-            <div data-testid="send-recipient" style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14, padding: 12, borderRadius: 14, background: 'rgba(142,92,247,0.12)', border: '1px solid rgba(142,92,247,0.35)' }}>
+            <div data-testid="send-recipient" style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14, padding: 12, borderRadius: 24, background: 'rgba(142,92,247,0.12)', border: '1px solid rgba(142,92,247,0.35)' }}>
               {recipient.avatar_url
                 ? <img src={recipient.avatar_url} alt="" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                 : <div aria-hidden style={{ width: 44, height: 44, borderRadius: '50%', background: ventsColors.accentStrong, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>{(recipient.name || recipient.username).slice(0, 1).toUpperCase()}</div>}

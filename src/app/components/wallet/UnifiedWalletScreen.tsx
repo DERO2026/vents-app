@@ -282,7 +282,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
       <div ref={scrollRef} data-testid="wallet-scroll"
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain',
           padding: '12px 16px calc(24px + env(safe-area-inset-bottom))', paddingTop: 'calc(12px + env(safe-area-inset-top))' }}>
-        <div data-testid="wallet-card" style={{ maxWidth: 560, margin: '0 auto', border: `1px solid ${W.cardBorder}`, borderRadius: 28, padding: '16px 12px 20px', background: W.page, boxSizing: 'border-box' }}>
+        <div data-testid="wallet-card" style={{ maxWidth: 560, margin: '0 auto', border: `1px solid ${W.cardBorder}`, borderRadius: 36, padding: '16px 12px 20px', background: W.page, boxSizing: 'border-box' }}>
           {/* Title row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 44, marginBottom: 12 }}>
             <button type="button" onClick={onBack} aria-label="Back" data-testid="wallet-back"
@@ -357,7 +357,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
             </section>
 
             <section aria-label="VENTS Cents" data-testid="wallet-vc-card"
-              style={{ marginTop: 20, background: W.earningsCard, borderRadius: 20, padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              style={{ marginTop: 20, background: W.earningsCard, borderRadius: 26, padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <Coins size={20} color="#FFD700" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
@@ -379,7 +379,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
           {/* ── Earnings ── */}
           <div role="tabpanel" id="wallet-panel-earnings" aria-labelledby="wallet-tab-earnings" hidden={tab !== 'earnings'} data-testid="wallet-panel-earnings"
             style={{ display: tab === 'earnings' ? 'block' : 'none', paddingTop: 10 }}>
-            <div data-testid="earnings-explainer" style={{ background: W.earningsCard, borderRadius: 16, display: 'flex', gap: 10, padding: 12 }}>
+            <div data-testid="earnings-explainer" style={{ background: W.earningsCard, borderRadius: 24, display: 'flex', gap: 10, padding: 12 }}>
               <Info size={16} color={W.lavender} style={{ flexShrink: 0, marginTop: 2 }} />
               <p style={{ margin: 0, fontSize: 12.5, color: W.sub, lineHeight: 1.45 }}>
                 Earnings are what you make on VENTS: ticket sales, services and rewards. They become withdrawable to your bank after settlement
@@ -430,7 +430,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
 }
 
 const summaryCard: React.CSSProperties = {
-  border: 'none', borderRadius: 22, minHeight: 112, padding: '14px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  border: 'none', borderRadius: 28, minHeight: 112, padding: '14px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
   gap: 8, cursor: 'pointer', minWidth: 0, color: '#FFFFFF', textAlign: 'center', boxSizing: 'border-box',
 };
 const summaryLabel: React.CSSProperties = { fontSize: 16, fontWeight: 500, color: W.lavender, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' };
