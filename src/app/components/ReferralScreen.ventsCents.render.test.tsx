@@ -308,7 +308,10 @@ describe('Stale/retired UI is absent', () => {
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
     act(() => { nativeSetter.call(input, '10000'); input.dispatchEvent(new Event('input', { bubbles: true })); });
     await act(async () => { (byTestId('convert-continue-button') as HTMLButtonElement).click(); });
-    expect(text()).toMatch(/does not initiate a bank transfer/i);
+    expect(text()).toMatch(/is not a bank transfer/i);
+    // The VENTS Wallet is spendable only: never tell users they can withdraw it (it was wrongly said before).
+    expect(text()).toMatch(/VENTS Wallet balance cannot be withdrawn to a bank/i);
+    expect(text()).not.toMatch(/withdraw from your Wallet/i);
   });
 });
 

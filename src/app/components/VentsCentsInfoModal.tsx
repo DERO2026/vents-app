@@ -170,8 +170,9 @@ export function VentsCentsInfoModal({
           </p>
           <p style={{ margin: '10px 0 0' }}>
             This credits your VENTS Wallet — it is separate from, and not the same as, redeeming VC for a ticket discount.
-            It does not pay out directly to a bank account; withdraw from your Wallet separately whenever you'd like. Direct
-            VC-to-bank cash-out is retired.
+            Converted naira is spendable on VENTS tickets and services (and can be sent to friends where available); like
+            every VENTS Wallet balance it cannot be withdrawn to a bank account. VENTS Cents themselves are never
+            withdrawable, and direct VC-to-bank cash-out is retired.
           </p>
         </Section>
 

@@ -17,6 +17,8 @@ import {
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; is_service_provider?: boolean } | null;
   onBack: () => void;
+  /** Rendered inside the unified wallet's Earnings tab: no own header/back button. */
+  embedded?: boolean;
 }
 
 interface WalletData {
@@ -195,7 +197,7 @@ async function authedFetch(path: string, body: any) {
   return json;
 }
 
-export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
+export function WalletScreen({ currentUser, onBack, embedded = false }: WalletScreenProps) {
   // Earnings/withdrawal/bank-account sections only apply to accounts that
   // can actually earn -- a plain attendee has no organizer_wallets row, so
   // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
@@ -700,23 +702,25 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const totalEarned = wallet?.total_earned_kobo ?? 0;
 
   return (
-    <div style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden', position: 'relative' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+    <div style={embedded
+      ? { color: ventsColors.ink1, position: 'relative' }
+      : { background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden', position: 'relative' }}>
+      {/* Header (the unified wallet supplies its own when embedded) */}
+      {!embedded && <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>My Wallet</span>
-      </div>
+      </div>}
 
       {loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: embedded ? '32px 0' : undefined }}>
           <span style={{ color: ventsColors.ink2 }}>Loading…</span>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
+        <div style={embedded ? { padding: '16px 0 0' } : { flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '16px', padding: '12px 16px', marginBottom: '20px' }}>
               <AlertCircle size={16} color={ventsColors.pending} style={{ flexShrink: 0 }} />
               <span style={{ color: ventsColors.pending, fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
             </div>
@@ -727,7 +731,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                   in-app. Mockup shows Withdraw as one inline button on the
                   right of this card, not a separate full-width action row
                   below it. */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: ventsColors.surface, borderRadius: '20px', padding: '18px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.09)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: ventsColors.surface, borderRadius: '26px', padding: '18px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.09)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
                     <p style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
@@ -764,7 +768,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 </div>
                 <button
                   onClick={() => { withdrawIdempotencyKeyRef.current = null; setShowWithdraw(true); }}
-                  style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
+                  style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '16px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
                   disabled={balance === 0 || emailVerified === false}
                   title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
                 >
@@ -784,7 +788,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 <button
                   onClick={openAddBank}
                   disabled={emailVerified === false || bankAccounts.length >= 3}
-                  style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
+                  style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', minHeight: '44px', padding: '0 4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
                   title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
                 >
                   <Plus size={13} color={ventsColors.accentSoft} />
@@ -796,7 +800,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
           {/* Withdrawal PIN (0211): create / change / reset */}
           {isEarner && pinSupported && pinStatus && (
-            <div data-testid="withdrawal-pin-row" style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div data-testid="withdrawal-pin-row" style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
               <ShieldCheck size={18} color={pinStatus.has_pin && !pinStatus.locked ? ventsColors.success : ventsColors.pending} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 600 }}>Withdrawal PIN</p>
@@ -805,14 +809,14 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                     : pinStatus.must_reset ? 'Locked — reset it with your password'
                     : pinStatus.locked ? 'Temporarily locked after wrong attempts'
                     : pinStatus.withdrawals_paused_until ? 'Changed recently — withdrawals paused for 24 hours'
-                    : 'Set — required for every withdrawal'}
+                    : 'Set — required for every withdrawal and money transfer'}
                 </p>
                 {pinNotice && !showWithdraw && <p style={{ margin: '4px 0 0', fontSize: '11px', color: ventsColors.success }}>{pinNotice}</p>}
               </div>
               <button data-testid="change-withdrawal-pin-open" onClick={() => {
                 setPinError(''); setPinStep('enter'); setNewPin(''); setNewPinConfirm('');
                 if (pinStatus.has_pin) { setShowChangePin(true); } else { withdrawIdempotencyKeyRef.current = null; setShowWithdraw(true); }
-              }} style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '8px 12px', color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+              }} style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '14px', padding: '8px 12px', color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
                 {!pinStatus.has_pin ? 'Create' : pinStatus.must_reset || pinStatus.locked ? 'Reset' : 'Change'}
               </button>
             </div>
@@ -826,7 +830,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {bankAccounts.map(acct => (
-                  <div key={acct.id} style={{ background: 'rgba(255,255,255,0.04)', border: acct.is_default ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div key={acct.id} style={{ background: 'rgba(255,255,255,0.04)', border: acct.is_default ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -843,11 +847,11 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                     </div>
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                       {!acct.is_default && (
-                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '9px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                           <Star size={13} /> Set default
                         </button>
                       )}
-                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px 14px', color: ventsColors.error, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '14px', padding: '9px 14px', color: ventsColors.error, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                         <Trash2 size={13} /> Remove
                       </button>
                     </div>
@@ -863,7 +867,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '24px 0' }}>
               <AlertCircle size={18} color={ventsColors.error} />
               <p style={{ color: ventsColors.error, fontSize: '13px', textAlign: 'center', margin: 0 }}>{txnsError}</p>
-              <button onClick={load} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '10px', padding: '8px 16px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button>
+              <button onClick={load} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '14px', padding: '8px 16px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button>
             </div>
           ) : feed.length === 0 ? (
             <p style={{ color: ventsColors.ink2, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
@@ -879,9 +883,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                       <button
                         key={`t-${t.id}`}
                         onClick={() => setSelectedItem(item)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
                       >
-                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '14px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -905,9 +909,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                     <button
                       key={`wr-${wr.id}`}
                       onClick={() => setSelectedItem(item)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
                     >
-                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isReversed ? 'rgba(255,255,255,0.06)' : 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '14px', background: isReversed ? 'rgba(255,255,255,0.06)' : 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <span style={{ fontSize: '16px' }}>{isReversed ? '↺' : '⋯'}</span>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -932,7 +936,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 <button
                   onClick={loadMoreTxns}
                   disabled={loadingMore}
-                  style={{ width: '100%', marginTop: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
+                  style={{ width: '100%', marginTop: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '12px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
                 >
                   {loadingMore ? 'Loading…' : 'Load more'}
                 </button>
@@ -974,7 +978,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               placeholder="Amount in ₦ (e.g. 5000)"
               value={withdrawAmount}
               onChange={e => { withdrawIdempotencyKeyRef.current = null; setWithdrawAmount(e.target.value); }}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '14px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
             />
             {bankAccounts.length > 0 && (
               <div style={{ marginBottom: '12px' }}>
@@ -983,7 +987,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                   {bankAccounts.map(acct => {
                     const selected = (withdrawAccountId || bankAccounts.find(a => a.is_default)?.id) === acct.id;
                     return (
-                      <button key={acct.id} onClick={() => setWithdrawAccountId(acct.id)} style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', padding: '11px 13px', cursor: 'pointer' }}>
+                      <button key={acct.id} onClick={() => setWithdrawAccountId(acct.id)} style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '16px', padding: '11px 13px', cursor: 'pointer' }}>
                         <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? ventsColors.accent : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: ventsColors.accent }} />}
                         </div>
@@ -1035,8 +1039,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               </div>
             )}
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); setWithdrawPin(''); setPinNotice(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button data-testid="withdraw-submit" onClick={handleWithdraw} disabled={withdrawing || (pinSupported !== false && (!pinStatus?.has_pin || pinStatus.locked || pinStatus.must_reset))} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
+              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); setWithdrawPin(''); setPinNotice(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '16px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button data-testid="withdraw-submit" onClick={handleWithdraw} disabled={withdrawing || (pinSupported !== false && (!pinStatus?.has_pin || pinStatus.locked || pinStatus.must_reset))} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '16px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
                 {withdrawing ? 'Processing…' : 'Withdraw'}
               </button>
             </div>
@@ -1079,7 +1083,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             {/* Bank picker */}
             <button
               onClick={() => { if (banksError) loadBanks(); else setShowBankPicker(true); }}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : ventsColors.ink2, fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '14px', color: selectedBank ? '#fff' : ventsColors.ink2, fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
             >
               <span>{selectedBank ? selectedBank.name : banksLoading ? 'Loading banks…' : banksError ? 'Couldn\'t load banks — tap to retry' : 'Select bank'}</span>
               <ChevronDown size={16} color={ventsColors.ink2} />
@@ -1096,7 +1100,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               value={accountNumber}
               onChange={e => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
               inputMode="numeric"
-              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }}
             />
 
             {resolving && <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 10px' }}>Verifying account…</p>}
@@ -1107,7 +1111,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               </div>
             )}
             {resolvedName && !resolving && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '16px', padding: '12px 14px', marginBottom: '10px' }}>
                 <Check size={16} color={ventsColors.success} />
                 <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>{resolvedName}</span>
               </div>
@@ -1121,11 +1125,11 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-              <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '16px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button
                 onClick={handleSaveBank}
                 disabled={savingBank || !resolvedName || resolving}
-                style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (savingBank || !resolvedName) ? 'not-allowed' : 'pointer', opacity: (savingBank || !resolvedName) ? 0.6 : 1 }}
+                style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '16px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (savingBank || !resolvedName) ? 'not-allowed' : 'pointer', opacity: (savingBank || !resolvedName) ? 0.6 : 1 }}
               >
                 {savingBank ? 'Saving…' : 'Save'}
               </button>
@@ -1171,7 +1175,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 autoCapitalize="off"
                 autoCorrect="off"
                 onKeyDown={e => { if (e.key === 'Enter' && !confirmBusy) runConfirm(confirmPassword); }}
-                style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px 44px 14px 14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '14px 44px 14px 14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
               />
               <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: ventsColors.ink2, display: 'flex' }}>
                 {showConfirmPw ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -1186,8 +1190,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
+              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '16px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '16px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
                 {confirmBusy ? 'Confirming…' : 'Confirm'}
               </button>
             </div>
@@ -1361,8 +1365,8 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
           defines both. */}
       <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
         {/* Receipt header card */}
-        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '26px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '20px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             {icon}
           </div>
           <p style={{ margin: '0 0 6px', fontSize: '13px', color: ventsColors.ink2 }}>{title}</p>
@@ -1389,7 +1393,7 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
         </div>
 
         {/* Detail rows */}
-        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '26px', padding: '4px 20px' }}>
           {rows.map((r, i) => (
             <ReceiptRow key={i} label={r.label} value={r.value} valueColor={r.valueColor} muted={r.muted} />
           ))}
@@ -1433,8 +1437,8 @@ export function PinEntrySheet({ testId, title, subtitle, value, onChange, error,
         </div>
       )}
       <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
-        <button onClick={onCancel} disabled={busy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-        <button data-testid={`${testId}-submit`} onClick={onSubmit} disabled={!ready} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.6 }}>
+        <button onClick={onCancel} disabled={busy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '16px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+        <button data-testid={`${testId}-submit`} onClick={onSubmit} disabled={!ready} style={{ flex: 1, background: '#7B2FBE', border: 'none', borderRadius: '16px', padding: '14px', color: '#fff', fontWeight: 700, cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.6 }}>
           {busy ? 'Saving…' : submitLabel}
         </button>
       </div>

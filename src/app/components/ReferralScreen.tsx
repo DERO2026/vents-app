@@ -739,7 +739,7 @@ function ConvertToWalletModal({
               </div>
             </div>
             <p style={{ color: '#8B8FA8', fontSize: '11.5px', marginTop: '12px', textAlign: 'center', lineHeight: 1.5 }}>
-              This credits your VENTS Wallet balance. It does not initiate a bank transfer — withdraw from your Wallet separately whenever you'd like.
+              This credits your VENTS Wallet balance, which you can spend on VENTS tickets and services. It is not a bank transfer, and the VENTS Wallet balance cannot be withdrawn to a bank.
             </p>
             <button
               data-testid="convert-confirm-button"

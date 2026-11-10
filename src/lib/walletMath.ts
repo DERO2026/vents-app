@@ -26,23 +26,36 @@ export function hasSufficientBalance(balanceKobo: number, chargeKobo: number): b
   return balanceKobo >= chargeKobo;
 }
 
-// Wallet transaction display helpers, shared by CustomerWalletScreen.
-// user_wallet_transactions.type is DB-CHECK-constrained to 'deposit' |
-// 'spend' | 'refund' (0075_wallet_refund_fee_ledger_and_error_hardening.sql)
-// with amount_kobo always stored positive regardless of direction -- the
-// sign/label is purely a display concern, computed from `type` here.
-// 'deposit' and 'refund' both increase the balance (a refund credits money
-// back after a ticket refund); only 'spend' decreases it.
-export type WalletTxnType = 'deposit' | 'spend' | 'refund' | string;
+// Wallet transaction display helpers, shared by the unified wallet.
+// user_wallet_transactions.type is DB-CHECK-constrained (0065, 0146, 0215)
+// to 'deposit' | 'spend' | 'refund' | 'vc_conversion' | 'transfer_out' |
+// 'transfer_in', with amount_kobo always stored positive regardless of
+// direction -- the sign/label is purely a display concern, computed from
+// `type` here. Money in: deposit, refund, vc_conversion (VC converted into
+// naira) and transfer_in. Money out: spend and transfer_out.
+export type WalletTxnType = 'deposit' | 'spend' | 'refund' | 'vc_conversion' | 'transfer_out' | 'transfer_in' | string;
+
+const WALLET_CREDIT_TYPES = new Set(['deposit', 'refund', 'vc_conversion', 'transfer_in']);
+const WALLET_DEBIT_TYPES = new Set(['spend', 'transfer_out']);
 
 export function isWalletCredit(type: WalletTxnType): boolean {
-  return type === 'deposit' || type === 'refund';
+  return WALLET_CREDIT_TYPES.has(type);
+}
+
+/** 'in' | 'out' | 'unknown' -- an unknown future type is never shown as money in or out by guesswork. */
+export function walletTxnDirection(type: WalletTxnType): 'in' | 'out' | 'unknown' {
+  if (WALLET_CREDIT_TYPES.has(type)) return 'in';
+  if (WALLET_DEBIT_TYPES.has(type)) return 'out';
+  return 'unknown';
 }
 
 export const WALLET_TXN_TYPE_LABEL: Record<string, string> = {
   deposit: 'Wallet Deposit',
   spend: 'Purchase',
   refund: 'Refund',
+  vc_conversion: 'VENTS Cents converted',
+  transfer_out: 'Money sent',
+  transfer_in: 'Money received',
 };
 
 export function walletTxnLabel(type: WalletTxnType, description?: string | null): string {
