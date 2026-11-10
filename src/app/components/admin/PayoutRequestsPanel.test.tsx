@@ -101,10 +101,10 @@ describe('PayoutRequestsPanel (0213)', () => {
     expect(q('payout-stage-w-1')!.textContent).toBe('PENDING REVIEW');
   });
 
-  it('buttons come only from the server: a sub-admin can review, nothing else; no Pay button anywhere', async () => {
+  it('buttons come only from the server: a sub-admin can review (and, per 0207, request a bank move); no Pay button anywhere', async () => {
     rows = [{ ...base, can_review: true }];
     await render();
-    expect(buttonsOf('w-1')).toEqual(['Review']);
+    expect(buttonsOf('w-1')).toEqual(['Review', 'Move to another bank account']);
     expect(container!.textContent).not.toMatch(/Authorize & Pay|Approve & Pay|Pay now/);
     expect(q('admin-payout-pin-panel')).toBeNull();
   });
@@ -329,7 +329,16 @@ describe('PayoutRequestsPanel: order and pagination (0214)', () => {
     expect(cardIds()).toHaveLength(80);
     expect(cardIds()[0]).toBe('x79');
     expect(q('payout-load-more')).toBeNull();
-    expect(q('payout-list-end')!.textContent).toMatch(/0214/);
+    // every row came back (80 < 500): no misleading "needs 0214" note
+    expect(q('payout-list-end')!.textContent).toBe('All 80 open requests shown.');
+  });
+
+  it('on a backend without 0214, only a capped read (500 rows) says older rows need 0214', async () => {
+    const many = Array.from({ length: 600 }, (_, i) => ({ ...base, request_id: `y${String(i).padStart(3, '0')}`, created_at: new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString() }));
+    listImpl = (p) => many.slice(0, p.p_limit);
+    await render();
+    expect(cardIds()).toHaveLength(500);
+    expect(q('payout-list-end')!.textContent).toMatch(/newest 500.*0214/);
   });
 });
 
@@ -516,5 +525,56 @@ describe('PayoutRequestsPanel: processing, cancel, Paystack failures, kill switc
       expect((b as HTMLElement).style.minWidth).toMatch(/^0(px)?$/);
       expect((b as HTMLElement).style.whiteSpace).toBe('normal');
     }
+  });
+});
+
+// Live today: the new screen on a 0213 database, which sends none of 0214's
+// flags. The screen derives them from the row with exactly 0214's rules.
+describe('PayoutRequestsPanel on a 0213 backend (no 0214 flags)', () => {
+  const legacy = (o: any) => ({ ...base, ...o }); // base has no 0214 fields
+  const proc = { status: 'processing', stage: 'processing', next_action: 'paystack', paystack_reference: 'payout_w1', transfer_started: true };
+
+  it('VENTS Admin and admins get Check with Paystack on processing requests; sub-admins do not', async () => {
+    for (const [tier, want] of [['root', ['Check with Paystack']], ['admin', ['Check with Paystack']], ['sub', null]] as const) {
+      overview = ov({ is_vents_admin: tier === 'root', viewer_tier: tier });
+      rows = [legacy(proc)];
+      await render();
+      if (want) expect(buttonsOf('w-1')).toEqual(want); else expect(q('payout-actions-w-1')).toBeNull();
+      act(() => root!.unmount()); container!.remove(); container = null; root = null;
+    }
+  });
+
+  it('Cancel (never sent) only for a processing request with no reference and no transfer, and not while paused', async () => {
+    overview = ov({ viewer_tier: 'admin' });
+    rows = [legacy({ ...proc, request_id: 'a', paystack_reference: null, transfer_started: false }), legacy({ ...proc, request_id: 'b', created_at: '2026-11-09T10:00:00Z' })];
+    await render();
+    expect(buttonsOf('a')).toEqual(['Check with Paystack', 'Cancel (never sent)']);
+    expect(buttonsOf('b')).toEqual(['Check with Paystack']);
+    act(() => root!.unmount()); container!.remove(); container = null; root = null;
+    overview = ov({ viewer_tier: 'admin', payouts_disabled: true });
+    await render();
+    expect(buttonsOf('a')).toEqual(['Check with Paystack']);
+  });
+
+  it('bank move: any admin on a pending, unapproved, never-sent request, never on their own or an approved one', async () => {
+    overview = ov({ is_vents_admin: true, viewer_tier: 'root' });
+    rows = [
+      legacy({ request_id: 'p', can_approve: true, can_reject: true }),
+      legacy({ request_id: 'own', created_at: '2026-11-09T10:00:00Z', can_reject: true, action_note: 'This is your own withdrawal; you cannot review, approve or pay it.' }),
+      legacy({ request_id: 'appr', created_at: '2026-11-08T10:00:00Z', stage: 'vents_admin_approved', approved_by: 'root', can_authorize_pay: true, can_reject: true }),
+    ];
+    await render();
+    expect(buttonsOf('p')).toEqual(['Approve for Payment', 'Move to another bank account', 'Reject']);
+    expect(buttonsOf('own')).toEqual(['Reject']);
+    expect(buttonsOf('appr')).toEqual(['Authorize & Pay', 'Reject']);
+  });
+
+  it('Review cannot forward an inactive account on 0213 either: recommend rejection is preselected', async () => {
+    overview = ov({ viewer_tier: 'sub' });
+    rows = [legacy({ can_review: true, bank_account_active: false })];
+    await render();
+    await click(q('payout-review-w-1'));
+    expect((q('payout-review-decision-forward') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('payout-review-forward-blocked')!.textContent).toMatch(/inactive/);
   });
 });
