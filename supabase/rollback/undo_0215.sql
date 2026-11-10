@@ -52,5 +52,6 @@ BEGIN
   ALTER TABLE public.user_wallet_transactions ADD CONSTRAINT user_wallet_transactions_type_check
     CHECK (type = ANY (ARRAY['deposit'::text, 'spend'::text, 'refund'::text, 'vc_conversion'::text]));
   ALTER TABLE public.app_config DROP COLUMN IF EXISTS disable_wallet_transfers;
+  DROP INDEX IF EXISTS public.users_lower_username_idx;
 END
 $schema$;

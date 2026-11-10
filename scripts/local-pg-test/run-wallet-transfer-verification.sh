@@ -232,6 +232,9 @@ ORGW_BEFORE=$(val "SELECT md5(string_agg(organizer_id::text || balance_kobo || '
 PRE=$(val "$WSTATE")
 
 echo "== Applying 0215 =="
+expect_error "0215 refuses a ledger type constraint that drifted from 0146" "expected 0146's four types" \
+  "BEGIN; ALTER TABLE public.user_wallet_transactions DROP CONSTRAINT user_wallet_transactions_type_check; ALTER TABLE public.user_wallet_transactions ADD CONSTRAINT user_wallet_transactions_type_check CHECK (type = ANY (ARRAY['deposit', 'spend', 'refund', 'vc_conversion', 'mystery'])); $(cat "$M15") ROLLBACK;"
+expect_value "...and changed nothing" "$(val "$WSTATE")" "$PRE"
 expect_ok "0215 applies" "$(cat "$M15")"
 POST=$(val "$WSTATE")
 expect_ok "0215 is idempotent" "$(cat "$M15")"
@@ -263,9 +266,9 @@ expect_value "@ prefix and case are ignored" "$(lookup "$ORG" '@BOLA')" "bola"
 expect_value "not found" "$(lookup "$ORG" nobody_here)" "not_found"
 expect_value "partial usernames do not match" "$(lookup "$ORG" bol)" "not_found"
 expect_value "yourself" "$(lookup "$ORG" ada)" "self"
-expect_value "suspended account" "$(lookup "$ORG" suspended1)" "recipient_unavailable"
-expect_value "banned account" "$(lookup "$ORG" banned1)" "recipient_unavailable"
-expect_value "deleted account" "$(lookup "$ORG" gone1)" "recipient_unavailable"
+expect_value "suspended account (reported as not found: status is never revealed)" "$(lookup "$ORG" suspended1)" "not_found"
+expect_value "banned account" "$(lookup "$ORG" banned1)" "not_found"
+expect_value "deleted account" "$(lookup "$ORG" gone1)" "not_found"
 expect_value "two accounts differing only by case: ambiguous, refused" "$(lookup "$ORG" dup)" "ambiguous"
 expect_value "only public fields are returned (no balance, email or phone)" \
   "$(val "$(as "$ORG" "SELECT string_agg(k, ',' ORDER BY k) FROM jsonb_object_keys(public.find_wallet_transfer_recipient('bola')->'recipient') k;")")" "avatar_url,id,is_verified,name,username"
