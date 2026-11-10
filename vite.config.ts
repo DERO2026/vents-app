@@ -147,7 +147,13 @@ export default defineConfig(({ mode }) => {
     port: 5175,
     strictPort: false,
   },
-  base: './', // Vital for deployment
+  // Absolute: the web app is served from the domain root (getvents.com/) and
+  // the native app from its WebView root (https://localhost/,
+  // capacitor://localhost/), so '/assets/...' is right everywhere. A relative
+  // base ('./') resolved assets against the current path: opening a nested
+  // URL such as /event/abc requested /event/assets/main-*.js, which the SPA
+  // fallback answered with index.html, leaving a blank page.
+  base: '/',
   assetsInclude: ['**/*.svg', '**/*.csv'],
   build: {
     rollupOptions: {
