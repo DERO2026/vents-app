@@ -22,7 +22,7 @@ describe('/help: genuinely public, functional support page', () => {
     const vercelConfig = JSON.parse(readFileSync(join(__dirname, '..', '..', 'vercel.json'), 'utf8'));
     const rewrites: Array<{ source: string; destination: string }> = vercelConfig.rewrites;
     const helpIdx = rewrites.findIndex((r) => r.source === '/help');
-    const catchAllIdx = rewrites.findIndex((r) => r.source === '/(.*)');
+    const catchAllIdx = rewrites.findIndex((r) => r.destination === '/index.html');
     expect(helpIdx).toBeGreaterThan(-1);
     expect(rewrites[helpIdx].destination).toBe('/help.html');
     expect(catchAllIdx).toBeGreaterThan(-1);

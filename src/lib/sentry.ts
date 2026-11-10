@@ -27,6 +27,9 @@ export function initSentry() {
   Sentry.init({
     dsn: 'https://e3a6f5547429870f18a56c99ca40c942@o4511632583753728.ingest.us.sentry.io/4511632636575744',
     environment: import.meta.env.MODE || 'production',
+    // The deployment (commit) this browser runs, so an error is tied to the
+    // build that threw it -- e.g. a stale tab after a deploy.
+    release: `vents-web@${__VENTS_BUILD_ID__}`,
     // Reduced from 0.2 -- performance-transaction volume isn't what's
     // exhausting the account's budget (Replay is), but there is no reason
     // to spend even that quota on non-production traffic either.

@@ -126,6 +126,9 @@ export default defineConfig(({ mode }) => {
   define: {
     __VENTS_VERCEL_PREVIEW__: JSON.stringify(previewFlags.vercelPreview),
     __VENTS_PREVIEW_READ_ONLY__: JSON.stringify(previewFlags.readOnly),
+    // Which deployment a browser is running: the Sentry release and the
+    // stale-chunk recovery marker (src/lib/chunkRecovery.ts).
+    __VENTS_BUILD_ID__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 12)),
   },
   plugins: [
     react(),

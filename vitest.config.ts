@@ -3,6 +3,7 @@ import { defineConfig, configDefaults } from 'vitest/config';
 export default defineConfig({
   // Same constants as vite.config.ts; tests run as a non-preview build.
   define: {
+    __VENTS_BUILD_ID__: JSON.stringify('test-build'),
     __VENTS_VERCEL_PREVIEW__: 'false',
     __VENTS_PREVIEW_READ_ONLY__: 'false',
   },
