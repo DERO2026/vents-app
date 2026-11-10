@@ -70,7 +70,11 @@ select pg_get_functiondef('public.request_withdrawal(bigint,uuid,text,text)'::re
 select has_function_privilege('authenticated', 'public.request_organizer_payout(bigint,uuid,text)', 'execute'); -- false
 ```
 
-**Rollback:** `SET vents.rollback_confirm = 'undo-0211';` then run `supabase/rollback/undo_0211.sql`.
+**Old app builds (0212):** the old entry point `request_organizer_payout` is now a message that tells old store builds to update the app or use getvents.com (SQLSTATE `VU426`, detail `APP_UPDATE_REQUIRED`).
+- The real function is `request_organizer_payout_core`. Clients cannot call it; only `request_withdrawal` uses it.
+- Rollback: `SET vents.rollback_confirm = 'undo-0212';` then run `supabase/rollback/undo_0212.sql`.
+
+**Rollback of 0211:** run undo_0212 first (undo_0211 refuses while 0212 is applied). Then `SET vents.rollback_confirm = 'undo-0211';` and run `supabase/rollback/undo_0211.sql`.
 - PINs are kept (closed and unused), so re-applying 0211 restores them.
 - Money, withdrawals, approvals and the ledger are untouched.
 - The app falls back to the previous flow by itself; no redeploy is needed.
@@ -78,5 +82,5 @@ select has_function_privilege('authenticated', 'public.request_organizer_payout(
 Full sequence: `docs/withdrawal-rollout-checklist.md`.
 
 **Tests:**
-- `scripts/local-pg-test/run-withdrawal-pin-approval-verification.sh`: 127 checks, local throwaway database only.
+- `scripts/local-pg-test/run-withdrawal-pin-approval-verification.sh`: 149 checks, including 0212 and its rollback, local throwaway database only.
 - `scripts/ops/withdrawal-0211-prod-e2e.sql`: the same flow against production, as test accounts, inside one statement that always rolls back.

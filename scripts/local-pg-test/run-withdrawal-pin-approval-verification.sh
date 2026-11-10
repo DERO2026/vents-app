@@ -18,7 +18,13 @@
 #             -> one, rejection closes an open first approval and returns the
 #             money, admins and sub-admins see the same authoritative state;
 #   and the ledger reconciles, 0211 is idempotent, undo_0211 restores the
-#   exact pre-0211 database and 0211 re-applies to the same state.
+#   exact pre-0211 database and 0211 re-applies to the same state;
+#   0212      old app builds calling request_organizer_payout get "please
+#             update the app" (VU426), no withdrawal, no money moved; the core
+#             is closed to clients; request_withdrawal still works through it;
+#             0212 is idempotent and repairs an accidental 0211 re-run;
+#             undo_0211 refuses while 0212 is applied; undo_0212 restores the
+#             exact 0211 state.
 #
 # Builds the 0201..0210 stack exactly as run-release-stack-verification.sh
 # does. No network, no Paystack: Paystack outcomes are the RPC calls the
@@ -401,6 +407,42 @@ fi
 
 expect_value "ledger = available + pending for every wallet after all of the above" "$(reconciled)" "0"
 
+echo "== 0212: old app builds are told to update =="
+"${PSQL[@]}" -q -c "UPDATE public.withdrawal_pins SET reset_at = NULL, failed_attempts = 0, locked_until = NULL WHERE user_id = '$ORG';"
+expect_ok "0212 applies on top of 0211" "$(cat "$MIG/0212_old_app_withdrawal_update_required.sql")"
+POST_0212=$(val "$STATE_SQL")
+expect_ok "0212 is idempotent (second run)" "$(cat "$MIG/0212_old_app_withdrawal_update_required.sql")"
+expect_value "a second run of 0212 changes nothing" "$(val "$STATE_SQL")" "$POST_0212"
+OLD_CALL="$(as "$ORG" "SELECT public.request_organizer_payout(500000, '$BANK', 'old-app');")"
+expect_error "an old app's call now says to update the app (not permission denied)" "Please update VENTS to withdraw" "$OLD_CALL"
+expect_value "...with SQLSTATE VU426 and detail APP_UPDATE_REQUIRED" \
+  "$("${PSQL[@]}" -c "\\set VERBOSITY verbose" -c "$OLD_CALL" 2>&1 | grep -oE 'VU426|APP_UPDATE_REQUIRED' | sort -u | tr '\n' ',')" "APP_UPDATE_REQUIRED,VU426,"
+expect_value "...and creates no withdrawal, moves no money" \
+  "$(val "SELECT count(*) FROM public.organizer_withdrawal_requests WHERE idempotency_key = 'old-app';")/$(wallet "$ORG")" "0/7000000/0"
+expect_error "...also without an idempotency key (oldest builds)" "Please update VENTS to withdraw" \
+  "$(as "$ORG" "SELECT public.request_organizer_payout(500000, '$BANK');")"
+expect_error "anon still cannot call it" "permission denied for function request_organizer_payout" \
+  "SET ROLE anon; SELECT public.request_organizer_payout(500000, '$BANK', 'anon');"
+expect_error "clients cannot call the renamed core" "permission denied for function request_organizer_payout_core" \
+  "$(as "$ORG" "SELECT public.request_organizer_payout_core(500000, '$BANK', 'core');")"
+W6=$(withdraw_id "$ORG" 1200000 "$BANK" 5820 key-w6)
+expect_value "request_withdrawal (PIN) still works through the core" "$([ -n "$W6" ] && echo yes)/$(wallet "$ORG")" "yes/5800000/1200000"
+expect_value "...and still enforces the PIN" "$(withdraw "$ORG" 1300000 "$BANK" 0007 key-w7)" "wrong_pin"
+"${PSQL[@]}" -q -c "SET test.uid='$ADMIN_A'; SELECT public.admin_reject_organizer_payout('$W6', 'test');" >/dev/null
+"${PSQL[@]}" -q -c "UPDATE public.withdrawal_pins SET failed_attempts = 0 WHERE user_id = '$ORG';"
+expect_value "money back after rejecting it; ledger reconciles" "$(wallet "$ORG")/$(reconciled)" "7000000/0/0"
+expect_error "undo_0211 refuses while 0212 is applied" "run supabase/rollback/undo_0212.sql first" \
+  "SET vents.rollback_confirm = 'undo-0211'; $(cat "$REPO_ROOT/supabase/rollback/undo_0211.sql")"
+expect_error "undo_0212 needs its confirmation" "to confirm" "$(cat "$REPO_ROOT/supabase/rollback/undo_0212.sql")"
+expect_ok "undo_0212 runs" "SET vents.rollback_confirm = 'undo-0212'; $(cat "$REPO_ROOT/supabase/rollback/undo_0212.sql")"
+expect_value "after undo_0212 the database is exactly the 0211 state" "$(val "$STATE_SQL")" "$POST_0211"
+expect_ok "0212 re-applies after its rollback" "$(cat "$MIG/0212_old_app_withdrawal_update_required.sql")"
+expect_value "re-applied 0212 equals the first apply" "$(val "$STATE_SQL")" "$POST_0212"
+expect_ok "an accidental re-run of 0211 on top of 0212 is accepted" "$(cat "$TMP_MIG")"
+expect_ok "...and 0212 re-run afterwards repairs it" "$(cat "$MIG/0212_old_app_withdrawal_update_required.sql")"
+expect_value "...back to exactly the 0212 state" "$(val "$STATE_SQL")" "$POST_0212"
+expect_ok "undo_0212 again (before undo_0211)" "SET vents.rollback_confirm = 'undo-0212'; $(cat "$REPO_ROOT/supabase/rollback/undo_0212.sql")"
+
 echo "== Rollback and re-apply =="
 APPROVALS_BEFORE_UNDO=$(val "SELECT count(*) FILTER (WHERE approved_by IS NOT NULL) || '/' || (SELECT count(*) FROM public.admin_action_requests WHERE action_type = 'authorize_withdrawal') FROM public.organizer_withdrawal_requests;")
 PINS_BEFORE_UNDO=$(val "SELECT (SELECT count(*) FROM public.withdrawal_pins) || '/' || (SELECT count(*) FROM public.withdrawal_pin_events);")
@@ -408,7 +450,7 @@ expect_ok "undo_0211 runs" "SET vents.rollback_confirm = 'undo-0211'; $(cat "$RE
 expect_value "after undo_0211 the database is exactly the pre-0211 state (functions, grants, constraints, columns, triggers)" "$(val "$STATE_SQL")" "$PRE_0211"
 "${PSQL[@]}" -tA -c "$FN_LIST" > "$TMP/fn_post"
 diff "$TMP/fn_pre" "$TMP/fn_post" >&2 || true
-expect_value "withdrawal history and money are untouched by the rollback" "$(val "SELECT count(*) FROM public.organizer_withdrawal_requests;")/$(reconciled)" "5/0"
+expect_value "withdrawal history and money are untouched by the rollback" "$(val "SELECT count(*) FROM public.organizer_withdrawal_requests;")/$(reconciled)" "6/0"
 expect_value "approval history is untouched by the rollback" \
   "$(val "SELECT count(*) FILTER (WHERE approved_by IS NOT NULL) || '/' || (SELECT count(*) FROM public.admin_action_requests WHERE action_type = 'authorize_withdrawal') FROM public.organizer_withdrawal_requests;")" "$APPROVALS_BEFORE_UNDO"
 expect_value "PIN data is kept by the rollback (hashes and audit trail)" \

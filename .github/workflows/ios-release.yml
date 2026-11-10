@@ -1,0 +1,187 @@
+# iOS release build (Capacitor, Swift Package Manager): a SIGNED App Store
+# archive and .ipa for App Store Connect, built on a GitHub macOS runner.
+#
+# Actions -> iOS release -> Run workflow. Nothing is uploaded to Apple: the
+# .ipa is a 14-day workflow artifact. The owner uploads it with Transporter
+# (or Xcode Organizer) and submits it in App Store Connect.
+#
+# Signing is Xcode-managed ("automatic") with an App Store Connect API key:
+# xcodebuild -allowProvisioningUpdates creates or reuses the Apple
+# Distribution certificate and App Store profile for team V7774S7GHB. The key
+# needs the Admin role (cloud-managed distribution signing).
+#
+# Secrets (environment 'ios-release'; add them in GitHub, never in chat):
+#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY   same values as Vercel Production
+#   VITE_PAYSTACK_PUBLIC_KEY                    the pk_live_ key (the build refuses anything else)
+#   VITE_GOOGLE_PLACES_API_KEY                  same as Vercel Production
+#   GOOGLE_SERVICE_INFO_PLIST_BASE64            ios/App/App/GoogleService-Info.plist (Firebase,
+#                                               iOS app com.getvents.app) as base64; the app stops at launch without it
+#   APP_STORE_CONNECT_API_KEY_ID                App Store Connect -> Users and Access -> Integrations -> Keys
+#   APP_STORE_CONNECT_ISSUER_ID
+#   APP_STORE_CONNECT_API_KEY_P8_BASE64         the AuthKey_<id>.p8 file as base64
+# Every key file is written to the runner's temp dir only for the build, then shredded.
+name: iOS release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: ios-release
+    steps:
+      - name: Release secrets present (names only; values never printed)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_PAYSTACK_PUBLIC_KEY: ${{ secrets.VITE_PAYSTACK_PUBLIC_KEY }}
+          VITE_GOOGLE_PLACES_API_KEY: ${{ secrets.VITE_GOOGLE_PLACES_API_KEY }}
+          GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8_BASE64 }}
+        run: |
+          missing=""
+          for v in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_PAYSTACK_PUBLIC_KEY VITE_GOOGLE_PLACES_API_KEY \
+                   GOOGLE_SERVICE_INFO_PLIST_BASE64 APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_API_KEY_P8_BASE64; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing in the ios-release environment:$missing"
+            { echo "### iOS release: missing secrets"; echo; for v in $missing; do echo "- \`$v\`"; done; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "all release secrets are present"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Versions match (web, Android, iOS)
+        run: |
+          set -euo pipefail
+          web=$(grep -oE "APP_VERSION = '[0-9.]+'" src/lib/appVersion.ts | grep -oE "[0-9.]+")
+          ios=$(grep -oE "MARKETING_VERSION = [0-9.]+;" ios/App/App.xcodeproj/project.pbxproj | sort -u | grep -oE "[0-9.]+")
+          android=$(grep -oE 'versionName "[0-9.]+"' android/app/build.gradle | grep -oE "[0-9.]+")
+          echo "web $web, iOS $ios, Android $android"
+          [ "$web" = "$ios" ] && [ "$web" = "$android" ] || { echo "::error::App versions differ (web $web, iOS $ios, Android $android)"; exit 1; }
+
+      - name: Withdrawal and release regression tests
+        run: >
+          npx vitest run src/lib/nativeReleaseVersion.test.ts src/app/components/WalletScreen.withdrawalPin.test.tsx
+          src/app/components/admin/AdminPayoutsScreen.twoAdminApproval.test.tsx
+
+      - name: Web build (production values)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_PAYSTACK_PUBLIC_KEY: ${{ secrets.VITE_PAYSTACK_PUBLIC_KEY }}
+          VITE_GOOGLE_PLACES_API_KEY: ${{ secrets.VITE_GOOGLE_PLACES_API_KEY }}
+        run: npx vite build
+
+      - name: Sync the web build into the iOS project
+        run: npx cap sync ios
+
+      - name: Bundled web app contains the withdrawal PIN flow
+        run: |
+          set -euo pipefail
+          for s in request_withdrawal get_my_withdrawal_pin_status set_my_withdrawal_pin admin_first_approve_withdrawal admin_list_withdrawals; do
+            grep -rqF "$s" ios/App/App/public/assets || { echo "::error::$s is missing from the bundled web app"; exit 1; }
+          done
+          echo "ok: the native bundle has the PIN withdrawal flow"
+
+      - name: Firebase config and App Store Connect key (never printed)
+        env:
+          GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$GOOGLE_SERVICE_INFO_PLIST_BASE64" | base64 -D > ios/App/App/GoogleService-Info.plist
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)" = "com.getvents.app" ] \
+            || { echo "::error::GOOGLE_SERVICE_INFO_PLIST_BASE64 is not a GoogleService-Info.plist for com.getvents.app"; exit 1; }
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_P8_BASE64" | base64 -D > "$RUNNER_TEMP/asc_key.p8"
+          echo "written"
+
+      - name: Archive (signed, App Store)
+        working-directory: ios/App
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/VENTS.xcarchive" \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/asc_key.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM=V7774S7GHB CODE_SIGN_STYLE=Automatic archive | tail -n 40
+
+      - name: Export the .ipa
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>V7774S7GHB</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/VENTS.xcarchive" -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc_key.p8" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -n 20
+
+      - name: Check the .ipa (version, signature, Firebase config, web app)
+        run: |
+          set -euo pipefail
+          ipa=$(ls "$RUNNER_TEMP"/export/*.ipa)
+          tmp=$(mktemp -d); unzip -q "$ipa" -d "$tmp"; app=$(ls -d "$tmp"/Payload/*.app)
+          short=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist")
+          build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist")
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          [ "$bundle" = "com.getvents.app" ] || { echo "::error::bundle id is $bundle"; exit 1; }
+          [ -f "$app/GoogleService-Info.plist" ] || { echo "::error::GoogleService-Info.plist is not in the app"; exit 1; }
+          grep -rqF request_withdrawal "$app/public/assets" || { echo "::error::the app's web bundle has no withdrawal PIN flow"; exit 1; }
+          codesign --verify --strict "$app" || { echo "::error::the app is not validly signed"; exit 1; }
+          authority=$(codesign -dv --verbose=2 "$app" 2>&1 | grep -m1 '^Authority=' || true)
+          rm -rf "$tmp"
+          echo "ok: $bundle $short ($build), $authority, commit $GITHUB_SHA"
+          { echo "### iOS .ipa"; echo; echo "- $bundle $short ($build)"; echo "- $authority"; echo "- commit \`$GITHUB_SHA\`"; } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/out" && cp "$ipa" "$RUNNER_TEMP/out/VENTS-$short-$build.ipa"
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vents-ios-release-${{ github.sha }}
+          path: ${{ runner.temp }}/out/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove key material (always)
+        if: always()
+        run: |
+          rm -P "$RUNNER_TEMP/asc_key.p8" 2>/dev/null || true
+          rm -P ios/App/App/GoogleService-Info.plist 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/VENTS.xcarchive" "$RUNNER_TEMP/export"
+          echo "key material removed"

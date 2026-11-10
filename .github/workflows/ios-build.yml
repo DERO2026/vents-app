@@ -15,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'ios/**'
+      - 'src/lib/appVersion.ts'
       - 'capacitor.config.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -52,11 +53,22 @@ jobs:
       - name: Versions match the web app
         run: |
           set -euo pipefail
-          web=$(grep -oE "APP_VERSION = '[0-9.]+'" src/app/App.tsx | grep -oE "[0-9.]+")
+          web=$(grep -oE "APP_VERSION = '[0-9.]+'" src/lib/appVersion.ts | grep -oE "[0-9.]+")
           ios=$(grep -oE "MARKETING_VERSION = [0-9.]+;" ios/App/App.xcodeproj/project.pbxproj | sort -u | grep -oE "[0-9.]+" )
           android=$(grep -oE 'versionName "[0-9.]+"' android/app/build.gradle | grep -oE "[0-9.]+")
           echo "web $web, iOS $ios, Android $android"
           [ "$web" = "$ios" ] && [ "$web" = "$android" ] || { echo "::error::App versions differ (web $web, iOS $ios, Android $android)"; exit 1; }
+
+      - name: Placeholder Firebase config (compile check only; never shipped)
+        run: |
+          # The project bundles App/GoogleService-Info.plist (ignored by git).
+          # A store build gets the real one from a secret (ios-release.yml);
+          # this unsigned simulator compile only needs the file to exist.
+          [ -f ios/App/App/GoogleService-Info.plist ] || cat > ios/App/App/GoogleService-Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>BUNDLE_ID</key><string>com.getvents.app</string><key>CI_PLACEHOLDER</key><true/></dict></plist>
+          PLIST
 
       - name: Compile for the iOS simulator (unsigned)
         working-directory: ios/App

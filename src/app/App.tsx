@@ -10,6 +10,7 @@ import { getPendingVerification, clearPendingVerification } from '../lib/pending
 import { fetchSavedServiceProviderIds, saveServiceProvider, unsaveServiceProvider, fetchServiceProviderById, withProviderRatings } from '../lib/serviceProviders';
 import { isEventDiscoverable } from '../lib/eventLifecycle';
 import { openExternalUrl } from '../lib/externalLink';
+import { APP_VERSION, isVersionOlder, updateTarget } from '../lib/appVersion';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken, clearTicketTokenCache } from '../lib/ticketToken';
@@ -91,21 +92,9 @@ import { RepresentativeDashboardScreen } from './components/work/RepresentativeD
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
-// Bump this on every release. Compared against app_config.min_client_version
-// on launch — if this build is older, the client shows a blocking update
-// screen instead of the app.
-const APP_VERSION = '1.2.0';
-
-function isVersionOlder(current: string, minimum: string): boolean {
-  const a = current.split('.').map((n) => parseInt(n, 10) || 0);
-  const b = minimum.split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const av = a[i] || 0, bv = b[i] || 0;
-    if (av < bv) return true;
-    if (av > bv) return false;
-  }
-  return false;
-}
+// APP_VERSION (src/lib/appVersion.ts) is compared against
+// app_config.min_client_version on launch — if this build is older, the
+// client shows a blocking update screen instead of the app.
 
 const TAB_SCREENS: Record<TabId, Screen> = {
   home: 'home',
@@ -2862,8 +2851,10 @@ export default function App() {
   const showBottomNav = navScreens.includes(screen);
 
   if (updateRequired) {
+    const target = updateTarget(Capacitor.getPlatform());
     return (
       <div
+        data-testid="update-required"
         style={{
           background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -2877,13 +2868,13 @@ export default function App() {
           Update Required
         </h1>
         <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px', maxWidth: '300px' }}>
-          A new version of Vents is available with important fixes. Please refresh to continue.
+          {target.body}
         </p>
         <button
-          onClick={() => openExternalUrl('https://getvents.com')}
+          onClick={() => { if (target.url) { void openExternalUrl(target.url); } else { window.location.reload(); } }}
           style={{ background: '#7B2FBE', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
         >
-          Reload Vents
+          {target.label}
         </button>
       </div>
     );

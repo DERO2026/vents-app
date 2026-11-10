@@ -11,7 +11,7 @@
   - sha256 `12ae3c69…ec952`.
   - `restore_tables=103/103`, `restore_rows=103/103`.
 - The live web app now uses the PIN flow and two-admin approval. The old no-PIN entry point (`request_organizer_payout`) is closed to clients.
-- **Native apps: not yet rebuilt.** See §4. Store builds from before `b5efac7` cannot request withdrawals. Their users must withdraw on getvents.com until new builds ship.
+- **Native apps: release 1.3.0 is prepared** (§4), and the store builds wait on the owner's signing secrets. Since 0212, old store builds that try to withdraw are told to update the app or use getvents.com.
 
 The record of what was run and what came back is in §9.
 
@@ -74,20 +74,73 @@ SELECT tgname FROM pg_trigger WHERE tgname IN ('authorize_withdrawal_first_appro
 
 There's nothing to deploy. `b5efac7` is live, and it switches to the PIN flow as soon as `get_my_withdrawal_pin_status` exists. Hard-refresh getvents.com: the wallet shows "Withdrawal PIN · Not set".
 
-## 4. Native apps (Android / iOS)
+## 4. Native apps (Android / iOS): release 1.3.0
 
-Store builds bundle their own web code. **Builds from before `b5efac7` call `request_organizer_payout` directly. After step 2 they get "permission denied" and cannot withdraw.** They can still use getvents.com.
+Store builds bundle their own copy of the web code. Builds from before `b5efac7` call `request_organizer_payout` directly.
 
-**Recommended order:**
+- **Since 0212**, that call returns a plain message instead of "permission denied": *"Please update VENTS to withdraw. Withdrawals now need a 4-digit withdrawal PIN… Update the app from the App Store or Google Play, or withdraw on getvents.com."*
+  - Old builds show this text as their withdrawal error.
+  - No withdrawal is created and no money moves.
+- **1.3.0** is the first native release with the PIN flow.
+  - Android: `versionCode 5`, `versionName 1.3.0`.
+  - iOS: `MARKETING_VERSION 1.3.0`, build 5.
+  - Web: `APP_VERSION` in `src/lib/appVersion.ts`. This is now the single source; App.tsx uses it.
 
-1. **Before step 2:**
-   - Build Android from `b5efac7` or later. The `android-release` secrets are needed, so this is [owner].
-   - Build iOS (Apple signing and `GoogleService-Info.plist` [owner]).
-   - Release both to the stores. These builds work with or without 0211.
-2. Apply 0211 (step 2) once the new builds are live.
-3. Raise `app_config.min_client_version` to the new version [owner, production write], so old builds are told to update rather than failing at withdrawal.
+### Secrets (names only; add them in GitHub → Settings → Environments, never in chat)
 
-**If 0211 must go first:** tell app users to withdraw on getvents.com until the update ships.
+**Environment `android-release`:**
+
+| Secret | What |
+|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_PLACES_API_KEY` | Same values as Vercel Production |
+| `VITE_PAYSTACK_PUBLIC_KEY` | The `pk_live_` key (the build refuses anything else) |
+| `ANDROID_KEYSTORE_BASE64` | The Play **upload** keystore (.jks) as base64 |
+| `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | For that keystore |
+| `GOOGLE_SERVICES_JSON_BASE64` | `google-services.json` from Firebase (Android app `com.getvents.app`) as base64. Push needs it. |
+
+**Environment `ios-release`** (create it):
+
+| Secret | What |
+|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_GOOGLE_PLACES_API_KEY` | As above |
+| `GOOGLE_SERVICE_INFO_PLIST_BASE64` | `GoogleService-Info.plist` from Firebase (iOS app `com.getvents.app`) as base64. The app stops at launch without it. |
+| `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` | App Store Connect → Users and Access → Integrations → Keys |
+| `APP_STORE_CONNECT_API_KEY_P8_BASE64` | That key's `AuthKey_<id>.p8` as base64. The key needs the **Admin** role, because Xcode-managed distribution signing creates the certificate and profile itself. |
+
+Both workflows list every missing secret **by name** in the run summary, then stop before building.
+
+### Build
+
+1. **Android:**
+   - Actions → *Android release* → Run workflow on `main` (signed ticked).
+   - The run does all of the following:
+     - checks the versions match;
+     - runs the withdrawal and release regression tests;
+     - builds the production web app;
+     - checks the bundled app contains the PIN flow;
+     - builds and signs `app-release.aab`, then verifies it.
+   - Artifact: `vents-android-release-<sha>` (14 days).
+   - With signed unticked, it builds the same AAB **unsigned**, as a verification only and not for the store.
+2. **iOS:**
+   - Actions → *iOS release* → Run workflow on `main`.
+   - The run does all of the following:
+     - the same version, test and bundle checks;
+     - a signed App Store archive;
+     - an `.ipa` export;
+     - checks of the bundle id, version, signature, `GoogleService-Info.plist` and the PIN flow.
+   - Artifact: `vents-ios-release-<sha>` (14 days).
+3. **Upload (owner):**
+   - `.aab` → Play Console (production or a testing track).
+   - `.ipa` → Transporter or Xcode Organizer → App Store Connect.
+   - Then submit both for review. Nothing in this repo uploads to a store.
+
+### Only after both 1.3.0 builds are live in the stores
+
+Raise `app_config.min_client_version` to `1.3.0` [owner, production write]. Every older build then shows "Update Required":
+- on iOS and Android it sends the user to the App Store or Google Play listing;
+- on the web it reloads.
+
+The web app is already 1.3.0 once this release is deployed, so web users are never blocked. **Do not raise it earlier.** Until both stores serve 1.3.0, a raised minimum would lock app users out of the whole app, not just withdrawals.
 
 ## 5. PIN: create / change / reset (on the owner's own account, after step 2)
 

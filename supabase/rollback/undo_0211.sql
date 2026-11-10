@@ -19,6 +19,11 @@ BEGIN
   IF current_setting('vents.rollback_confirm', true) IS DISTINCT FROM 'undo-0211' THEN
     RAISE EXCEPTION 'undo_0211: set vents.rollback_confirm = ''undo-0211'' to confirm';
   END IF;
+  -- With 0212 applied, request_organizer_payout is only the "update the app"
+  -- message; rolling back 0211 on top of it would leave no withdrawal path.
+  IF to_regprocedure('public.request_organizer_payout_core(bigint,uuid,text)') IS NOT NULL THEN
+    RAISE EXCEPTION 'undo_0211: 0212 is applied; run supabase/rollback/undo_0212.sql first';
+  END IF;
 END
 $guard$;
 
