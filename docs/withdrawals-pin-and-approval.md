@@ -1,5 +1,7 @@
 # Withdrawals: PIN and two-admin approval (0211)
 
+**Production status:** live since 2026-11-10 05:50 UTC. 0211 is applied, and the web app is at `22966a3`. Native store apps still need new builds. The record of the rollout is in `docs/withdrawal-rollout-checklist.md` §9.
+
 ## How a withdrawal works now
 
 1. **The user requests it** in Wallet → Withdraw, with their 4-digit withdrawal PIN.
@@ -75,4 +77,6 @@ select has_function_privilege('authenticated', 'public.request_organizer_payout(
 
 Full sequence: `docs/withdrawal-rollout-checklist.md`.
 
-**Tests:** `scripts/local-pg-test/run-withdrawal-pin-approval-verification.sh` (127 checks, local throwaway database only).
+**Tests:**
+- `scripts/local-pg-test/run-withdrawal-pin-approval-verification.sh`: 127 checks, local throwaway database only.
+- `scripts/ops/withdrawal-0211-prod-e2e.sql`: the same flow against production, as test accounts, inside one statement that always rolls back.
