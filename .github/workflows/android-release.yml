@@ -7,6 +7,12 @@
 #   release AAB for Google Play, using the 'android-release' environment's
 #   secrets. Nothing is uploaded to Google Play: the signed .aab is a 14-day
 #   workflow artifact the owner downloads and uploads in the Play Console.
+#   With "signed" unticked it builds the same AAB UNSIGNED (no secrets, no
+#   environment) to verify the release pipeline; that artifact is not for
+#   the store.
+# Every run first runs the withdrawal/version regression tests and checks that
+# web, Android and iOS report the same version, and that the bundled web app
+# contains the withdrawal PIN flow (0211).
 #
 # Secrets (environment 'android-release'; add them in GitHub, never in chat):
 #   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY   same values as Vercel Production
@@ -14,11 +20,18 @@
 #   VITE_GOOGLE_PLACES_API_KEY                  same as Vercel Production
 #   ANDROID_KEYSTORE_BASE64                     the upload keystore (.jks) as base64
 #   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#   GOOGLE_SERVICES_JSON_BASE64                 android/app/google-services.json (Firebase,
+#                                               Android app com.getvents.app) as base64; push needs it
 # The keystore is written to the runner's temp dir only for the build, then shredded.
 name: Android release
 
 on:
   workflow_dispatch:
+    inputs:
+      signed:
+        description: 'Signed release for Google Play (needs the android-release secrets). Untick for an unsigned verification build.'
+        type: boolean
+        default: true
   pull_request:
     paths:
       - 'android/**'
@@ -36,13 +49,38 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'android-release' || null }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.signed) && 'android-release' || null }}
     env:
-      SIGNED: ${{ github.event_name == 'workflow_dispatch' }}
+      SIGNED: ${{ github.event_name == 'workflow_dispatch' && inputs.signed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Release secrets present (names only; values never printed)
+        if: env.SIGNED == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_PAYSTACK_PUBLIC_KEY: ${{ secrets.VITE_PAYSTACK_PUBLIC_KEY }}
+          VITE_GOOGLE_PLACES_API_KEY: ${{ secrets.VITE_GOOGLE_PLACES_API_KEY }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          missing=""
+          for v in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_PAYSTACK_PUBLIC_KEY VITE_GOOGLE_PLACES_API_KEY \
+                   ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD GOOGLE_SERVICES_JSON_BASE64; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing in the android-release environment:$missing"
+            { echo "### Android release: missing secrets"; echo; for v in $missing; do echo "- \`$v\`"; done; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "all release secrets are present"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -60,6 +98,20 @@ jobs:
         run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
 
       - run: npm ci
+
+      - name: Versions match (web, Android, iOS)
+        run: |
+          set -euo pipefail
+          web=$(grep -oE "APP_VERSION = '[0-9.]+'" src/lib/appVersion.ts | grep -oE "[0-9.]+")
+          ios=$(grep -oE "MARKETING_VERSION = [0-9.]+;" ios/App/App.xcodeproj/project.pbxproj | sort -u | grep -oE "[0-9.]+")
+          android=$(grep -oE 'versionName "[0-9.]+"' android/app/build.gradle | grep -oE "[0-9.]+")
+          echo "web $web, iOS $ios, Android $android"
+          [ "$web" = "$ios" ] && [ "$web" = "$android" ] || { echo "::error::App versions differ (web $web, iOS $ios, Android $android)"; exit 1; }
+
+      - name: Withdrawal and release regression tests
+        run: >
+          npx vitest run src/lib/nativeReleaseVersion.test.ts src/app/components/WalletScreen.withdrawalPin.test.tsx
+          src/app/components/admin/AdminPayoutsScreen.twoAdminApproval.test.tsx
 
       - name: Web build (production values for a signed release; dev-mode build for the compile check)
         env:
@@ -80,6 +132,26 @@ jobs:
 
       - name: Sync the web build into the Android project
         run: npx cap sync android
+
+      - name: Bundled web app contains the withdrawal PIN flow
+        run: |
+          set -euo pipefail
+          for s in request_withdrawal get_my_withdrawal_pin_status set_my_withdrawal_pin admin_first_approve_withdrawal admin_list_withdrawals; do
+            grep -rqF "$s" android/app/src/main/assets/public/assets || { echo "::error::$s is missing from the bundled web app"; exit 1; }
+          done
+          echo "ok: the native bundle has the PIN withdrawal flow"
+
+      - name: Firebase config (signed release only; never printed)
+        if: env.SIGNED == 'true'
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json
+          python3 -c "import json,sys; d=json.load(open('android/app/google-services.json')); assert any(c['client_info']['android_client_info']['package_name']=='com.getvents.app' for c in d['client']), 'google-services.json has no com.getvents.app client'" \
+            || { echo "::error::GOOGLE_SERVICES_JSON_BASE64 is not a google-services.json for com.getvents.app"; exit 1; }
+          echo "google-services.json written"
 
       - name: Signing key (signed release only; never printed)
         if: env.SIGNED == 'true'
@@ -106,16 +178,36 @@ jobs:
         working-directory: android
         run: |
           set -euo pipefail
-          if [ "$SIGNED" = "true" ]; then ./gradlew --no-daemon bundleRelease; else ./gradlew --no-daemon assembleRelease; fi
+          ./gradlew --no-daemon bundleRelease
 
-      - name: Check the signed bundle
-        if: env.SIGNED == 'true'
+      - name: Check the bundle (version, contents, signature)
         run: |
           set -euo pipefail
           aab=android/app/build/outputs/bundle/release/app-release.aab
           [ -s "$aab" ] || { echo "::error::No release bundle was produced"; exit 1; }
-          jarsigner -verify "$aab" > /dev/null || { echo "::error::The bundle is not signed"; exit 1; }
-          echo "ok: signed $(du -h "$aab" | cut -f1) bundle, versionName $(grep -oE 'versionName "[^"]+"' android/app/build.gradle | cut -d'"' -f2), versionCode $(grep -oE 'versionCode [0-9]+' android/app/build.gradle | cut -d' ' -f2)"
+          vname=$(grep -oE 'versionName "[^"]+"' android/app/build.gradle | cut -d'"' -f2)
+          vcode=$(grep -oE 'versionCode [0-9]+' android/app/build.gradle | cut -d' ' -f2)
+          unzip -l "$aab" | grep -q 'base/assets/public/index.html' || { echo "::error::The bundle has no web app"; exit 1; }
+          tmp=$(mktemp -d); unzip -q "$aab" 'base/assets/public/assets/*' -d "$tmp"
+          grep -rqF request_withdrawal "$tmp" || { echo "::error::The bundle's web app has no withdrawal PIN flow"; exit 1; }
+          rm -rf "$tmp"
+          if [ "$SIGNED" = "true" ]; then
+            jarsigner -verify "$aab" > /dev/null || { echo "::error::The bundle is not signed"; exit 1; }
+            state="signed"
+          else
+            state="UNSIGNED (verification only, not for the store)"
+          fi
+          echo "ok: $state $(du -h "$aab" | cut -f1) bundle, versionName $vname, versionCode $vcode, commit $GITHUB_SHA"
+          { echo "### Android bundle"; echo; echo "- $state"; echo "- versionName $vname, versionCode $vcode"; echo "- commit \`$GITHUB_SHA\`"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unsigned verification bundle
+        if: env.SIGNED != 'true' && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vents-android-UNSIGNED-not-for-store-${{ github.sha }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Upload signed bundle
         if: env.SIGNED == 'true'
@@ -131,4 +223,5 @@ jobs:
         run: |
           [ -f "$RUNNER_TEMP/upload.jks" ] && shred -u "$RUNNER_TEMP/upload.jks"
           [ -f android/keystore.properties ] && shred -u android/keystore.properties
+          [ -f android/app/google-services.json ] && shred -u android/app/google-services.json
           echo "signing material removed"

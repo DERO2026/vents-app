@@ -3,10 +3,9 @@ import { flyerScrim } from '../../lib/flyerScrim';
 import { Capacitor } from '@capacitor/core';
 import { VentsLogo } from './VentsLogo';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
-
 // Official, live VENTS store listings -- never fabricate or alter these.
-const APP_STORE_URL = 'https://apps.apple.com/ng/app/vents-events/id6802584284';
-const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.getvents.app';
+import { APP_STORE_URL, PLAY_STORE_URL } from '../../lib/appVersion';
+
 
 interface WelcomeScreenProps {
   onGetStarted: () => void;

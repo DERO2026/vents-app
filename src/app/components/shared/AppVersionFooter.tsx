@@ -1,6 +1,6 @@
 import { appVersionLabel } from '../../../lib/appVersion';
 
-// Renders the standard "VENTS v1.1.0 | © VENTS LTD" footer line. The
+// Renders the standard "VENTS v<APP_VERSION> | © VENTS LTD" footer line. The
 // actual version/brand string lives in one place (src/lib/appVersion.ts)
 // -- this component just applies it consistently wherever it's shown, so
 // a future version bump never requires hunting down separate copies.

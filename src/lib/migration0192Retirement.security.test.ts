@@ -37,7 +37,15 @@ describe('0192 retirement', () => {
     for (const f of topLevel.filter((name) => name > '0203')) {
       const sql = readFileSync(join(dir, f), 'utf8');
       for (const fn of patched) {
-        if (new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${fn}\\s*\\(`, 'i').test(sql)) offenders.push(`${f}: ${fn}`);
+        const create = sql.search(new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${fn}\\s*\\(`, 'i'));
+        if (create < 0) continue;
+        // Allowed only when the same migration first renames the 0203-patched
+        // function away (its body, and so 0203's patch, kept under the new
+        // name) and the new function under the old name is something else
+        // (0212: an "update the app" message for old store builds).
+        const rename = sql.search(new RegExp(`ALTER\\s+FUNCTION\\s+public\\.${fn}\\s*\\([^)]*\\)\\s+RENAME\\s+TO\\s+\\w+`, 'i'));
+        if (rename >= 0 && rename < create) continue;
+        offenders.push(`${f}: ${fn}`);
       }
     }
     expect(offenders).toEqual([]);
