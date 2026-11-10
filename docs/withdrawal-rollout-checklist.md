@@ -11,7 +11,10 @@
   - sha256 `12ae3c69…ec952`.
   - `restore_tables=103/103`, `restore_rows=103/103`.
 - The live web app now uses the PIN flow and two-admin approval. The old no-PIN entry point (`request_organizer_payout`) is closed to clients.
-- **Native apps: release 1.3.0 is prepared** (§4), and the store builds wait on the owner's signing secrets. Since 0212, old store builds that try to withdraw are told to update the app or use getvents.com.
+- **0212 is applied** in production, at 2026-11-10 09:02:03 UTC, from `3999b70` (md5 `7c66471d…`). Old store builds that try to withdraw are now told to update the app or use getvents.com. Before that they saw "permission denied".
+- **Web:** getvents.com serves `dpl_7qysDv4Tbxgnw1BNKtpCBDPbqhys` (commit `3999b70`), and the bundle reports `VENTS v1.3.0`.
+- **Native 1.3.0 is prepared and verified unsigned** (§4). The signed store builds wait on the owner's secrets (§10).
+- `app_config.min_client_version` is still `1.1.0`, deliberately.
 
 The record of what was run and what came back is in §9.
 
@@ -361,3 +364,52 @@ Use a small real withdrawal (for example ₦100) from an organizer account that 
   - Until the new builds ship, their users get "permission denied" at withdrawal and must use getvents.com.
   - After the builds ship, raise `app_config.min_client_version` (§4.3).
 - **Backups from `main`:** the backup workflow still runs only from `claude/o4-cloud-rehearsal` until `main` is allowed in the `o4-backup` environment.
+
+## 10. Native release 1.3.0 and 0212: production record (2026-11-10)
+
+**Merged:** PR #96 (`3999b70`).
+- Migration 0212 and `undo_0212`.
+- Version 1.3.0 everywhere: web, Android versionCode 5, iOS build 5.
+- The update screen sends app users to their store.
+- Android workflow hardening, and a new `ios-release.yml`.
+- `GoogleService-Info.plist` is now bundled by the Xcode project.
+
+**0212 apply (production):**
+- **Backup first:** run 42786555398, artifact `vents-db-backup-20261110T085632Z`, `restore_tables=105/105`, `restore_rows=105/105`.
+- **Applied** as one transaction through `migration_fetch` with an md5 check, followed by `NOTIFY pgrst`.
+- **After applying:**
+  - `request_organizer_payout`: `authenticated` true, `anon` false, not SECURITY DEFINER.
+  - `request_organizer_payout_core`: `authenticated` and `anon` false. Its body md5 is `e23e0e8b…`, byte-identical to the function before the rename.
+  - `request_withdrawal` calls the core.
+  - Withdrawal, approval, organizer wallet, user wallet, wallet transaction, organizer transaction and PIN tables are byte-identical before and after the apply.
+
+**Production end-to-end, rolled back** (`scripts/ops/withdrawal-0211-prod-e2e.sql`, updated for 0212): **87 of 87 passed.**
+- It includes the new checks:
+  - an old-app call returns "Please update VENTS to withdraw… getvents.com.";
+  - that call creates no request and moves no money;
+  - clients cannot call the core function.
+- After the run: 0 test users, unchanged hashes, an empty push queue.
+
+**Native builds on `main` (`3999b70`):**
+- **iOS compile check** (unsigned, simulator): success.
+- **Android, unsigned verification:** see the run recorded below.
+- **Android, signed** (run 42786560303): stopped at the secrets check. Missing in `android-release`:
+  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_GOOGLE_PLACES_API_KEY`;
+  - `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`;
+  - `GOOGLE_SERVICES_JSON_BASE64`.
+- **iOS, signed** (run 42786564447): stopped at the secrets check. Missing in `ios-release`:
+  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_GOOGLE_PLACES_API_KEY`;
+  - `GOOGLE_SERVICE_INFO_PLIST_BASE64`;
+  - `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY_P8_BASE64`.
+
+**What only the owner can do:**
+1. Add the secrets above. Values come from:
+   - Vercel Production;
+   - the Play upload keystore;
+   - Firebase project settings (Android and iOS apps `com.getvents.app`);
+   - an App Store Connect API key with the Admin role.
+2. Run *Android release* (signed) and *iOS release* on `main`.
+3. Download the `.aab` and `.ipa` artifacts, upload them to Play Console and App Store Connect, and submit them for review.
+4. Once both 1.3.0 builds are live in the stores, raise `app_config.min_client_version` to `1.3.0`. Not before.
+
+No store submission has been made, and none is claimed.
