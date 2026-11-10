@@ -26,6 +26,7 @@ let paystackTransfer: Handler;
 let paystackVerify: Handler;
 let markOk = true;
 let claimRefusal: string | null = null;
+let claimResult: Record<string, unknown> | null = null;
 const calls: { url: string; body?: any }[] = [];
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -35,9 +36,10 @@ const fetchMock = vi.fn(async (input: any, init?: RequestInit) => {
   const body = init?.body ? JSON.parse(String(init.body)) : undefined;
   calls.push({ url, body });
   if (url === `${SUPABASE}/auth/v1/user`) return json(200, { id: 'admin-1', email: 'a@x' });
-  if (url.endsWith('/rpc/admin_claim_payout_for_processing')) {
+  if (url.endsWith('/rpc/admin_authorize_and_claim_payout')) {
     if (claimRefusal) return json(400, { message: claimRefusal });
-    return json(200, [{ request_id: REQUEST_ID, organizer_id: 'org', amount_kobo: 50000, recipient_code: 'RCP_1', status: 'processing', claimed: true }]);
+    if (claimResult) return json(200, claimResult);
+    return json(200, [{ request_id: REQUEST_ID, organizer_id: 'org', amount_kobo: 50000, recipient_code: 'RCP_1', status: 'processing', ok: true, claimed: true }]);
   }
   if (url.endsWith('/rpc/admin_mark_payout_processing')) return markOk ? json(200, null) : json(400, { message: 'not processing' });
   if (url.endsWith('/rpc/admin_release_payout_claim')) return json(200, null);
@@ -70,6 +72,7 @@ beforeEach(() => {
   adminTableRpc.mockClear();
   markOk = true;
   claimRefusal = null;
+  claimResult = null;
   listRows = [];
   paystackTransfer = () => json(200, { status: true, data: { transfer_code: 'TRF_1', status: 'pending' } });
   paystackVerify = () => json(404, { status: false, message: 'Transfer not found' });
@@ -80,7 +83,7 @@ afterEach(() => { vi.unstubAllGlobals(); process.env = { ...savedEnv }; });
 
 async function approve() {
   const res = mockRes();
-  await (await import('../wallet/admin-payout-action')).default(req({ action: 'approve', request_id: REQUEST_ID }), res);
+  await (await import('../wallet/admin-payout-action')).default(req({ action: 'authorize_pay', request_id: REQUEST_ID, amount_kobo: 50000, pin: '4826193057', idempotency_key: 'payout-test-key-000001' }), res);
   return res;
 }
 
@@ -152,20 +155,44 @@ describe('approval', () => {
   });
 });
 
-describe('two-admin authorization (0203)', () => {
-  it('a withdrawal the database refuses to claim (not authorized) never reaches Paystack', async () => {
-    claimRefusal = "This withdrawal needs a second admin's authorization before it can be paid";
+describe('VENTS Admin PIN authorization (0213)', () => {
+  it('a caller the database refuses (not the VENTS Admin) never reaches Paystack', async () => {
+    claimRefusal = 'VENTS Admin access required';
     const res = await approve();
     expect(res.statusCode).toBe(400);
-    expect(res.body.error).toMatch(/second admin's authorization/);
+    expect(res.body.error).toMatch(/VENTS Admin access required/);
     expect(transferPosts()).toHaveLength(0);
     expect(rpcCalls('admin_mark_payout_processing')).toHaveLength(0);
   });
 
-  it('a bank recipient changed after authorization is refused the same way', async () => {
-    claimRefusal = 'The bank account changed after this withdrawal was authorized; authorize it again';
+  it('a refused PIN or state (wrong PIN, lock, not approved, bank changed) never reaches Paystack', async () => {
+    for (const [code, status] of [['wrong_pin', 401], ['pin_locked', 423], ['pin_reset_required', 423], ['not_approved', 409], ['bank_changed', 409], ['not_pending', 409]] as const) {
+      claimResult = { ok: false, code, message: `refused: ${code}`, attempts_left: 3 };
+      const res = await approve();
+      expect(res.statusCode, code).toBe(status);
+      expect(res.body.code).toBe(code);
+    }
+    expect(transferPosts()).toHaveLength(0);
+    expect(rpcCalls('admin_mark_payout_processing')).toHaveLength(0);
+  });
+
+  it('the same idempotency key again (claimed:false) never sends a second transfer', async () => {
+    claimResult = { ok: true, claimed: false, replayed: true, status: 'processing', reference: REFERENCE };
     const res = await approve();
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.code).toBe('replayed');
+    expect(transferPosts()).toHaveLength(0);
+  });
+
+  it('the PIN is checked for shape before anything is called, and the old approve action is gone', async () => {
+    const handler = (await import('../wallet/admin-payout-action')).default;
+    const r1 = mockRes();
+    await handler(req({ action: 'authorize_pay', request_id: REQUEST_ID, amount_kobo: 50000, pin: '12345', idempotency_key: 'payout-test-key-000001' }), r1);
+    expect(r1.statusCode).toBe(400);
+    const r2 = mockRes();
+    await handler(req({ action: 'approve', request_id: REQUEST_ID }), r2);
+    expect(r2.statusCode).toBe(410);
+    expect(rpcCalls('admin_authorize_and_claim_payout')).toHaveLength(0);
     expect(transferPosts()).toHaveLength(0);
   });
 });

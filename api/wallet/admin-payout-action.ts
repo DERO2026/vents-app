@@ -28,14 +28,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
-  const { action, request_id, reason } = req.body || {};
-  if (action !== 'reject' && action !== 'cancel' && action !== 'approve') {
-    return res.status(400).json({ error: 'action must be "approve", "reject" or "cancel"' });
+  const { action, request_id, reason, amount_kobo, pin, idempotency_key } = req.body || {};
+  // 0213: 'approve' (claim + pay with no PIN) is gone. Paying is
+  // 'authorize_pay': the VENTS Admin's 10-digit Admin Payout PIN, verified
+  // by the database in the same transaction that claims this one request.
+  if (action === 'approve') {
+    return res.status(410).json({ error: 'Payouts now need the VENTS Admin: approve the withdrawal, then Authorize & Pay with the 10-digit Admin Payout PIN.' });
+  }
+  if (action !== 'reject' && action !== 'cancel' && action !== 'authorize_pay') {
+    return res.status(400).json({ error: 'action must be "authorize_pay", "reject" or "cancel"' });
   }
   if (!request_id || typeof request_id !== 'string') {
     return res.status(400).json({ error: 'request_id is required' });
   }
-  if (action !== 'approve' && (!reason || typeof reason !== 'string' || !reason.trim())) {
+  if (action !== 'authorize_pay' && (!reason || typeof reason !== 'string' || !reason.trim())) {
     return res.status(400).json({ error: `A ${action === 'reject' ? 'rejection' : 'cancellation'} reason is required` });
   }
 
@@ -55,7 +61,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   try {
-    if (action === 'approve') {
+    if (action === 'authorize_pay') {
+      // Shape checks only; the database decides (and counts wrong PINs).
+      // The PIN is never logged, echoed or stored here.
+      if (typeof pin !== 'string' || !/^\d{10}$/.test(pin)) {
+        return res.status(400).json({ error: 'Enter the 10-digit Admin Payout PIN', code: 'pin_format' });
+      }
+      if (!Number.isSafeInteger(amount_kobo) || amount_kobo <= 0) {
+        return res.status(400).json({ error: 'amount_kobo (the amount you reviewed) is required' });
+      }
+      if (typeof idempotency_key !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(idempotency_key)) {
+        return res.status(400).json({ error: 'idempotency_key is required' });
+      }
       const secret = process.env.PAYSTACK_SECRET_KEY;
       if (!secret) {
         return res.status(500).json({ error: 'Payout system not configured' });
@@ -98,33 +115,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(429).json({ error: 'Too many payout approvals. Please wait before approving more.' });
       }
 
-      // is_admin() is enforced inside this RPC. Critically, this ATOMICALLY
-      // flips the request from 'pending' to 'processing' (a compare-and-swap
-      // UPDATE ... WHERE status = 'pending') BEFORE we ever touch Paystack —
-      // this is what makes concurrent approvals of the same request safe:
-      // only the caller whose UPDATE actually matched the row
-      // (claimed === true) proceeds to fire a real transfer. A second,
-      // concurrent/duplicate call for the same request_id gets
-      // claimed === false and stops here.
-      const fetchRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_claim_payout_for_processing`, {
+      // 0213: the VENTS Admin's PIN is checked and the request claimed
+      // ('pending' -> 'processing') in ONE database transaction, bound to
+      // this request, amount, bank account and recipient. Only a call that
+      // claimed it (claimed === true) goes on to Paystack; a retry with the
+      // same idempotency key, a concurrent click, or a request already in
+      // processing gets claimed === false and stops here.
+      const fetchRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_authorize_and_claim_payout`, {
         method: 'POST',
         headers: supabaseHeaders,
-        body: JSON.stringify({ p_request_id: request_id }),
+        body: JSON.stringify({ p_request_id: request_id, p_amount_kobo: amount_kobo, p_pin: pin, p_idempotency_key: idempotency_key }),
       });
       if (!fetchRes.ok) {
         const errJson = await fetchRes.json().catch(() => null);
-        return res.status(fetchRes.status).json({ error: errJson?.message || 'Admin access required' });
+        return res.status(fetchRes.status).json({ error: errJson?.message || 'VENTS Admin access required' });
       }
-      const claimRows = await fetchRes.json();
-      const claimRow = Array.isArray(claimRows) ? claimRows[0] : claimRows;
-      if (!claimRow) return res.status(404).json({ error: 'Payout request not found' });
+      const claimRaw = await fetchRes.json().catch(() => null);
+      const claimRow = Array.isArray(claimRaw) ? claimRaw[0] : claimRaw;
+      if (!claimRow || typeof claimRow !== 'object') return res.status(502).json({ error: 'Unexpected response from the payout authorization' });
+      if (claimRow.ok !== true) {
+        const status = claimRow.code === 'wrong_pin' ? 401 : claimRow.code === 'pin_locked' || claimRow.code === 'pin_reset_required' ? 423 : 409;
+        return res.status(status).json({ error: claimRow.message || 'Payout not authorized', code: claimRow.code, attempts_left: claimRow.attempts_left });
+      }
       if (!claimRow.claimed) {
-        return res.status(409).json({ error: `Request is already ${claimRow.status}, not pending` });
+        return res.status(409).json({ error: `Already authorized: this withdrawal is ${claimRow.status}. No second transfer was sent.`, code: 'replayed', status: claimRow.status, reference: claimRow.reference });
       }
       if (!claimRow.recipient_code) {
-        // We already claimed (flipped to 'processing') above — release it
-        // back to 'pending' rather than leaving it stuck with no transfer
-        // in flight.
         await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
           method: 'POST',
           headers: supabaseHeaders,

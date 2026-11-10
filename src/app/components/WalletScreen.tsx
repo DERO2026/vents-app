@@ -1335,7 +1335,7 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       { label: 'Status', value: wr.stage ? stageInfo(wr.stage).user : wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: wr.stage ? STAGE_TONE_COLORS[stageInfo(wr.stage).tone].fg : STATUS_COLORS[wr.status] },
       // Never imply the money has arrived before the bank confirms it.
       ...(wr.status === 'pending' || wr.status === 'processing'
-        ? [{ label: 'Paid?', value: wr.stage ? `Not yet — ${stageInfo(wr.stage).detail}` : (wr.status === 'pending' ? 'Not yet — waiting for two VENTS admins to approve' : 'Not yet — sent to the bank, waiting for confirmation'), muted: true }]
+        ? [{ label: 'Paid?', value: wr.stage ? `Not yet — ${stageInfo(wr.stage).detail}` : (wr.status === 'pending' ? 'Not yet — waiting for VENTS to review and approve' : 'Not yet — sent to the bank, waiting for confirmation'), muted: true }]
         : []),
       { label: 'Requested', value: fmtDateTime(wr.created_at) },
       ...(wr.updated_at && wr.updated_at !== wr.created_at ? [{ label: isReversed ? 'Resolved' : 'Last updated', value: fmtDateTime(wr.updated_at) }] : []),

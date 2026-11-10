@@ -37,17 +37,17 @@ function req(body: any, authorization = 'Bearer tok') {
   return { method: 'POST', headers: { authorization }, body } as any;
 }
 
-const APPROVE_BODY = { action: 'approve', request_id: 'req-1' };
+const APPROVE_BODY = { action: 'authorize_pay', request_id: 'req-1', amount_kobo: 50000, pin: '4826193057', idempotency_key: 'payout-test-key-000001' };
 
 function makeSupabaseFetchMock() {
   const paystackCalls: string[] = [];
   const fn = vi.fn(async (url: string) => {
-    if (url.includes('admin_claim_payout_for_processing')) {
+    if (url.includes('admin_authorize_and_claim_payout')) {
       return {
         ok: true,
         json: async () => ([{
           request_id: 'req-1', organizer_id: 'org-1', amount_kobo: 50000,
-          recipient_code: 'RCP_abc', status: 'processing', claimed: true,
+          recipient_code: 'RCP_abc', status: 'processing', ok: true, claimed: true,
         }]),
       } as any;
     }
@@ -130,8 +130,8 @@ describe('admin-payout-action: global approval ceiling', () => {
   it('the existing atomic payout claim remains intact -- claimed:false still 409s regardless of rate limits', async () => {
     mockCallProjectAdminRpc.mockResolvedValue(undefined);
     const fn = vi.fn(async (url: string) => {
-      if (url.includes('admin_claim_payout_for_processing')) {
-        return { ok: true, json: async () => ([{ request_id: 'req-1', status: 'processing', claimed: false }]) } as any;
+      if (url.includes('admin_authorize_and_claim_payout')) {
+        return { ok: true, json: async () => ([{ request_id: 'req-1', status: 'processing', ok: true, claimed: false }]) } as any;
       }
       if (url.includes('api.paystack.co')) return { ok: true, json: async () => ({ status: true, data: {} }) } as any;
       return { ok: true, json: async () => ({}) } as any;
@@ -146,7 +146,7 @@ describe('admin-payout-action: global approval ceiling', () => {
   it('existing admin authorization is preserved -- the claim RPC itself still enforces is_admin()', async () => {
     mockCallProjectAdminRpc.mockResolvedValue(undefined);
     const fn = vi.fn(async (url: string) => {
-      if (url.includes('admin_claim_payout_for_processing')) {
+      if (url.includes('admin_authorize_and_claim_payout')) {
         return { ok: false, status: 403, json: async () => ({ message: 'Admin access required' }) } as any;
       }
       return { ok: true, json: async () => ({}) } as any;

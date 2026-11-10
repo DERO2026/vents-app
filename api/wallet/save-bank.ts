@@ -25,8 +25,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // here (not a new route) because it needs exactly this endpoint's password
   // re-confirmation and rate limit, and the project is at its serverless
   // function limit.
-  const action: 'add' | 'set_default' | 'remove' | 'reset_withdrawal_pin' = body.action || 'add';
-  if (!['add', 'set_default', 'remove', 'reset_withdrawal_pin'].includes(action)) {
+  // 'set_admin_payout_pin' (0213): create, change or reset the VENTS Admin's
+  // 10-digit Admin Payout PIN, with the same password re-confirmation. The
+  // database refuses anyone but the VENTS Admin.
+  const action: 'add' | 'set_default' | 'remove' | 'reset_withdrawal_pin' | 'set_admin_payout_pin' = body.action || 'add';
+  if (!['add', 'set_default', 'remove', 'reset_withdrawal_pin', 'set_admin_payout_pin'].includes(action)) {
     return res.status(400).json({ error: 'Invalid action' });
   }
 
@@ -69,6 +72,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // refuses unless this session's password was entered seconds ago.
       // The PIN is never logged or echoed back.
       const status = await callRpc('reset_my_withdrawal_pin', { p_pin: pin, p_pin_confirm: pin_confirm });
+      return res.status(200).json({ ok: true, pin_status: status });
+    }
+
+    // ── set_admin_payout_pin (0213) ───────────────────────────────────────
+    if (action === 'set_admin_payout_pin') {
+      const { pin, pin_confirm } = body;
+      if (typeof pin !== 'string' || !/^\d{10}$/.test(pin) || typeof pin_confirm !== 'string') {
+        return res.status(400).json({ error: 'The Admin Payout PIN must be exactly 10 digits' });
+      }
+      // Never logged or echoed. The database checks the role, the format,
+      // weak PINs, the match and that this session's password is seconds old.
+      const status = await callRpc('admin_set_payout_pin', { p_pin: pin, p_pin_confirm: pin_confirm });
       return res.status(200).json({ ok: true, pin_status: status });
     }
 
@@ -127,7 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ account_name: verifiedAccountName, recipient_code: recipientCode });
   } catch (err: any) {
     return res.status(err?.status || 500).json({
-      error: err?.message || (action === 'reset_withdrawal_pin' ? 'Could not change your withdrawal PIN.' : 'Failed to update bank account'),
+      error: err?.message || (action === 'reset_withdrawal_pin' ? 'Could not change your withdrawal PIN.' : action === 'set_admin_payout_pin' ? 'Could not set the Admin Payout PIN.' : 'Failed to update bank account'),
     });
   }
 }

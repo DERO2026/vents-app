@@ -43,7 +43,7 @@ export const PREVIEW_ALLOWED_RPCS: ReadonlySet<string> = new Set([
   'search_events_fuzzy', 'search_services_fuzzy_filtered', 'vc_tier_and_multiplier_for_user',
   // VOLATILE in production but read-only by inspection (same transitive check).
   'admin_health_ping', 'admin_list_action_requests', 'admin_list_organizer_verifications',
-  'admin_list_pending_payouts', 'check_user_exists', 'generate_ticket_token',
+  'check_user_exists', 'generate_ticket_token',
   'get_event_online_access', 'is_email_verified', 'my_latest_organizer_verification',
   'my_latest_service_provider_verification', 'resolve_username_to_email', 'search_direct_messages',
   // Migration 0201 (not in production yet): STABLE, no writes, helpers STABLE.

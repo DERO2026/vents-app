@@ -1,5 +1,7 @@
 # Withdrawals: PIN and two-admin approval (0211)
 
+> **Superseded for approval and payment by 0213.** The VENTS Admin is now the sole final payout authority, with a 10-digit Admin Payout PIN. Admins and sub-admins review only. See `docs/payouts-vents-admin-authorization.md`. The user's 4-digit withdrawal PIN below is unchanged.
+
 **Production status:** live since 2026-11-10 05:50 UTC. 0211 is applied, and the web app is at `22966a3`. Native store apps still need new builds. The record of the rollout is in `docs/withdrawal-rollout-checklist.md` §9.
 
 ## How a withdrawal works now
