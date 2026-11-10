@@ -40,7 +40,19 @@
 -- Rollback: supabase/rollback/undo_0215.sql.
 
 DO $pre$
+DECLARE
+  v_types text[];
 BEGIN
+  -- Drift guard: the ledger type constraint is replaced below. It must allow
+  -- exactly 0146's types (or already be 0215's), so no type that production
+  -- might have gained outside these migrations is silently dropped.
+  SELECT array_agg(m[1] ORDER BY m[1]) INTO v_types
+    FROM pg_constraint c, regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''', 'g') m
+   WHERE c.conrelid = 'public.user_wallet_transactions'::regclass AND c.conname = 'user_wallet_transactions_type_check';
+  IF v_types IS DISTINCT FROM ARRAY['deposit', 'refund', 'spend', 'vc_conversion']
+     AND v_types IS DISTINCT FROM ARRAY['deposit', 'refund', 'spend', 'transfer_in', 'transfer_out', 'vc_conversion'] THEN
+    RAISE EXCEPTION '0215: user_wallet_transactions_type_check allows %, expected 0146''s four types; stop and compare', v_types;
+  END IF;
   IF to_regprocedure('public.withdrawal_pin_check(uuid,text)') IS NULL THEN
     RAISE EXCEPTION '0215 requires 0211 (withdrawal_pin_check is missing)';
   END IF;
@@ -67,6 +79,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS user_wallet_transactions_transfer_out_ref_idx
   ON public.user_wallet_transactions (reference_id) WHERE (type = 'transfer_out' AND reference_id IS NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS user_wallet_transactions_transfer_in_ref_idx
   ON public.user_wallet_transactions (reference_id) WHERE (type = 'transfer_in' AND reference_id IS NOT NULL);
+
+-- Exact, case-insensitive username lookups (find_wallet_transfer_recipient).
+CREATE INDEX IF NOT EXISTS users_lower_username_idx ON public.users (lower(username));
 
 -- ---------------------------------------------------------------------------
 -- 2. Kill switch (OFF by default)
@@ -230,7 +245,9 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'code', 'self', 'message', 'That is your own username');
   END IF;
   IF NOT public.wallet_transfer_account_ok(r.id) THEN
-    RETURN jsonb_build_object('ok', false, 'code', 'recipient_unavailable', 'message', 'This account cannot receive money');
+    -- Same answer as an unknown username: a lookup never reveals that another
+    -- account is suspended, banned or deleted.
+    RETURN jsonb_build_object('ok', false, 'code', 'not_found', 'message', 'No VENTS user has that username');
   END IF;
   RETURN jsonb_build_object('ok', true, 'recipient', jsonb_build_object(
     'id', r.id, 'username', r.username, 'name', COALESCE(NULLIF(btrim(r.full_name), ''), r.username),
@@ -357,7 +374,7 @@ BEGIN
   v_check := public.withdrawal_pin_check(v_uid, p_pin);
   IF NOT COALESCE((v_check->>'ok')::boolean, false) THEN
     RETURN v_check || jsonb_build_object('message', CASE v_check->>'code'
-      WHEN 'pin_not_set' THEN 'Create your 4-digit VENTS PIN (in Earnings) before sending money'
+      WHEN 'pin_not_set' THEN 'Create your 4-digit VENTS PIN before sending money'
       WHEN 'wrong_pin' THEN v_check->>'message'
       WHEN 'pin_locked' THEN 'Too many wrong PINs. Sending money and withdrawals are locked for a while'
       ELSE 'Your PIN is locked after too many wrong attempts. Reset it with your password in Earnings' END);
