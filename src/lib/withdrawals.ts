@@ -225,7 +225,40 @@ export interface PayoutRequest {
   can_authorize_pay: boolean;
   can_reject: boolean;
   action_note: string | null;
+  // 0214 (absent from an older backend; treated as false / unknown):
+  /** the review may forward (bank account active and Paystack-verified) */
+  can_forward?: boolean;
+  /** processing: ask Paystack for this request's real status */
+  can_reconcile?: boolean;
+  /** processing with no transfer code and no reference: cancel (money back) */
+  can_cancel?: boolean;
+  /** pending, unapproved, never sent: request a move to another verified account (0207) */
+  can_request_bank_change?: boolean;
+  /** why nothing can be sent to this account */
+  bank_problem?: BankProblem | null;
 }
+
+export type BankProblem = 'missing' | 'inactive' | 'unverified' | 'changed_since_approval';
+
+/** Plain-language reason a transfer cannot go to this account. */
+export function bankProblemText(p: BankProblem | null | undefined): string | null {
+  switch (p) {
+    case 'missing': return 'No bank account is attached to this withdrawal (it was removed). Nothing can be sent.';
+    case 'inactive': return 'The bank account is inactive (the user removed or replaced it). Nothing can be sent to it.';
+    case 'unverified': return 'The bank account has no verified Paystack recipient. Nothing can be sent to it until it is verified.';
+    case 'changed_since_approval': return 'The bank account changed after the VENTS Admin approved it. The approval no longer covers this account, so it cannot be paid.';
+    default: return null;
+  }
+}
+
+/** The server computes these from 0214 on; false when it does not (older backend). */
+export function hasPaginatedList(rows: PayoutRequest[]): boolean {
+  return rows.length === 0 || rows.some((r) => typeof r.can_forward === 'boolean');
+}
+
+export interface PayoutCursor { created_at: string; request_id: string }
+
+export const PAYOUT_PAGE_SIZE = 50;
 
 export interface PayoutOverview {
   stages: Partial<Record<WithdrawalStage, { count: number; amount_kobo: number }>>;
@@ -240,10 +273,30 @@ export interface PayoutOverview {
   computed_at: string;
 }
 
-export async function fetchPayoutRequests(scope: 'open' | 'closed' | 'all', limit = 200): Promise<PayoutRequest[]> {
-  const { data, error } = await supabase.rpc('admin_list_withdrawals' as any, { p_scope: scope, p_limit: limit });
+/** Newest first (0214: created_at DESC, id DESC, server-side). `before` is the last row of the previous page. */
+export async function fetchPayoutRequests(scope: 'open' | 'closed' | 'all', opts: { limit?: number; before?: PayoutCursor | null } = {}): Promise<PayoutRequest[]> {
+  const params: Record<string, unknown> = { p_scope: scope, p_limit: opts.limit ?? PAYOUT_PAGE_SIZE };
+  // Only a "Load more" sends the cursor, so the first page also works on a backend without 0214.
+  if (opts.before) { params.p_before_created_at = opts.before.created_at; params.p_before_id = opts.before.request_id; }
+  const { data, error } = await supabase.rpc('admin_list_withdrawals' as any, params);
   if (error) throw error;
   return (Array.isArray(data) ? data : []).map((r: any) => ({ ...r, reviews: Array.isArray(r.reviews) ? r.reviews : [] })) as PayoutRequest[];
+}
+
+/** Newest first, ties by id: the server's order, applied again so a merged page can never be out of order. */
+export function sortNewestFirst(rows: PayoutRequest[]): PayoutRequest[] {
+  return [...rows].sort((a, b) => {
+    const t = Date.parse(b.created_at) - Date.parse(a.created_at);
+    if (t !== 0) return t;
+    return a.request_id < b.request_id ? 1 : a.request_id > b.request_id ? -1 : 0;
+  });
+}
+
+/** Merge a page into the loaded rows: the fresh copy of a row wins; no duplicates. */
+export function mergePayoutPages(current: PayoutRequest[], page: PayoutRequest[]): PayoutRequest[] {
+  const byId = new Map(current.map((r) => [r.request_id, r]));
+  for (const r of page) byId.set(r.request_id, r);
+  return sortNewestFirst([...byId.values()]);
 }
 
 export async function fetchPayoutOverview(): Promise<PayoutOverview> {
@@ -334,58 +387,46 @@ export async function authorizeAndPay(requestId: string, amountKobo: number, pin
   return { ok: false, code: json.code, message: json.error || 'Payout not authorized', attemptsLeft: json.attempts_left, status: json.status, reference: json.reference };
 }
 
-// ── Admin (0211, superseded by 0213) ─────────────────────────────────────
-export interface AdminWithdrawal {
-  request_id: string;
-  organizer_id: string;
-  organizer_name: string | null;
-  organizer_email: string | null;
-  organizer_phone: string | null;
-  amount_kobo: number;
-  status: string;
-  stage: WithdrawalStage;
-  bank_name: string | null;
-  account_number: string | null;
-  account_name: string | null;
-  bank_account_active: boolean;
-  created_at: string;
-  updated_at: string | null;
-  admin_note: string | null;
-  first_approval_id: string | null;
-  first_approved_by: string | null;
-  first_approved_by_name: string | null;
-  first_approved_by_tier: 'full' | 'sub' | null;
-  first_approved_at: string | null;
-  second_approved_by: string | null;
-  second_approved_by_name: string | null;
-  second_approved_at: string | null;
-  paystack_reference: string | null;
-  transfer_started: boolean;
-  can_first_approve: boolean;
-  can_second_approve: boolean;
-  can_cancel_first_approval: boolean;
-  can_pay: boolean;
-  can_reject: boolean;
-  action_note: string | null;
+async function postAdminPayout(path: string, body: Record<string, unknown>, fallback: string): Promise<any> {
+  const res = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: await bearer() },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || fallback);
+  return json;
 }
 
-export async function fetchAdminWithdrawals(scope: 'open' | 'closed' | 'all', limit = 100): Promise<AdminWithdrawal[]> {
-  const { data, error } = await supabase.rpc('admin_list_withdrawals' as any, { p_scope: scope, p_limit: limit });
-  if (error) throw new Error(error.message);
-  return (Array.isArray(data) ? data : []) as AdminWithdrawal[];
+/** Reject a pending withdrawal (admin_reject_organizer_payout: full admins and the VENTS Admin). */
+export function rejectPayout(requestId: string, reason: string): Promise<void> {
+  return postAdminPayout('/api/v1/wallet/admin-payout-action', { action: 'reject', request_id: requestId, reason }, 'Reject failed').then(() => undefined);
 }
 
-export async function adminFirstApprove(requestId: string, amountKobo: number): Promise<void> {
-  const { error } = await supabase.rpc('admin_first_approve_withdrawal' as any, { p_request_id: requestId, p_amount_kobo: amountKobo });
-  if (error) throw new Error(error.message);
+/** Cancel a processing withdrawal that never reached Paystack (no transfer code, no reference). */
+export function cancelProcessingPayout(requestId: string, reason: string): Promise<void> {
+  return postAdminPayout('/api/v1/wallet/admin-payout-action', { action: 'cancel', request_id: requestId, reason }, 'Cancel failed').then(() => undefined);
 }
 
-export async function adminSecondApprove(requestId: string): Promise<void> {
-  const { error } = await supabase.rpc('admin_approve_withdrawal' as any, { p_request_id: requestId });
-  if (error) throw new Error(error.message);
+export interface ReconcileOneResult { outcome: string; paystack_status?: string | null; detail?: string }
+
+/** Ask Paystack for one processing withdrawal's real status; resolves it if Paystack has decided. */
+export async function reconcilePayout(requestId: string): Promise<ReconcileOneResult> {
+  const json = await postAdminPayout('/api/v1/wallet/reconcile-payouts', { request_id: requestId }, 'Paystack check failed');
+  const r = Array.isArray(json.results) ? json.results[0] : null;
+  return { outcome: r?.outcome || 'unknown', paystack_status: r?.paystack_status ?? null, detail: r?.detail };
 }
 
-export async function adminCancelFirstApproval(requestId: string, reason: string): Promise<void> {
-  const { error } = await supabase.rpc('admin_cancel_withdrawal_first_approval' as any, { p_request_id: requestId, p_reason: reason });
-  if (error) throw new Error(error.message);
+export function reconcileOutcomeText(r: ReconcileOneResult): string {
+  switch (r.outcome) {
+    case 'completed': return 'Paystack confirmed the transfer: marked paid.';
+    case 'failed': return 'Paystack says the transfer failed: the money is back in the user\'s available balance.';
+    case 'reversed': return 'Paystack reversed the transfer: the money is back in the user\'s available balance.';
+    case 'still_pending_on_paystack': return `Paystack has not decided yet (${r.paystack_status || 'pending'}). Nothing changed.`;
+    case 'not_on_paystack_yet': return 'Paystack has no transfer for it yet. Check again in 15 minutes; nothing changed.';
+    case 'released_to_pending': return 'Paystack has no transfer for it: returned to approved, awaiting a new Authorize & Pay.';
+    case 'release_failed': return 'Paystack has no transfer for it, but only the VENTS Admin can return it to the queue.';
+    case 'paystack_lookup_failed': return `Could not reach Paystack${r.detail ? ` (${r.detail})` : ''}. Nothing changed; try again.`;
+    default: return `Checked with Paystack: ${r.outcome}. Nothing else changed.`;
+  }
 }

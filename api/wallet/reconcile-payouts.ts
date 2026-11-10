@@ -143,8 +143,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // handful of payouts in flight at once) while still bounding the
     // worst case of a single reconciliation call.
     const MAX_RECONCILE_BATCH = 50;
-    const rows = allRows.slice(0, MAX_RECONCILE_BATCH);
-    const deferredCount = Math.max(0, allRows.length - MAX_RECONCILE_BATCH);
+    // Optional request_id (the Payouts card's "Check with Paystack"): the
+    // same reconciliation, limited to that one request. It only narrows the
+    // list admin_list_processing_payouts already returned, so it can never
+    // touch a request that is not processing.
+    const onlyId = (req.body as any)?.request_id;
+    if (onlyId !== undefined && (typeof onlyId !== 'string' || !/^[0-9a-f-]{36}$/i.test(onlyId))) {
+      return res.status(400).json({ error: 'request_id must be a withdrawal id' });
+    }
+    const candidates = onlyId ? allRows.filter((r) => r?.request_id === onlyId) : allRows;
+    if (onlyId && candidates.length === 0) {
+      return res.status(409).json({ error: 'This withdrawal is no longer processing. Refresh the list.', code: 'not_processing' });
+    }
+    const rows = candidates.slice(0, MAX_RECONCILE_BATCH);
+    const deferredCount = Math.max(0, candidates.length - MAX_RECONCILE_BATCH);
 
     const results: any[] = [];
     for (const row of rows) {

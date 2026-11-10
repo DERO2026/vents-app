@@ -175,7 +175,7 @@ export function AdminConsoleShell({ currentUser, onBack }: AdminConsoleShellProp
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
         <AdminTopbar pageTitle={pageTitle} isMobile={isMobile} showBack={showBack} onBack={handleBack} />
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 14px 76px' : '26px 30px 60px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 14px calc(84px + env(safe-area-inset-bottom))' : '26px 30px 60px' }}>
           {toast && (
             <div style={{ marginBottom: 14, fontSize: 12.5, padding: '8px 12px', borderRadius: 8, background: toast.ok ? 'rgba(52,211,153,.1)' : 'rgba(248,113,113,.1)', border: `1px solid ${toast.ok ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)'}`, color: toast.ok ? adminTheme.green : adminTheme.red }}>
               {toast.msg}

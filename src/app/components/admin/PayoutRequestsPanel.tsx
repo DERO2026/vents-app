@@ -1,23 +1,26 @@
-// Payout requests (0213). The VENTS Admin is the only final payout
+// Payout requests (0213, 0214). The VENTS Admin is the only final payout
 // authority: Review (any other admin, optional) -> Approve for Payment
 // (VENTS Admin) -> Authorize & Pay (VENTS Admin + 10-digit Admin Payout PIN)
 // -> Paystack -> Paid only when Paystack confirms.
 //
 // Everything shown comes from the database (admin_payout_overview,
 // admin_list_withdrawals): totals over every withdrawal, the stage, who acts
-// next, and which buttons THIS admin may use. The server refuses anything
-// else, whatever this screen shows. After every action the list is re-read.
+// next, why a bank account cannot be paid, and which buttons THIS admin may
+// use (every can_* flag mirrors the function that performs the action; the
+// server refuses anything else, whatever this screen shows). The list is
+// newest first and paged by the server (0214); after every action, on focus
+// and every 30 seconds it is re-read, so a new withdrawal appears at the top.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { adminTheme } from './adminConsoleTheme';
 import { WithdrawalReassignForm } from './WithdrawalReassignForm';
 import { notifyByEmail } from './adminAuditLog';
-import { apiUrl } from '../../../lib/apiBase';
-import { supabase } from '../../../lib/supabase';
 import { Sentry } from '../../../lib/sentry';
 import { isBackendUnavailable } from '../../../lib/workRoles';
 import {
   fetchPayoutRequests, fetchPayoutOverview, reviewWithdrawal, approveForPayment, authorizeAndPay,
   fetchAdminPayoutPinStatus, setAdminPayoutPin, adminPinProblem, newPayoutIdempotencyKey,
+  rejectPayout, cancelProcessingPayout, reconcilePayout, reconcileOutcomeText, bankProblemText,
+  sortNewestFirst, mergePayoutPages, hasPaginatedList, PAYOUT_PAGE_SIZE,
   stageInfo, STAGE_TONE_COLORS, ADMIN_PIN_LENGTH,
   type PayoutRequest, type PayoutOverview, type AdminPayoutPinStatus,
 } from '../../../lib/withdrawals';
@@ -27,9 +30,9 @@ const when = (t: string | null | undefined) => (t ? new Date(t).toLocaleString('
 const tierLabel = (t: string) => (t === 'sub' ? 'sub-admin' : 'admin');
 
 const NEXT_ACTION: Record<string, string> = {
-  review_or_vents_admin: 'Next: a reviewer (optional) or the VENTS Admin',
-  vents_admin: 'Next: the VENTS Admin',
-  paystack: 'Next: Paystack confirms the transfer',
+  review_or_vents_admin: 'A reviewer (optional) or the VENTS Admin',
+  vents_admin: 'The VENTS Admin',
+  paystack: 'Paystack confirms the transfer',
 };
 
 const OVERVIEW_TILES: { key: string; label: string; stages: string[] }[] = [
@@ -63,18 +66,39 @@ const inputStyle: React.CSSProperties = {
 };
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, color: adminTheme.textMuted, margin: '10px 0 4px', letterSpacing: '0.03em' };
 
-function ActionButton({ testId, label, onClick, tone, disabled }: { testId: string; label: string; onClick: () => void; tone: 'blue' | 'green' | 'red' | 'neutral'; disabled?: boolean }) {
+function ActionButton({ testId, label, onClick, tone, disabled }: { testId: string; label: string; onClick: () => void; tone: 'blue' | 'green' | 'red' | 'amber' | 'neutral'; disabled?: boolean }) {
   const c = tone === 'blue' ? { bg: 'rgba(96,165,250,.15)', bd: 'rgba(96,165,250,.3)', fg: adminTheme.blue }
     : tone === 'green' ? { bg: 'rgba(52,211,153,.15)', bd: 'rgba(52,211,153,.3)', fg: adminTheme.green }
     : tone === 'red' ? { bg: 'rgba(248,113,113,.12)', bd: 'rgba(248,113,113,.3)', fg: adminTheme.red }
+    : tone === 'amber' ? { bg: 'rgba(251,191,36,.1)', bd: 'rgba(251,191,36,.3)', fg: adminTheme.amber }
     : { bg: adminTheme.borderChip, bd: adminTheme.border, fg: adminTheme.text };
+  // 44px: a comfortable touch target; flex-basis 150px gives two per row on a
+  // 360px phone and wraps instead of clipping or scrolling sideways.
   return (
-    <button data-testid={testId} onClick={onClick} disabled={disabled}
-      style={{ flex: '1 1 140px', background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 10, padding: '9px 10px', color: c.fg, fontWeight: 700, fontSize: 13, cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
+    <button data-testid={testId} type="button" onClick={onClick} disabled={disabled}
+      style={{ flex: '1 1 150px', minWidth: 0, minHeight: 44, background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 10, padding: '10px 12px', color: c.fg, fontWeight: 700, fontSize: 13, lineHeight: 1.25, whiteSpace: 'normal', cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
       {label}
     </button>
   );
 }
+
+function Detail({ label, children, testId }: { label: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <div data-testid={testId} style={{ minWidth: 0 }}>
+      <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', color: adminTheme.textFaint, textTransform: 'uppercase' }}>{label}</p>
+      <div style={{ margin: '2px 0 0', fontSize: 12.5, color: adminTheme.text, overflowWrap: 'anywhere' }}>{children}</div>
+    </div>
+  );
+}
+
+/** What a closed request means and why it has no buttons. */
+const FINAL_NOTE: Record<string, string> = {
+  completed: 'Paid: Paystack confirmed the transfer. Final; there is nothing left to do.',
+  failed: 'Failed: Paystack did not pay it and the money is back in the user\'s available balance. Final; the user can request again.',
+  rejected: 'Rejected: nothing was sent and the money is back in the user\'s available balance. Final; the user can request again.',
+  cancelled: 'Cancelled: nothing was sent and the money is back in the user\'s available balance. Final.',
+  reversed: 'Reversed by Paystack: the money is back in the user\'s available balance. Final.',
+};
 
 function PinPanel({ status, onChanged }: { status: AdminPayoutPinStatus | null; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
@@ -139,18 +163,24 @@ function PinPanel({ status, onChanged }: { status: AdminPayoutPinStatus | null; 
   );
 }
 
-export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: boolean }) {
+export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { payoutsDisabled: boolean; refreshSignal?: number }) {
   const [overview, setOverview] = useState<PayoutOverview | null>(null);
   const [rows, setRows] = useState<PayoutRequest[]>([]);
   const [scope, setScope] = useState<'open' | 'closed' | 'all'>('open');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [paging, setPaging] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [pinStatus, setPinStatus] = useState<AdminPayoutPinStatus | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const loadedCount = useRef(0);
+  const scopeRef = useRef(scope);
   const [reassignFor, setReassignFor] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const [reviewRow, setReviewRow] = useState<PayoutRequest | null>(null);
   const [reviewDecision, setReviewDecision] = useState<'forward' | 'recommend_reject'>('forward');
@@ -163,35 +193,91 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
   const payKey = useRef<string | null>(null);
   const [rejectRow, setRejectRow] = useState<PayoutRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [cancelRow, setCancelRow] = useState<PayoutRequest | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const modalOpen = !!(reviewRow || approveRow || payRow || rejectRow || cancelRow);
+  const modalOpenRef = useRef(modalOpen);
+  modalOpenRef.current = modalOpen;
 
-  const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 6000); };
+  const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 8000); };
 
-  const load = useCallback(async () => {
-    setLoading(true); setLoadError(null);
+  // Re-reads the first page (or as many rows as are already loaded, so a
+  // refresh never drops what "Load more" showed). Newest first, from the server.
+  const load = useCallback(async (opts: { quiet?: boolean; reset?: boolean } = {}) => {
+    if (!opts.quiet) setLoading(true);
+    setLoadError(null);
+    const limit = opts.reset ? PAYOUT_PAGE_SIZE : Math.min(500, Math.max(PAYOUT_PAGE_SIZE, loadedCount.current));
+    const forScope = scope;
     try {
-      const [ov, list] = await Promise.all([fetchPayoutOverview(), fetchPayoutRequests(scope)]);
-      setOverview(ov); setRows(list); setUnavailable(false);
+      const [ov, first] = await Promise.all([fetchPayoutOverview(), fetchPayoutRequests(forScope, { limit })]);
+      let list = first;
+      // A backend without 0214 orders open requests OLDEST first and cannot
+      // page: a 50-row page would hide the newest ones. Read up to its
+      // maximum (500) instead, then sort here.
+      if (!hasPaginatedList(first) && first.length >= limit && limit < 500) {
+        list = await fetchPayoutRequests(forScope, { limit: 500 });
+      }
+      if (scopeRef.current !== forScope) return;
+      const supports = hasPaginatedList(list);
+      setOverview(ov); setRows(sortNewestFirst(list)); setUnavailable(false);
+      loadedCount.current = list.length;
+      setPaging(supports);
+      setHasMore(supports && list.length >= limit);
       if (ov.is_vents_admin) {
         fetchAdminPayoutPinStatus().then(setPinStatus, () => setPinStatus(null));
       }
     } catch (e: any) {
       if (isBackendUnavailable(e)) { setUnavailable(true); }
       else { Sentry.captureException(e); setLoadError(e?.message || 'Failed to load payout requests.'); }
-    } finally { setLoading(false); }
+    } finally { if (!opts.quiet) setLoading(false); }
   }, [scope]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scopeRef.current = scope; loadedCount.current = 0; setRows([]); load({ reset: true }); }, [scope, load]);
+  useEffect(() => { if (refreshSignal > 0) load({ quiet: true }); }, [refreshSignal, load]);
+  // New withdrawals show up without a manual refresh: on focus and every 30 s
+  // while visible, never while a dialog is open or an action is running.
+  useEffect(() => {
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (modalOpenRef.current || inFlight.current) return;
+      load({ quiet: true });
+    };
+    const id = setInterval(tick, 30000);
+    window.addEventListener('focus', tick);
+    return () => { clearInterval(id); window.removeEventListener('focus', tick); };
+  }, [load]);
 
-  const run = async (id: string, fn: () => Promise<void>, ok: string) => {
-    if (inFlight.current) return;
-    inFlight.current = true; setBusyId(id);
-    try { await fn(); flash(true, ok); } catch (e: any) { flash(false, e?.message || 'That action was refused'); }
-    finally { inFlight.current = false; setBusyId(null); await load(); }
+  const loadMore = async () => {
+    const last = rows[rows.length - 1];
+    if (!last || loadingMore) return;
+    setLoadingMore(true);
+    const forScope = scope;
+    try {
+      const page = await fetchPayoutRequests(forScope, { limit: PAYOUT_PAGE_SIZE, before: { created_at: last.created_at, request_id: last.request_id } });
+      if (scopeRef.current !== forScope) return;
+      setRows((cur) => { const merged = mergePayoutPages(cur, page); loadedCount.current = merged.length; return merged; });
+      setHasMore(page.length >= PAYOUT_PAGE_SIZE);
+    } catch (e: any) {
+      Sentry.captureException(e);
+      flash(false, e?.message || 'Could not load more requests');
+    } finally { setLoadingMore(false); }
   };
 
+  const run = async (id: string, fn: () => Promise<string | void>, ok: string) => {
+    if (inFlight.current) return;
+    inFlight.current = true; setBusyId(id);
+    try { const text = await fn(); flash(true, text || ok); } catch (e: any) { flash(false, e?.message || 'That action was refused'); }
+    finally { inFlight.current = false; setBusyId(null); await load({ quiet: true }); }
+  };
+
+  const openReview = (r: PayoutRequest) => {
+    setReviewRow(r); setReviewNote('');
+    setReviewDecision(r.can_forward === false ? 'recommend_reject' : 'forward');
+  };
   const submitReview = () => {
     const r = reviewRow; if (!r) return;
     const note = reviewNote.trim();
     if (note.length < 3) return;
+    if (reviewDecision === 'forward' && r.can_forward === false) return;
     setReviewRow(null); setReviewNote('');
     run(r.request_id, () => reviewWithdrawal(r.request_id, r.amount_kobo, reviewDecision, note),
       reviewDecision === 'forward' ? 'Review recorded and forwarded to the VENTS Admin.' : 'Review recorded: rejection recommended to the VENTS Admin.');
@@ -224,22 +310,29 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
       }
     } catch (e: any) {
       // Network failure: the key is kept, so retrying cannot send a second transfer.
-      setPayError(`${e?.message || 'Network error'}. Nothing new is sent if you retry; check Reconcile first.`);
-    } finally { inFlight.current = false; setBusyId(null); await load(); }
+      setPayError(`${e?.message || 'Network error'}. Nothing new is sent if you retry; use Check with Paystack first.`);
+    } finally { inFlight.current = false; setBusyId(null); await load({ quiet: true }); }
   };
   const submitReject = () => {
     const r = rejectRow; const reason = rejectReason.trim(); if (!r || !reason) return;
     setRejectRow(null); setRejectReason('');
     run(r.request_id, async () => {
-      const { data } = await supabase.auth.getSession();
-      const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token}` },
-        body: JSON.stringify({ action: 'reject', request_id: r.request_id, reason }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Reject failed');
+      await rejectPayout(r.request_id, reason);
       notifyByEmail('payout', r.request_id, 'rejected', reason);
     }, 'Rejected. The money is back in the user\'s available balance and they were told why.');
+  };
+  const submitCancel = () => {
+    const r = cancelRow; const reason = cancelReason.trim(); if (!r || !reason) return;
+    setCancelRow(null); setCancelReason('');
+    run(r.request_id, () => cancelProcessingPayout(r.request_id, reason),
+      'Cancelled. Nothing was sent to Paystack; the money is back in the user\'s available balance.');
+  };
+  const checkPaystack = (r: PayoutRequest) => {
+    run(r.request_id, async () => reconcileOutcomeText(await reconcilePayout(r.request_id)), 'Checked with Paystack.');
+  };
+  const copyReference = async (r: PayoutRequest) => {
+    try { await navigator.clipboard.writeText(r.withdrawal_reference); flash(true, `Reference ${r.withdrawal_reference} copied.`); }
+    catch { flash(false, `Copy failed. The reference is ${r.withdrawal_reference}.`); }
   };
 
   if (unavailable) {
@@ -250,12 +343,13 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
     const v = overview?.stages?.[s as keyof PayoutOverview['stages']];
     return { count: a.count + (v?.count || 0), amount: a.amount + (Number(v?.amount_kobo) || 0) };
   }, { count: 0, amount: 0 });
+  const isRoot = !!overview?.is_vents_admin;
 
   return (
-    <div data-testid="payout-requests" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+    <div data-testid="payout-requests" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, maxWidth: '100%' }}>
       {overview && (
         <div data-testid="payout-overview" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 8 }}>
             <div style={{ background: 'rgba(251,191,36,.1)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 12, padding: '10px 14px' }}>
               <p style={{ margin: 0, fontSize: 11, color: adminTheme.amber }}>Outstanding withdrawals</p>
               <p data-testid="payout-outstanding" style={{ margin: '2px 0 0', fontSize: 19, fontWeight: 800, color: adminTheme.amber }}>{fmt(overview.outstanding_kobo)}</p>
@@ -270,7 +364,7 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
               <p data-testid="payout-paid-total" style={{ margin: '2px 0 0', fontSize: 17, fontWeight: 800, color: adminTheme.green }}>{fmt(overview.paid_kobo)}</p>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(120px, 100%), 1fr))', gap: 6 }}>
             {OVERVIEW_TILES.map((t) => {
               const v = stageSum(t.stages);
               return (
@@ -284,21 +378,22 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
           </div>
           <p style={{ margin: 0, fontSize: 10.5, color: adminTheme.textFainter }}>
             Computed by the server over every withdrawal at {when(overview.computed_at)}.
-            {overview.viewer_tier === 'root' ? ' You are the VENTS Admin: you approve and pay.' : overview.viewer_tier === 'sub' ? ' Sub-admin: you can review and forward; only the VENTS Admin pays.' : ' Admin: you can review, forward and reject; only the VENTS Admin pays.'}
+            {overview.viewer_tier === 'root' ? ' You are the VENTS Admin: you approve and pay.' : overview.viewer_tier === 'sub' ? ' Sub-admin: you can review, forward and recommend rejection; only the VENTS Admin pays.' : ' Admin: you can review, forward and reject; only the VENTS Admin pays.'}
           </p>
         </div>
       )}
 
-      {overview?.is_vents_admin && <PinPanel status={pinStatus} onChanged={() => { flash(true, 'Admin Payout PIN saved. You were notified.'); load(); }} />}
-      {msg && <div data-testid="payout-message" style={{ fontSize: 12.5, color: msg.ok ? adminTheme.green : adminTheme.red }}>{msg.text}</div>}
+      {isRoot && <PinPanel status={pinStatus} onChanged={() => { flash(true, 'Admin Payout PIN saved. You were notified.'); load({ quiet: true }); }} />}
+      {msg && <div data-testid="payout-message" role="status" style={{ fontSize: 12.5, color: msg.ok ? adminTheme.green : adminTheme.red }}>{msg.text}</div>}
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {(['open', 'closed', 'all'] as const).map((s) => (
-          <button key={s} data-testid={`payout-scope-${s}`} onClick={() => setScope(s)}
-            style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12, background: scope === s ? 'rgba(96,165,250,.15)' : adminTheme.panelAlt, color: scope === s ? adminTheme.blue : adminTheme.textFaint }}>
+          <button key={s} type="button" data-testid={`payout-scope-${s}`} aria-pressed={scope === s} onClick={() => setScope(s)}
+            style={{ minHeight: 36, padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12, background: scope === s ? 'rgba(96,165,250,.15)' : adminTheme.panelAlt, color: scope === s ? adminTheme.blue : adminTheme.textFaint }}>
             {s === 'open' ? 'Open' : s === 'closed' ? 'Closed' : 'All'}
           </button>
         ))}
+        <span data-testid="payout-order-note" style={{ fontSize: 11, color: adminTheme.textFaint }}>Newest first</span>
       </div>
 
       {loadError && <div style={{ background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: '10px 14px', color: adminTheme.red, fontSize: 12 }}>{loadError}</div>}
@@ -310,70 +405,125 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
         const info = stageInfo(r.stage);
         const tone = STAGE_TONE_COLORS[info.tone];
         const busy = busyId === r.request_id || payoutsDisabled;
+        const bankOk = r.bank_account_active && r.account_verified && !r.bank_problem;
+        const problem = bankProblemText(r.bank_problem ?? (r.status === 'pending' && !(r.bank_account_active && r.account_verified) ? (!r.bank_account_active ? 'inactive' : 'unverified') : null));
+        const finalNote = FINAL_NOTE[r.status];
+        const canBankChange = r.can_request_bank_change ?? (r.status === 'pending' && !r.approved_by && (r.can_reject || isRoot));
+        const anyAction = r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject || r.can_reconcile || r.can_cancel || canBankChange;
+        const showAllHistory = !!expanded[r.request_id];
+        const reviews = showAllHistory ? r.reviews : r.reviews.slice(-2);
         return (
-          <div key={r.request_id} data-testid={`payout-card-${r.request_id}`} style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, overflowWrap: 'anywhere' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ minWidth: 0 }}>
+          <article key={r.request_id} data-testid={`payout-card-${r.request_id}`} aria-label={`Withdrawal ${fmt(r.amount_kobo)} by ${r.organizer_name || 'user'}`}
+            style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '14px 14px 12px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', border: problem ? '1px solid rgba(248,113,113,.35)' : '1px solid transparent' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: adminTheme.textStrong }}>{r.organizer_name || r.organizer_id.slice(0, 8)}</p>
                 <p style={{ margin: '2px 0 0', fontSize: 11, color: adminTheme.textMuted }}>{r.organizer_email}{r.organizer_phone ? ` · ${r.organizer_phone}` : ''}</p>
               </div>
-              <span data-testid={`payout-stage-${r.request_id}`} style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: tone.fg, background: tone.bg, borderRadius: 6, padding: '3px 8px', textAlign: 'right' }}>{info.admin.toUpperCase()}</span>
+              <span data-testid={`payout-stage-${r.request_id}`} style={{ flexShrink: 0, maxWidth: '100%', fontSize: 10.5, fontWeight: 700, color: tone.fg, background: tone.bg, borderRadius: 6, padding: '3px 8px' }}>{info.admin.toUpperCase()}</span>
             </div>
-            <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: adminTheme.accentFrom }}>{fmt(r.amount_kobo)}</p>
-            <p data-testid={`payout-bank-${r.request_id}`} style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted }}>
-              {r.bank_name || 'Bank'} · {r.account_number || r.account_number_masked || '—'} · {r.account_name || 'name unknown'}
-              {' · '}
-              <span style={{ color: r.bank_account_active && r.account_verified ? adminTheme.green : adminTheme.red }}>
-                {r.bank_account_active && r.account_verified ? 'Paystack-verified account' : 'account inactive or unverified'}
-              </span>
-            </p>
-            <p style={{ margin: 0, fontSize: 11, color: adminTheme.textFaint }}>
-              Requested {when(r.created_at)} · ref <span style={{ fontFamily: 'monospace' }}>{r.withdrawal_reference}</span>
-              {r.wallet_balance_kobo !== null ? ` · wallet ${fmt(r.wallet_balance_kobo)} available, ${fmt(r.wallet_pending_kobo)} pending` : ''}
-            </p>
-            {r.next_action && <p data-testid={`payout-next-${r.request_id}`} style={{ margin: 0, fontSize: 11.5, color: adminTheme.blue }}>{NEXT_ACTION[r.next_action] || r.next_action}</p>}
+            <p data-testid={`payout-amount-${r.request_id}`} style={{ margin: 0, fontSize: 22, fontWeight: 800, color: adminTheme.accentFrom }}>{fmt(r.amount_kobo)}</p>
 
-            <div data-testid={`payout-history-${r.request_id}`} style={{ display: 'flex', flexDirection: 'column', gap: 3, borderLeft: `2px solid ${adminTheme.border}`, paddingLeft: 8, marginTop: 2 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(170px, 100%), 1fr))', gap: '8px 14px' }}>
+              <Detail label="Bank account" testId={`payout-bank-${r.request_id}`}>
+                {r.bank_name || 'Bank'} · {r.account_number || r.account_number_masked || '—'}<br />
+                <span style={{ color: adminTheme.textMuted }}>{r.account_name || 'name unknown'}</span>
+              </Detail>
+              <Detail label="Verification" testId={`payout-verification-${r.request_id}`}>
+                <span style={{ color: bankOk ? adminTheme.green : adminTheme.red, fontWeight: 700 }}>
+                  {bankOk ? '✓ Active · Paystack-verified'
+                    : r.bank_problem === 'missing' ? '✗ No bank account'
+                    : r.bank_problem === 'changed_since_approval' ? '✗ Changed since approval'
+                    : !r.bank_account_active ? '✗ Inactive account' : '✗ Not verified by Paystack'}
+                </span>
+              </Detail>
+              <Detail label="Requested" testId={`payout-date-${r.request_id}`}>{when(r.created_at)}</Detail>
+              <Detail label="Reference" testId={`payout-ref-${r.request_id}`}><span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.withdrawal_reference}</span></Detail>
+              <Detail label="Wallet balance" testId={`payout-wallet-${r.request_id}`}>
+                {r.wallet_balance_kobo !== null ? <>{fmt(r.wallet_balance_kobo)} available<br /><span style={{ color: adminTheme.textMuted }}>{fmt(r.wallet_pending_kobo)} pending (includes this request while open)</span></> : '—'}
+              </Detail>
+              {r.next_action && <Detail label="Next step" testId={`payout-next-${r.request_id}`}><span style={{ color: adminTheme.blue }}>{NEXT_ACTION[r.next_action] || r.next_action}</span></Detail>}
+            </div>
+
+            {problem && (
+              <div data-testid={`payout-bank-problem-${r.request_id}`} role="alert" style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: adminTheme.red, lineHeight: 1.45 }}>
+                <b>Transfer blocked.</b> {problem}{' '}
+                <span style={{ color: adminTheme.textMuted }}>
+                  {r.can_reject ? 'You can reject it (the money returns to the user) or move it to another verified account of the same user.'
+                    : r.can_review ? 'You can recommend rejection or request a move to another verified account; the VENTS Admin decides.'
+                    : 'Nothing will be sent until this is fixed.'}
+                </span>
+              </div>
+            )}
+
+            <div data-testid={`payout-history-${r.request_id}`} style={{ display: 'flex', flexDirection: 'column', gap: 4, borderLeft: `2px solid ${adminTheme.border}`, paddingLeft: 8 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', color: adminTheme.textFaint, textTransform: 'uppercase' }}>Review history</span>
               {r.reviews.length === 0 ? (
                 <span style={{ fontSize: 11.5, color: adminTheme.textFaint }}>No review (optional)</span>
-              ) : r.reviews.map((v, i) => (
+              ) : reviews.map((v, i) => (
                 <span key={i} style={{ fontSize: 11.5, color: v.current ? adminTheme.text : adminTheme.textFaint }}>
                   <b>{v.reviewer_name}</b> ({tierLabel(v.reviewer_tier)}) {v.decision === 'forwarded' ? 'forwarded to VENTS Admin' : 'recommends rejection'} · {when(v.created_at)}
                   {!v.current ? ' · outdated (amount or bank changed)' : ''}
                   <br /><span style={{ color: adminTheme.textMuted }}>“{v.note}”</span>
                 </span>
               ))}
+              {r.reviews.length > 2 && (
+                <button type="button" data-testid={`payout-history-toggle-${r.request_id}`} onClick={() => setExpanded((e) => ({ ...e, [r.request_id]: !e[r.request_id] }))}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: '4px 0', color: adminTheme.blue, fontSize: 11.5, cursor: 'pointer' }}>
+                  {showAllHistory ? 'Show latest only' : `Show all ${r.reviews.length} reviews`}
+                </button>
+              )}
               {r.approved_by && (
                 <span data-testid={`payout-approval-${r.request_id}`} style={{ fontSize: 11.5, color: adminTheme.text }}>
-                  Approved for payment by <b>{r.approved_by_name || 'VENTS Admin'}</b> · {when(r.approved_at)}{!r.approval_current ? ' · bank changed since' : ''}
+                  Approved for payment by <b>{r.approved_by_name || 'VENTS Admin'}</b>{r.approved_at ? ` · ${when(r.approved_at)}` : ''}{!r.approval_current ? ' · bank changed since' : ''}
                 </span>
               )}
               {r.authorized_at && (
-                <span style={{ fontSize: 11.5, color: adminTheme.text }}>PIN-authorized by <b>{r.authorized_by_name || 'VENTS Admin'}</b> · {when(r.authorized_at)}</span>
+                <span style={{ fontSize: 11.5, color: adminTheme.text }}>PIN-authorized by <b>{r.authorized_by_name || 'VENTS Admin'}</b>{r.authorized_at ? ` · ${when(r.authorized_at)}` : ''}</span>
               )}
               {r.admin_note && r.status !== 'pending' && <span style={{ fontSize: 11.5, color: adminTheme.red }}>Reason: {r.admin_note}</span>}
             </div>
 
             {r.pin_required && <p style={{ margin: 0, fontSize: 11.5, color: adminTheme.amber }}>Payment needs the VENTS Admin's 10-digit Admin Payout PIN.</p>}
-            {r.action_note && <p data-testid={`payout-note-${r.request_id}`} style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted }}>{r.action_note}</p>}
 
-            {(r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject) && (
-              <div data-testid={`payout-actions-${r.request_id}`} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-                {r.can_review && <ActionButton testId={`payout-review-${r.request_id}`} label="Review" tone="neutral" disabled={busy} onClick={() => { setReviewRow(r); setReviewDecision('forward'); setReviewNote(''); }} />}
-                {r.can_approve && <ActionButton testId={`payout-approve-${r.request_id}`} label="Approve for Payment" tone="blue" disabled={busy} onClick={() => { setApproveRow(r); setApproveTyped(''); }} />}
-                {r.can_authorize_pay && <ActionButton testId={`payout-pay-${r.request_id}`} label="Authorize & Pay" tone="green" disabled={busy} onClick={() => { setPayRow(r); setPayPin(''); setPayError(null); payKey.current = null; }} />}
-                {r.can_reject && <ActionButton testId={`payout-reject-${r.request_id}`} label="Reject" tone="red" disabled={busy} onClick={() => { setRejectRow(r); setRejectReason(''); }} />}
-              </div>
-            )}
-            {r.status === 'pending' && !r.approved_by && (r.can_reject || overview?.is_vents_admin) && (
-              <button data-testid={`withdrawal-reassign-toggle-${r.request_id}`} onClick={() => setReassignFor((v) => (v === r.request_id ? null : r.request_id))} style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', padding: 0, color: adminTheme.textMuted, fontSize: 11.5, textDecoration: 'underline', cursor: 'pointer' }}>
-                {reassignFor === r.request_id ? 'Hide' : 'Move to another bank account'}
+            <footer data-testid={`payout-footer-${r.request_id}`} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${adminTheme.border}`, paddingTop: 10 }}>
+              {((problem ? null : r.action_note) || finalNote) && <p data-testid={`payout-note-${r.request_id}`} style={{ margin: 0, fontSize: 12, color: adminTheme.textMuted, lineHeight: 1.45 }}>{(problem ? null : r.action_note) || finalNote}</p>}
+              {anyAction ? (
+                <div data-testid={`payout-actions-${r.request_id}`} role="group" aria-label="Actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {r.can_review && <ActionButton testId={`payout-review-${r.request_id}`} label="Review" tone="neutral" disabled={busy} onClick={() => openReview(r)} />}
+                  {r.can_approve && <ActionButton testId={`payout-approve-${r.request_id}`} label="Approve for Payment" tone="blue" disabled={busy} onClick={() => { setApproveRow(r); setApproveTyped(''); }} />}
+                  {r.can_authorize_pay && <ActionButton testId={`payout-pay-${r.request_id}`} label="Authorize & Pay" tone="green" disabled={busy} onClick={() => { setPayRow(r); setPayPin(''); setPayError(null); payKey.current = null; }} />}
+                  {r.can_reconcile && <ActionButton testId={`payout-reconcile-${r.request_id}`} label={busyId === r.request_id ? 'Checking…' : 'Check with Paystack'} tone="blue" disabled={busyId === r.request_id} onClick={() => checkPaystack(r)} />}
+                  {canBankChange && <ActionButton testId={`withdrawal-reassign-toggle-${r.request_id}`} label={reassignFor === r.request_id ? 'Hide bank change' : 'Move to another bank account'} tone="amber" onClick={() => setReassignFor((v) => (v === r.request_id ? null : r.request_id))} />}
+                  {r.can_cancel && <ActionButton testId={`payout-cancel-${r.request_id}`} label="Cancel (never sent)" tone="red" disabled={busy} onClick={() => { setCancelRow(r); setCancelReason(''); }} />}
+                  {r.can_reject && <ActionButton testId={`payout-reject-${r.request_id}`} label="Reject" tone="red" disabled={busy} onClick={() => { setRejectRow(r); setRejectReason(''); }} />}
+                </div>
+              ) : (
+                <p data-testid={`payout-no-actions-${r.request_id}`} style={{ margin: 0, fontSize: 11.5, color: adminTheme.textFaint }}>
+                  {finalNote ? 'No actions: this request is closed.' : r.status === 'processing' ? 'No actions for your role while Paystack processes it.' : 'No actions for your role on this request.'}
+                </p>
+              )}
+              {payoutsDisabled && (r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject || r.can_cancel) && <p style={{ margin: 0, fontSize: 11.5, color: adminTheme.red }}>Payouts are paused platform-wide (kill switch): these buttons are disabled until it is turned off.</p>}
+              <button type="button" data-testid={`payout-copy-ref-${r.request_id}`} onClick={() => copyReference(r)}
+                style={{ alignSelf: 'flex-start', minHeight: 32, background: 'none', border: 'none', padding: '4px 0', color: adminTheme.textMuted, fontSize: 11.5, textDecoration: 'underline', cursor: 'pointer' }}>
+                Copy reference
               </button>
-            )}
-            {reassignFor === r.request_id && <WithdrawalReassignForm requestId={r.request_id} organizerId={r.organizer_id} />}
-          </div>
+              {reassignFor === r.request_id && <WithdrawalReassignForm requestId={r.request_id} organizerId={r.organizer_id} />}
+            </footer>
+          </article>
         );
       })}
+
+      {rows.length > 0 && (hasMore ? (
+        <button type="button" data-testid="payout-load-more" onClick={loadMore} disabled={loadingMore}
+          style={{ minHeight: 44, background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 10, color: adminTheme.text, fontWeight: 700, fontSize: 13, cursor: loadingMore ? 'wait' : 'pointer' }}>
+          {loadingMore ? 'Loading…' : `Load ${PAYOUT_PAGE_SIZE} older requests`}
+        </button>
+      ) : (
+        <p data-testid="payout-list-end" style={{ margin: 0, textAlign: 'center', fontSize: 11, color: adminTheme.textFainter }}>
+          {paging ? `All ${rows.length} ${scope === 'all' ? '' : scope + ' '}request${rows.length === 1 ? '' : 's'} shown.` : `Showing the newest ${rows.length}. Older pages need the 0214 database update.`}
+        </p>
+      ))}
 
       {reviewRow && (
         <Modal title="Review withdrawal" onClose={() => setReviewRow(null)} testId="payout-review-modal">
@@ -383,17 +533,25 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
           </p>
           <label style={labelStyle}>Decision</label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {(['forward', 'recommend_reject'] as const).map((d) => (
-              <button key={d} data-testid={`payout-review-decision-${d}`} onClick={() => setReviewDecision(d)}
-                style={{ flex: '1 1 140px', padding: 9, borderRadius: 10, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, border: `1px solid ${reviewDecision === d ? adminTheme.accentSoftBorder : adminTheme.border}`, background: reviewDecision === d ? adminTheme.accentSoftBg : 'transparent', color: adminTheme.text }}>
-                {d === 'forward' ? 'Forward to VENTS Admin' : 'Recommend rejection'}
-              </button>
-            ))}
+            {(['forward', 'recommend_reject'] as const).map((d) => {
+              const blocked = d === 'forward' && reviewRow.can_forward === false;
+              return (
+                <button key={d} type="button" data-testid={`payout-review-decision-${d}`} onClick={() => !blocked && setReviewDecision(d)} disabled={blocked}
+                  style={{ flex: '1 1 140px', minHeight: 44, padding: 9, borderRadius: 10, cursor: blocked ? 'not-allowed' : 'pointer', fontSize: 12.5, fontWeight: 700, border: `1px solid ${reviewDecision === d ? adminTheme.accentSoftBorder : adminTheme.border}`, background: reviewDecision === d ? adminTheme.accentSoftBg : 'transparent', color: adminTheme.text, opacity: blocked ? 0.45 : 1 }}>
+                  {d === 'forward' ? 'Forward to VENTS Admin' : 'Recommend rejection'}
+                </button>
+              );
+            })}
           </div>
+          {reviewRow.can_forward === false && (
+            <p data-testid="payout-review-forward-blocked" style={{ margin: '8px 0 0', fontSize: 11.5, color: adminTheme.red, lineHeight: 1.45 }}>
+              It cannot be forwarded: {bankProblemText(reviewRow.bank_problem) || 'the bank account is inactive or not verified by Paystack.'}
+            </p>
+          )}
           <label style={labelStyle} htmlFor="payout-review-note">Review notes (required)</label>
           <textarea id="payout-review-note" data-testid="payout-review-note" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={3} maxLength={1000} style={{ ...inputStyle, resize: 'vertical' }} placeholder="What you checked: beneficiary, bank account, amount, history" />
           <button data-testid="payout-review-submit" onClick={submitReview} disabled={reviewNote.trim().length < 3}
-            style={{ marginTop: 12, width: '100%', background: adminTheme.accentTo, border: 'none', borderRadius: 10, padding: 11, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: reviewNote.trim().length < 3 ? 0.5 : 1 }}>
+            style={{ marginTop: 12, width: '100%', minHeight: 44, background: adminTheme.accentTo, border: 'none', borderRadius: 10, padding: 11, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: reviewNote.trim().length < 3 ? 0.5 : 1 }}>
             Submit review
           </button>
         </Modal>
@@ -409,7 +567,7 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
           <label style={labelStyle} htmlFor="payout-approve-typed">Type APPROVE to confirm</label>
           <input id="payout-approve-typed" data-testid="payout-approve-typed" value={approveTyped} onChange={(e) => setApproveTyped(e.target.value)} placeholder="APPROVE" style={inputStyle} />
           <button data-testid="payout-approve-submit" onClick={submitApprove} disabled={approveTyped.trim().toUpperCase() !== 'APPROVE'}
-            style={{ marginTop: 12, width: '100%', background: adminTheme.blue, border: 'none', borderRadius: 10, padding: 11, color: '#06101f', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: approveTyped.trim().toUpperCase() !== 'APPROVE' ? 0.5 : 1 }}>
+            style={{ marginTop: 12, width: '100%', minHeight: 44, background: adminTheme.blue, border: 'none', borderRadius: 10, padding: 11, color: '#06101f', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: approveTyped.trim().toUpperCase() !== 'APPROVE' ? 0.5 : 1 }}>
             Approve for Payment
           </button>
         </Modal>
@@ -428,7 +586,7 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
             value={payPin} onChange={(e) => setPayPin(e.target.value.replace(/\D/g, ''))} style={{ ...inputStyle, letterSpacing: '0.3em', fontSize: 18 }} />
           {payError && <p data-testid="payout-pay-error" style={{ margin: '10px 0 0', fontSize: 12, color: adminTheme.red }}>{payError}</p>}
           <button data-testid="payout-pay-submit" onClick={submitPay} disabled={payPin.length !== ADMIN_PIN_LENGTH || busyId === payRow.request_id}
-            style={{ marginTop: 12, width: '100%', background: adminTheme.green, border: 'none', borderRadius: 10, padding: 11, color: '#04150e', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: payPin.length !== ADMIN_PIN_LENGTH ? 0.5 : 1 }}>
+            style={{ marginTop: 12, width: '100%', minHeight: 44, background: adminTheme.green, border: 'none', borderRadius: 10, padding: 11, color: '#04150e', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: payPin.length !== ADMIN_PIN_LENGTH ? 0.5 : 1 }}>
             {busyId === payRow.request_id ? 'Authorizing…' : 'Authorize & Pay'}
           </button>
         </Modal>
@@ -442,8 +600,23 @@ export function PayoutRequestsPanel({ payoutsDisabled }: { payoutsDisabled: bool
           <label style={labelStyle} htmlFor="payout-reject-reason">Reason (shown to the user)</label>
           <textarea id="payout-reject-reason" data-testid="payout-reject-reason" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} maxLength={500} style={{ ...inputStyle, resize: 'vertical' }} />
           <button data-testid="payout-reject-submit" onClick={submitReject} disabled={!rejectReason.trim()}
-            style={{ marginTop: 12, width: '100%', background: adminTheme.red, border: 'none', borderRadius: 10, padding: 11, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: rejectReason.trim() ? 1 : 0.5 }}>
+            style={{ marginTop: 12, width: '100%', minHeight: 44, background: adminTheme.red, border: 'none', borderRadius: 10, padding: 11, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: rejectReason.trim() ? 1 : 0.5 }}>
             Reject
+          </button>
+        </Modal>
+      )}
+
+      {cancelRow && (
+        <Modal title="Cancel this withdrawal?" onClose={() => setCancelRow(null)} testId="payout-cancel-modal">
+          <p style={{ margin: 0, fontSize: 12.5, color: adminTheme.textMuted, lineHeight: 1.5 }}>
+            It is stuck in Processing but never reached Paystack (no transfer code or reference). {fmt(cancelRow.amount_kobo)} goes back to {cancelRow.organizer_name || 'the user'}'s available balance.
+            The server refuses this if a Paystack transfer could exist; then use Check with Paystack.
+          </p>
+          <label style={labelStyle} htmlFor="payout-cancel-reason">Reason (shown to the user)</label>
+          <textarea id="payout-cancel-reason" data-testid="payout-cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3} maxLength={500} style={{ ...inputStyle, resize: 'vertical' }} />
+          <button data-testid="payout-cancel-submit" onClick={submitCancel} disabled={!cancelReason.trim()}
+            style={{ marginTop: 12, width: '100%', minHeight: 44, background: adminTheme.red, border: 'none', borderRadius: 10, padding: 11, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: cancelReason.trim() ? 1 : 0.5 }}>
+            Cancel withdrawal
           </button>
         </Modal>
       )}

@@ -22,7 +22,9 @@ export function AdminMobileNav({ activeView, onNavigate, onMore, moreOpen }: Adm
         left: 0,
         right: 0,
         bottom: 0,
-        height: 60,
+        // 60px of tabs plus the home-indicator inset (border-box: the inset
+        // padding must be added to the height, not taken out of it).
+        height: 'calc(60px + env(safe-area-inset-bottom))',
         background: adminTheme.panelSidebar,
         borderTop: `1px solid ${adminTheme.borderSoft}`,
         display: 'flex',

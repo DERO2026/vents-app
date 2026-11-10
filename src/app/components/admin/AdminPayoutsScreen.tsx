@@ -12,9 +12,12 @@ import { apiUrl } from '../../../lib/apiBase';
 import { withTimeoutFallback } from '../../../lib/withTimeoutFallback';
 import { Sentry } from '../../../lib/sentry';
 
-// isSuperAdmin is no longer used for payouts: every payout button comes from
-// the server's can_* columns for THIS admin (0213). Kept for callers.
-export function AdminPayoutsScreen(_props: { isSuperAdmin?: boolean } = {}) {
+// Every withdrawal button comes from the server's can_* columns for THIS
+// admin (0213/0214). isSuperAdmin (root or role admin) only decides whether
+// the screen-wide "Reconcile Processing" is shown: it reads
+// admin_list_processing_payouts, which refuses sub-admins, so a sub-admin
+// would only ever get an error from it.
+export function AdminPayoutsScreen({ isSuperAdmin = true }: { isSuperAdmin?: boolean } = {}) {
   const [wallets, setWallets] = useState<any[]>([]);
   // 0203: held earnings of one organizer/provider, opened from the wallets list.
   const [holdsFor, setHoldsFor] = useState<string | null>(null);
@@ -29,6 +32,9 @@ export function AdminPayoutsScreen(_props: { isSuperAdmin?: boolean } = {}) {
   const [activeSection, setActiveSection] = useState<'requests' | 'wallets' | 'member-wallets'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  // Bumped after a Reconcile so the request list re-reads (it used to reload
+  // only the wallets, leaving resolved requests shown as Processing).
+  const [requestsRefresh, setRequestsRefresh] = useState(0);
   const [checkingExceptions, setCheckingExceptions] = useState(false);
   const [showAdjustment, setShowAdjustment] = useState(false);
   const [exceptionReport, setExceptionReport] = useState<any[] | null>(null);
@@ -143,9 +149,10 @@ export function AdminPayoutsScreen(_props: { isSuperAdmin?: boolean } = {}) {
       const res = await fetch(apiUrl('/api/v1/wallet/reconcile-payouts'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Reconcile failed');
-      const resolved = (json.results || []).filter((r: any) => r.outcome === 'completed' || r.outcome === 'failed').length;
-      flash(true, `Checked ${json.checked ?? 0} processing payout(s) against Paystack — ${resolved} resolved.`);
-      await load();
+      const resolved = (json.results || []).filter((r: any) => ['completed', 'failed', 'reversed', 'released_to_pending'].includes(r.outcome)).length;
+      flash(true, `Checked ${json.checked ?? 0} processing payout(s) against Paystack — ${resolved} resolved.${json.deferred_count ? ` ${json.deferred_count} more left for the next run.` : ''}`);
+      setRequestsRefresh((n) => n + 1);
+      if (activeSection !== 'requests') await load();
     } catch (e: any) { flash(false, e.message || 'Reconcile failed'); } finally { setReconciling(false); }
   };
 
@@ -203,9 +210,9 @@ export function AdminPayoutsScreen(_props: { isSuperAdmin?: boolean } = {}) {
             {s === 'requests' ? 'Requests' : s === 'wallets' ? 'Organizer Wallets' : 'User Wallets'}
           </button>
         ))}
-        <button onClick={handleReconcile} disabled={reconciling} title="Poll Paystack directly for any payout stuck in Processing and resolve it" style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(96,165,250,.3)', cursor: reconciling ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(96,165,250,.1)', color: adminTheme.blue, opacity: reconciling ? 0.6 : 1 }}>
+        {isSuperAdmin && <button data-testid="payout-reconcile-all" onClick={handleReconcile} disabled={reconciling} title="Poll Paystack directly for any payout stuck in Processing and resolve it" style={{ padding: '6px 14px', minHeight: 36, borderRadius: 8, border: '1px solid rgba(96,165,250,.3)', cursor: reconciling ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(96,165,250,.1)', color: adminTheme.blue, opacity: reconciling ? 0.6 : 1 }}>
           {reconciling ? 'Reconciling…' : '⟳ Reconcile Processing'}
-        </button>
+        </button>}
         <button data-testid="payout-exceptions-check" onClick={handleCheckExceptions} disabled={checkingExceptions} title="Ask Paystack about requests that ended cancelled, failed or rejected while holding a transfer code. Changes nothing." style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(251,191,36,.3)', cursor: checkingExceptions ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(251,191,36,.1)', color: '#FBBF24', opacity: checkingExceptions ? 0.6 : 1 }}>
           {checkingExceptions ? 'Checking…' : 'Check payout exceptions'}
         </button>
@@ -317,7 +324,7 @@ export function AdminPayoutsScreen(_props: { isSuperAdmin?: boolean } = {}) {
           );
         })
       ) : (
-        <PayoutRequestsPanel payoutsDisabled={payoutsDisabled} />
+        <PayoutRequestsPanel payoutsDisabled={payoutsDisabled} refreshSignal={requestsRefresh} />
       )}
 
     </div>
