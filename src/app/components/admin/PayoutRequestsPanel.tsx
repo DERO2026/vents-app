@@ -172,6 +172,8 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
   const [unavailable, setUnavailable] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [paging, setPaging] = useState(true);
+  // Backend without 0214: did the one capped read (500) return every row?
+  const [legacyCapped, setLegacyCapped] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pinStatus, setPinStatus] = useState<AdminPayoutPinStatus | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -222,6 +224,7 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
       setOverview(ov); setRows(sortNewestFirst(list)); setUnavailable(false);
       loadedCount.current = list.length;
       setPaging(supports);
+      setLegacyCapped(!supports && list.length >= 500);
       setHasMore(supports && list.length >= limit);
       if (ov.is_vents_admin) {
         fetchAdminPayoutPinStatus().then(setPinStatus, () => setPinStatus(null));
@@ -269,15 +272,18 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
     finally { inFlight.current = false; setBusyId(null); await load({ quiet: true }); }
   };
 
+  // 0214 sends can_forward; on 0213 it is the same rule admin_review_withdrawal
+  // applies: the bank account is active and has a Paystack recipient.
+  const forwardAllowed = (r: PayoutRequest) => r.can_forward ?? (r.bank_account_active && r.account_verified);
   const openReview = (r: PayoutRequest) => {
     setReviewRow(r); setReviewNote('');
-    setReviewDecision(r.can_forward === false ? 'recommend_reject' : 'forward');
+    setReviewDecision(forwardAllowed(r) ? 'forward' : 'recommend_reject');
   };
   const submitReview = () => {
     const r = reviewRow; if (!r) return;
     const note = reviewNote.trim();
     if (note.length < 3) return;
-    if (reviewDecision === 'forward' && r.can_forward === false) return;
+    if (reviewDecision === 'forward' && !forwardAllowed(r)) return;
     setReviewRow(null); setReviewNote('');
     run(r.request_id, () => reviewWithdrawal(r.request_id, r.amount_kobo, reviewDecision, note),
       reviewDecision === 'forward' ? 'Review recorded and forwarded to the VENTS Admin.' : 'Review recorded: rejection recommended to the VENTS Admin.');
@@ -344,6 +350,23 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
     return { count: a.count + (v?.count || 0), amount: a.amount + (Number(v?.amount_kobo) || 0) };
   }, { count: 0, amount: 0 });
   const isRoot = !!overview?.is_vents_admin;
+  const isFullAdmin = overview?.viewer_tier === 'root' || overview?.viewer_tier === 'admin';
+  // A backend without 0214 does not send can_reconcile / can_cancel /
+  // can_request_bank_change. Until 0214 is applied these mirror, from the
+  // row's own fields, exactly the rules 0214 computes (and the functions
+  // enforce): admin_list_processing_payouts (full admins),
+  // admin_cancel_processing_payout (0202: full admins, not paused, no
+  // transfer code or reference) and admin_request_withdrawal_bank_reassignment
+  // (0207: any admin, pending, unapproved, never sent, not their own). The
+  // server still refuses anything else.
+  const flagsFor = (r: PayoutRequest) => {
+    const own = /^This is your own withdrawal/.test(r.action_note || '');
+    return {
+      canReconcile: r.can_reconcile ?? (r.status === 'processing' && isFullAdmin),
+      canCancel: r.can_cancel ?? (r.status === 'processing' && isFullAdmin && !overview?.payouts_disabled && !r.paystack_reference && !r.transfer_started),
+      canBankChange: r.can_request_bank_change ?? (r.status === 'pending' && !r.approved_by && !r.paystack_reference && !r.transfer_started && !own),
+    };
+  };
 
   return (
     <div data-testid="payout-requests" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, maxWidth: '100%' }}>
@@ -408,8 +431,8 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
         const bankOk = r.bank_account_active && r.account_verified && !r.bank_problem;
         const problem = bankProblemText(r.bank_problem ?? (r.status === 'pending' && !(r.bank_account_active && r.account_verified) ? (!r.bank_account_active ? 'inactive' : 'unverified') : null));
         const finalNote = FINAL_NOTE[r.status];
-        const canBankChange = r.can_request_bank_change ?? (r.status === 'pending' && !r.approved_by && (r.can_reject || isRoot));
-        const anyAction = r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject || r.can_reconcile || r.can_cancel || canBankChange;
+        const { canReconcile, canCancel, canBankChange } = flagsFor(r);
+        const anyAction = r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject || canReconcile || canCancel || canBankChange;
         const showAllHistory = !!expanded[r.request_id];
         const reviews = showAllHistory ? r.reviews : r.reviews.slice(-2);
         return (
@@ -493,9 +516,9 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
                   {r.can_review && <ActionButton testId={`payout-review-${r.request_id}`} label="Review" tone="neutral" disabled={busy} onClick={() => openReview(r)} />}
                   {r.can_approve && <ActionButton testId={`payout-approve-${r.request_id}`} label="Approve for Payment" tone="blue" disabled={busy} onClick={() => { setApproveRow(r); setApproveTyped(''); }} />}
                   {r.can_authorize_pay && <ActionButton testId={`payout-pay-${r.request_id}`} label="Authorize & Pay" tone="green" disabled={busy} onClick={() => { setPayRow(r); setPayPin(''); setPayError(null); payKey.current = null; }} />}
-                  {r.can_reconcile && <ActionButton testId={`payout-reconcile-${r.request_id}`} label={busyId === r.request_id ? 'Checking…' : 'Check with Paystack'} tone="blue" disabled={busyId === r.request_id} onClick={() => checkPaystack(r)} />}
+                  {canReconcile && <ActionButton testId={`payout-reconcile-${r.request_id}`} label={busyId === r.request_id ? 'Checking…' : 'Check with Paystack'} tone="blue" disabled={busyId === r.request_id} onClick={() => checkPaystack(r)} />}
                   {canBankChange && <ActionButton testId={`withdrawal-reassign-toggle-${r.request_id}`} label={reassignFor === r.request_id ? 'Hide bank change' : 'Move to another bank account'} tone="amber" onClick={() => setReassignFor((v) => (v === r.request_id ? null : r.request_id))} />}
-                  {r.can_cancel && <ActionButton testId={`payout-cancel-${r.request_id}`} label="Cancel (never sent)" tone="red" disabled={busy} onClick={() => { setCancelRow(r); setCancelReason(''); }} />}
+                  {canCancel && <ActionButton testId={`payout-cancel-${r.request_id}`} label="Cancel (never sent)" tone="red" disabled={busy} onClick={() => { setCancelRow(r); setCancelReason(''); }} />}
                   {r.can_reject && <ActionButton testId={`payout-reject-${r.request_id}`} label="Reject" tone="red" disabled={busy} onClick={() => { setRejectRow(r); setRejectReason(''); }} />}
                 </div>
               ) : (
@@ -503,7 +526,7 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
                   {finalNote ? 'No actions: this request is closed.' : r.status === 'processing' ? 'No actions for your role while Paystack processes it.' : 'No actions for your role on this request.'}
                 </p>
               )}
-              {payoutsDisabled && (r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject || r.can_cancel) && <p style={{ margin: 0, fontSize: 11.5, color: adminTheme.red }}>Payouts are paused platform-wide (kill switch): these buttons are disabled until it is turned off.</p>}
+              {payoutsDisabled && (r.can_review || r.can_approve || r.can_authorize_pay || r.can_reject || canCancel) && <p style={{ margin: 0, fontSize: 11.5, color: adminTheme.red }}>Payouts are paused platform-wide (kill switch): these buttons are disabled until it is turned off.</p>}
               <button type="button" data-testid={`payout-copy-ref-${r.request_id}`} onClick={() => copyReference(r)}
                 style={{ alignSelf: 'flex-start', minHeight: 32, background: 'none', border: 'none', padding: '4px 0', color: adminTheme.textMuted, fontSize: 11.5, textDecoration: 'underline', cursor: 'pointer' }}>
                 Copy reference
@@ -521,7 +544,7 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
         </button>
       ) : (
         <p data-testid="payout-list-end" style={{ margin: 0, textAlign: 'center', fontSize: 11, color: adminTheme.textFainter }}>
-          {paging ? `All ${rows.length} ${scope === 'all' ? '' : scope + ' '}request${rows.length === 1 ? '' : 's'} shown.` : `Showing the newest ${rows.length}. Older pages need the 0214 database update.`}
+          {paging || !legacyCapped ? `All ${rows.length} ${scope === 'all' ? '' : scope + ' '}request${rows.length === 1 ? '' : 's'} shown.` : `Showing the newest ${rows.length}. Older pages need the 0214 database update.`}
         </p>
       ))}
 
@@ -534,7 +557,7 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
           <label style={labelStyle}>Decision</label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {(['forward', 'recommend_reject'] as const).map((d) => {
-              const blocked = d === 'forward' && reviewRow.can_forward === false;
+              const blocked = d === 'forward' && !forwardAllowed(reviewRow);
               return (
                 <button key={d} type="button" data-testid={`payout-review-decision-${d}`} onClick={() => !blocked && setReviewDecision(d)} disabled={blocked}
                   style={{ flex: '1 1 140px', minHeight: 44, padding: 9, borderRadius: 10, cursor: blocked ? 'not-allowed' : 'pointer', fontSize: 12.5, fontWeight: 700, border: `1px solid ${reviewDecision === d ? adminTheme.accentSoftBorder : adminTheme.border}`, background: reviewDecision === d ? adminTheme.accentSoftBg : 'transparent', color: adminTheme.text, opacity: blocked ? 0.45 : 1 }}>
@@ -543,7 +566,7 @@ export function PayoutRequestsPanel({ payoutsDisabled, refreshSignal = 0 }: { pa
               );
             })}
           </div>
-          {reviewRow.can_forward === false && (
+          {!forwardAllowed(reviewRow) && (
             <p data-testid="payout-review-forward-blocked" style={{ margin: '8px 0 0', fontSize: 11.5, color: adminTheme.red, lineHeight: 1.45 }}>
               It cannot be forwarded: {bankProblemText(reviewRow.bank_problem) || 'the bank account is inactive or not verified by Paystack.'}
             </p>
