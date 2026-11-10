@@ -145,3 +145,52 @@ Never create a second transfer for a request that is `processing`. Reconcile it.
   - `api/_lib/payoutApproval*.security.test.ts`
   - `api/_lib/adminPayoutPin.security.test.ts`
 - **UI test:** `src/app/components/admin/PayoutRequestsPanel.test.tsx`.
+
+## Production record (2026-11-10)
+
+**Pre-check (read-only):**
+- 9 pending withdrawals, 5,050,000 kobo (**₦50,500**, matching the old screen), 0 processing.
+- No open 0211 first approvals.
+- Admins: 1 full admin, who is the root account, and 2 sub-admins.
+
+**Backup:** run 42814532321, artifact `vents-db-backup-20261110T121759Z`, `restore_tables=105/105`, `restore_rows=105/105`.
+
+**Apply:**
+- 0213 was applied at 12:48:11 UTC, from PR #98's head commit `392b03e` (md5 `c9a2f2e3…`).
+- One transaction through `migration_fetch`, followed by `NOTIFY pgrst`.
+
+**After the apply (read-only):**
+- **Closed to `authenticated`:** the old claim (also closed to `project_admin`), `admin_approve_withdrawal` and `admin_first_approve_withdrawal`.
+- **New functions:** `admin_authorize_and_claim_payout` is open to `authenticated` only, not to `anon`.
+- **New tables** are closed to clients.
+- **Constraint:** `organizer_withdrawal_requests_approval_parties` replaced `organizer_withdrawal_requests_two_admins`.
+- **Real data:**
+  - all 23 withdrawal rows are byte-identical apart from the two new, empty columns;
+  - wallets, user wallets, the ledger (`organizer_transactions`) and user PINs are identical.
+
+**Production end-to-end run, rolled back,** as the real VENTS Admin plus test admin, sub-admin and organizer accounts:
+- **34 checks passed.** One expectation in the first run read the wrong-PIN counter in the same expression as the call, and Postgres evaluated it first. A separate re-check confirmed `wrong_pin` and `failed_attempts` going 0 → 1.
+- **PIN:**
+  - admin, sub-admin and signed-out callers are refused;
+  - the VENTS Admin is refused without a fresh password;
+  - a weak PIN is refused;
+  - a good PIN is created, stored as bcrypt cost 12, and its table is closed even to the VENTS Admin.
+- **Path A:**
+  - admin approval is refused, a sub-admin's payment is refused, and paying before approval is refused;
+  - the VENTS Admin approves directly;
+  - the old claim, the 0211 second approval, Admin Actions and a raw UPDATE are all closed;
+  - a wrong PIN is refused; the correct PIN claims;
+  - the same key again does not claim, and a new key finds the request already processing;
+  - the authorization is bound to the request;
+  - the fixed reference is used, and Paystack success gives paid.
+- **Path B:**
+  - a sub-admin reviews and forwards; the user sees only "pending review";
+  - a sub-admin cannot reject and sees only the masked account;
+  - the VENTS Admin approves and pays;
+  - Paystack failure gives failed, with the money back.
+- **Real data and totals:** every real withdrawal and wallet row was unchanged, and the overview total equals the real outstanding total.
+- **After the run:** 0 test users, 0 PINs, 0 authorizations, 0 reviews and 0 queued pushes; real rows unchanged.
+
+**Not done, by policy:**
+- The VENTS Admin's real PIN is not created. Only the owner can create it.
+- No real withdrawal was approved or paid.

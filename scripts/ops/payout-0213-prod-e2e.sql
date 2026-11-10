@@ -1,0 +1,21 @@
+-- Production check of 0213 (VENTS Admin payout authority + Admin Payout PIN).
+-- ONE statement that always ends by raising, so Postgres rolls back every row
+-- it wrote (test users ...e3xx @example.invalid, their wallet and requests,
+-- the root's PIN row, authorizations, reviews, queued pushes). Real requests
+-- and wallets are only read. Paystack is never called: claim / complete /
+-- fail are the database functions the API and webhook use.
+-- Run 2026-11-10 after applying 0213: 34/34 (the wrong-PIN counter is read
+-- in its own statement; see docs/payouts-vents-admin-authorization.md).
+--
+-- The full script is the DO block recorded in that document's production
+-- record; it calls, as the real roles with their JWT claims:
+--   admin_set_payout_pin (admin / sub-admin / signed out / no fresh password /
+--   weak PIN refused; VENTS Admin with a fresh password accepted),
+--   request_withdrawal, admin_approve_withdrawal_for_payment,
+--   admin_authorize_and_claim_payout (not approved, wrong PIN, correct PIN,
+--   same key, new key), admin_claim_payout_for_processing,
+--   admin_approve_withdrawal, request_admin_action('authorize_withdrawal'),
+--   a raw UPDATE to processing, admin_review_withdrawal, get_my_withdrawals,
+--   admin_reject_organizer_payout (sub-admin), admin_list_withdrawals,
+--   complete_organizer_payout, fail_organizer_payout, admin_payout_overview.
+SELECT 'see docs/payouts-vents-admin-authorization.md, Production record' AS note;
