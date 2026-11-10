@@ -11,8 +11,13 @@ const rpcCalls: { name: string; params: any }[] = [];
 let rpcResult: Record<string, (p: any) => any> = {};
 let rpcGate: Promise<void> | null = null;
 
+let earningsRow: any = { balance_kobo: 990000 };
 vi.mock('../../../lib/supabase', () => ({
   supabase: {
+    from: (table: string) => {
+      const q: any = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: table === 'organizer_wallets' ? earningsRow : null, error: null }) };
+      return q;
+    },
     rpc: async (name: string, params: any) => {
       rpcCalls.push({ name, params });
       if (rpcGate && name === 'transfer_wallet_funds') await rpcGate;
@@ -113,9 +118,34 @@ describe('two tabs in one screen', () => {
 });
 
 describe('Wallet Balance', () => {
+  it('mockup layout: title, Unified pill, two separate balance cards with Spendable / Withdrawable', async () => {
+    await render();
+    expect(q('wallet-card')!.textContent).toMatch(/^VENTS WalletUnified/);
+    expect(q('wallet-balance-card')!.textContent).toMatch(/Wallet Balance₦7,500Spendable/);
+    expect(q('wallet-earnings-card')!.textContent).toMatch(/Earnings₦9,900Withdrawable/);
+    expect(q('wallet-tab-balance')!.textContent).toBe('Wallet');
+    expect(q('wallet-tab-earnings')!.textContent).toBe('Earnings');
+    // the two balances are never added together anywhere
+    expect(container!.textContent).not.toMatch(/₦17,400/);
+  });
+
+  it('tapping the Earnings card switches to the Earnings tab (same screen)', async () => {
+    await render();
+    await click(q('wallet-earnings-card'));
+    expect(q('wallet-tab-earnings')!.getAttribute('aria-selected')).toBe('true');
+    expect(q('wallet-balance-card')).toBeTruthy();
+  });
+
+  it('someone with no earnings sees ₦0 withdrawable', async () => {
+    earningsRow = null;
+    await render();
+    expect(q('wallet-earnings-amount')!.textContent).toBe('₦0');
+    earningsRow = { balance_kobo: 990000 };
+  });
+
   it('shows only the spendable balance, explains it, and keeps VENTS Cents separate', async () => {
     await render();
-    expect(q('wallet-balance-amount')!.textContent).toBe('₦7,500.00');
+    expect(q('wallet-balance-amount')!.textContent).toBe('₦7,500');
     expect(q('wallet-balance-card')!.textContent).toMatch(/spend on VENTS tickets and services/);
     expect(q('wallet-balance-card')!.textContent).toMatch(/can't be withdrawn/);
     expect(q('wallet-vc-card')!.textContent).toMatch(/1,234 VC/);
@@ -143,25 +173,29 @@ describe('Wallet Balance', () => {
   it('history: every type has the right label, sign and colour; VC conversions are money in', async () => {
     await render();
     const amt = (id: string) => q(`wallet-txn-amount-${id}`)!.textContent;
-    expect(amt('d')).toBe('+₦5,000.00');
-    expect(amt('s')).toBe('−₦1,040.00');
-    expect(amt('r')).toBe('+₦1,040.00');
-    expect(amt('v')).toBe('+₦1,000.00');
-    expect(amt('i')).toBe('+₦2,500.00');
-    expect(amt('o')).toBe('−₦500.00');
-    expect(q('wallet-txn-s')!.textContent).toMatch(/Ticket purchase/);
-    expect(q('wallet-txn-b')!.textContent).toMatch(/Service booking/);
-    expect(q('wallet-txn-i')!.textContent).toMatch(/Money received · @bola/);
-    expect(q('wallet-txn-o')!.textContent).toMatch(/Money sent · @chi/);
-    expect(q('wallet-txn-d')!.textContent).toMatch(/Completed/);
+    expect(amt('d')).toBe('+₦5,000');
+    expect(amt('s')).toBe('−₦1,040');
+    expect(amt('r')).toBe('+₦1,040');
+    expect(amt('v')).toBe('+₦1,000');
+    expect(amt('i')).toBe('+₦2,500');
+    expect(amt('o')).toBe('−₦500');
   });
 
-  it('filters: money in, money out, transfers', async () => {
+  it('history rows: title and subtitle like the mockup; date and status are in the accessible label and the receipt', async () => {
     await render();
-    const ids = () => Array.from(container!.querySelectorAll('[data-testid^="wallet-txn-"]:not([data-testid^="wallet-txn-amount"])')).map((e) => e.getAttribute('data-testid')!.slice(11));
-    await click(q('wallet-filter-in')); expect(ids()).toEqual(['d', 'r', 'v', 'i']);
-    await click(q('wallet-filter-out')); expect(ids()).toEqual(['s', 'b', 'o']);
-    await click(q('wallet-filter-transfers')); expect(ids()).toEqual(['i', 'o']);
+    expect(q('wallet-txn-i')!.textContent).toMatch(/^Money receivedFrom @bola/);
+    expect(q('wallet-txn-o')!.textContent).toMatch(/^Money sentTo @chi/);
+    expect(q('wallet-txn-s')!.textContent).toMatch(/^Ticket purchaseWallet payment/);
+    expect(q('wallet-txn-b')!.textContent).toMatch(/^Service bookingWallet payment/);
+    expect(q('wallet-txn-d')!.textContent).toMatch(/^DepositAdded via Paystack/);
+    expect(q('wallet-txn-v')!.textContent).toMatch(/^VENTS Cents convertedAdded from VENTS Cents/);
+    expect(q('wallet-txn-i')!.getAttribute('aria-label')).toMatch(/plus ₦2,500, .*2026.*completed/);
+  });
+
+  it('kobo are never rounded away', async () => {
+    rpcResult.get_my_wallet = () => ({ data: [{ balance_kobo: 119050050 }], error: null });
+    await render();
+    expect(q('wallet-balance-amount')!.textContent).toBe('₦1,190,500.50');
   });
 
   it('a transfer receipt shows status, reference, counterparty and note from the server', async () => {

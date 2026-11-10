@@ -14,7 +14,7 @@
 // Both tabs stay mounted, so switching never reloads or resets either side
 // and each keeps its own scroll position.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Plus, Send, QrCode, ArrowDownLeft, ArrowUpRight, RefreshCw, ChevronRight, Coins, Info } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Send, Download, ArrowDownLeft, ArrowUpRight, Ticket, CalendarCheck, RotateCcw, Coins, Info, CircleDollarSign } from 'lucide-react';
 import { supabase, getAuthToken } from '../../../lib/supabase';
 import { apiUrl } from '../../../lib/apiBase';
 import { openPaystackPopup } from '../../../lib/paystack';
@@ -27,7 +27,7 @@ import { fetchTransferStatus, fetchTransferReceipt, formatNaira, PAY_TO_STORAGE_
 import { WalletScreen } from '../WalletScreen';
 import { SendMoneySheet } from './SendMoneySheet';
 import { ReceiveMoneySheet } from './ReceiveMoneySheet';
-import { Sheet, PrimaryButton, DetailRow, Notice, inputStyle, walletCard } from './walletUi';
+import { Sheet, PrimaryButton, DetailRow, Notice, inputStyle } from './walletUi';
 
 export type WalletTab = 'balance' | 'earnings';
 
@@ -53,12 +53,35 @@ interface WalletTxn {
 
 const PAGE = 50;
 const DEPOSIT_PRESETS_NAIRA = [1000, 2500, 5000, 10000, 25000];
-type Filter = 'all' | 'in' | 'out' | 'transfers';
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'All' }, { key: 'in', label: 'Money in' }, { key: 'out', label: 'Money out' }, { key: 'transfers', label: 'Transfers' },
-];
+
+// Mockup palette (black page, deep purple surfaces, lavender accents).
+const W = {
+  page: '#000000', cardBorder: '#2A2830', balanceCard: '#2A1B42', earningsCard: '#1B1A21',
+  lavender: '#B79BFF', green: '#4CAF50', greenPillBg: '#1F2A2E', greyPillBg: '#2C2B32', greyPillText: '#D6D3DC',
+  unifiedBg: '#0E2412', tabTrack: '#26183B', tabActive: '#6F42B8', sub: '#A9A5B2', divider: '#2B2931',
+};
+
+/** ₦1,190,500 for whole naira, ₦1,190,500.50 otherwise (the mockup's style; never rounds money). */
+export function formatNairaShort(kobo: number): string {
+  const n = (Math.abs(kobo) / 100).toLocaleString('en-NG', { minimumFractionDigits: kobo % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+  return `₦${n}`;
+}
 
 const when = (t: string) => new Date(t).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+
+/** The second line of a history row. */
+export function walletTxnSubtitle(t: Pick<WalletTxn, 'type' | 'reference_id' | 'metadata'>): string {
+  const who = t.metadata?.counterparty_username ? `@${t.metadata.counterparty_username}` : null;
+  switch (t.type) {
+    case 'transfer_in': return who ? `From ${who}` : 'From a VENTS user';
+    case 'transfer_out': return who ? `To ${who}` : 'To a VENTS user';
+    case 'spend': return 'Wallet payment';
+    case 'deposit': return 'Added via Paystack';
+    case 'refund': return 'Returned to your wallet';
+    case 'vc_conversion': return 'Added from VENTS Cents';
+    default: return 'VENTS Wallet';
+  }
+}
 
 /** What kind of movement a ledger row is, in plain words. */
 export function walletTxnKindLabel(t: Pick<WalletTxn, 'type' | 'reference_id'>): string {
@@ -89,7 +112,9 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
+  const [earningsKobo, setEarningsKobo] = useState<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const [transferStatus, setTransferStatus] = useState<TransferStatus | null>(null);
   const [vc, setVc] = useState<number | null>(null);
 
@@ -130,6 +155,12 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   }, [currentUser?.id, loadStatus]);
 
   useEffect(() => { void load(); }, [load]);
+  // Withdrawable earnings for the summary card (own row only, RLS); 0 for people who don't earn.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    Promise.resolve(supabase.from('organizer_wallets').select('balance_kobo').eq('organizer_id', currentUser.id).maybeSingle())
+      .then(({ data }: any) => setEarningsKobo(Number(data?.balance_kobo ?? 0)), () => setEarningsKobo(null));
+  }, [currentUser?.id]);
   useEffect(() => {
     if (!currentUser?.id) return;
     getVcBalance(currentUser.id).then((r) => setVc(r ? r.spendable : null), () => setVc(null));
@@ -219,19 +250,18 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   };
 
   const transfersOn = !!transferStatus?.enabled;
-  const visible = txns.filter((t) => {
-    const d = walletTxnDirection(t.type);
-    if (filter === 'in') return d === 'in';
-    if (filter === 'out') return d === 'out';
-    if (filter === 'transfers') return t.type === 'transfer_in' || t.type === 'transfer_out';
-    return true;
-  });
+  // Switching tabs keeps the layout; if the user had scrolled below the tabs, the new tab starts at its top.
+  const selectTab = (next: WalletTab) => {
+    setTab(next);
+    const sc = scrollRef.current, tb = tabsRef.current;
+    if (sc && tb && sc.scrollTop > tb.offsetTop) sc.scrollTop = tb.offsetTop;
+  };
 
   const onTabKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
     const next: WalletTab = tab === 'balance' ? 'earnings' : 'balance';
-    setTab(next);
+    selectTab(next);
     (next === 'balance' ? balanceTabRef : earningsTabRef).current?.focus();
   };
 
@@ -239,130 +269,125 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
     const active = tab === key;
     return (
       <button ref={ref} type="button" role="tab" id={`wallet-tab-${key}`} aria-selected={active} aria-controls={`wallet-panel-${key}`}
-        tabIndex={active ? 0 : -1} data-testid={`wallet-tab-${key}`} onClick={() => setTab(key)} onKeyDown={onTabKey}
-        style={{ flex: 1, minHeight: 44, borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 14,
-          background: active ? 'linear-gradient(135deg, #8E5CF7 0%, #7B2FBE 100%)' : 'transparent',
-          color: active ? ventsColors.white : ventsColors.ink2, boxShadow: active ? '0 4px 18px rgba(142,92,247,0.35)' : 'none' }}>
+        tabIndex={active ? 0 : -1} data-testid={`wallet-tab-${key}`} onClick={() => selectTab(key)} onKeyDown={onTabKey}
+        style={{ flex: 1, minHeight: 44, borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 17, fontWeight: active ? 700 : 500,
+          background: active ? W.tabActive : 'transparent', color: active ? ventsColors.white : '#E6E1F0' }}>
         {label}
       </button>
     );
   };
 
   return (
-    <div data-testid="unified-wallet" style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden' }}>
-      {/* Header and tabs stay put while each panel scrolls on its own. */}
-      <div style={{ flexShrink: 0, padding: '12px 16px 10px', paddingTop: 'calc(12px + env(safe-area-inset-top))', background: ventsColors.bg, borderBottom: `1px solid ${ventsColors.divider}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <button type="button" onClick={onBack} aria-label="Back"
-            style={{ width: 44, height: 44, borderRadius: '50%', background: ventsColors.surface, border: `1px solid ${ventsColors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-            <ArrowLeft size={18} color={ventsColors.ink1} />
-          </button>
-          <h1 style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>Wallet</h1>
-        </div>
-        <div role="tablist" aria-label="Wallet" style={{ display: 'flex', gap: 6, padding: 4, borderRadius: 16, background: ventsColors.surface, border: `1px solid ${ventsColors.border}` }}>
-          {tabButton('balance', 'Wallet Balance', balanceTabRef)}
-          {tabButton('earnings', 'Earnings', earningsTabRef)}
-        </div>
-      </div>
-
-      {/* ── Wallet Balance ── */}
-      <div role="tabpanel" id="wallet-panel-balance" aria-labelledby="wallet-tab-balance" hidden={tab !== 'balance'} data-testid="wallet-panel-balance"
-        style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '16px 16px calc(32px + env(safe-area-inset-bottom))', display: tab === 'balance' ? 'block' : 'none' }}>
-        <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <section aria-label="Wallet balance" data-testid="wallet-balance-card"
-            style={{ borderRadius: 22, padding: '22px 18px 18px', background: 'radial-gradient(120% 140% at 0% 0%, rgba(142,92,247,0.45) 0%, rgba(123,47,190,0.18) 45%, #120D1E 100%)',
-              border: '1px solid rgba(183,155,255,0.35)', boxShadow: '0 0 48px rgba(124,58,237,0.28)' }}>
-            <p style={{ margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.16em', color: ventsColors.accentSoft }}>WALLET BALANCE</p>
-            <p data-testid="wallet-balance-amount" style={{ margin: '6px 0 4px', fontSize: 'clamp(28px, 9vw, 38px)', fontWeight: 800, color: ventsColors.white, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
-              {loading && balanceKobo === null ? '···' : formatNaira(balanceKobo || 0)}
-            </p>
-            <p style={{ margin: 0, fontSize: 13, color: 'rgba(240,240,255,0.75)', lineHeight: 1.45 }}>
-              Money you can spend on VENTS tickets and services{transfersOn ? ' or send to friends' : ''}. It can't be withdrawn to a bank.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: transfersOn ? 'repeat(3, minmax(0, 1fr))' : '1fr', gap: 8, marginTop: 16 }}>
-              <ActionTile testId="wallet-deposit" icon={<Plus size={18} />} label="Deposit" onClick={() => { setDepositError(''); setDepositAmount(''); setShowDeposit(true); }} />
-              {transfersOn && <ActionTile testId="wallet-send" icon={<Send size={18} />} label="Send" onClick={() => { setSendTo(null); setShowSend(true); }} />}
-              {transfersOn && <ActionTile testId="wallet-receive" icon={<QrCode size={18} />} label="Receive" onClick={() => setShowReceive(true)} />}
-            </div>
-          </section>
-
-          {flash && <Notice tone="ok" testId="wallet-flash">{flash}</Notice>}
-
-          <section aria-label="VENTS Cents" data-testid="wallet-vc-card" style={{ ...walletCard, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <Coins size={20} color="#FFD700" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>
-                VENTS Cents{vc !== null ? <span style={{ color: '#FFD700' }}> · {vc.toLocaleString('en-NG')} VC</span> : null}
-              </p>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: ventsColors.ink2, lineHeight: 1.45 }}>
-                Reward points, not naira, and not part of your Wallet Balance. Use them toward eligible tickets; at Gold tier you can convert them into Wallet Balance. VENTS Cents can't be withdrawn or sent.
-              </p>
-              {onOpenVentsCents && (
-                <button type="button" data-testid="wallet-vc-open" onClick={onOpenVentsCents}
-                  style={{ minHeight: 44, padding: 0, marginTop: 2, background: 'none', border: 'none', color: ventsColors.accentSoft, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>
-                  How VENTS Cents work →
-                </button>
-              )}
-            </div>
-          </section>
-
-          <section aria-label="Transaction history">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 8px' }}>
-              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Transaction history</h2>
-              <button type="button" onClick={() => void load()} aria-label="Refresh" data-testid="wallet-refresh"
-                style={{ minWidth: 44, minHeight: 44, background: 'none', border: 'none', color: ventsColors.ink2, cursor: 'pointer' }}>
-                <RefreshCw size={16} />
-              </button>
-            </div>
-            <div role="group" aria-label="Filter" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 8 }}>
-              {FILTERS.filter((f) => f.key !== 'transfers' || transfersOn || txns.some((t) => t.type.startsWith('transfer_'))).map((f) => (
-                <button key={f.key} type="button" data-testid={`wallet-filter-${f.key}`} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}
-                  style={{ flexShrink: 0, minHeight: 36, padding: '0 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                    border: filter === f.key ? '1px solid rgba(183,155,255,0.6)' : `1px solid ${ventsColors.border}`,
-                    background: filter === f.key ? 'rgba(142,92,247,0.18)' : 'transparent', color: filter === f.key ? ventsColors.accentSoft : ventsColors.ink2 }}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            {loading && txns.length === 0 ? (
-              <p style={{ textAlign: 'center', padding: '28px 0', color: ventsColors.ink3, fontSize: 13 }}>Loading…</p>
-            ) : loadError ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <Notice tone="error" testId="wallet-load-error">{loadError}</Notice>
-                <PrimaryButton tone="ghost" onClick={() => void load()}>Try again</PrimaryButton>
-              </div>
-            ) : visible.length === 0 ? (
-              <p data-testid="wallet-empty" style={{ textAlign: 'center', padding: '28px 8px', color: ventsColors.ink3, fontSize: 13, lineHeight: 1.5 }}>
-                {txns.length === 0 ? 'No wallet activity yet. Deposits, purchases, refunds and transfers will show up here.' : 'Nothing matches this filter.'}
-              </p>
-            ) : (
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {visible.map((t) => <TxnRow key={t.id} t={t} onOpen={() => openTxn(t)} />)}
-              </ul>
-            )}
-            {hasMore && !loadError && (
-              <div style={{ marginTop: 10 }}>
-                <PrimaryButton tone="ghost" testId="wallet-load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Load older transactions'}</PrimaryButton>
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-
-      {/* ── Earnings ── */}
-      <div role="tabpanel" id="wallet-panel-earnings" aria-labelledby="wallet-tab-earnings" hidden={tab !== 'earnings'} data-testid="wallet-panel-earnings"
-        style={{ flex: 1, minHeight: 0, display: tab === 'earnings' ? 'flex' : 'none', flexDirection: 'column' }}>
-        <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
-          <div data-testid="earnings-explainer" style={{ ...walletCard, display: 'flex', gap: 10, maxWidth: 640, margin: '0 auto', padding: 12 }}>
-            <Info size={16} color={ventsColors.accentSoft} style={{ flexShrink: 0, marginTop: 2 }} />
-            <p style={{ margin: 0, fontSize: 12, color: ventsColors.ink2, lineHeight: 1.45 }}>
-              Earnings are what you make on VENTS: ticket sales, services and rewards. They become withdrawable to your bank after settlement
-              (48 hours after the event ends or the booking is completed) and need your PIN. Earnings are separate from your Wallet Balance and can't be spent or sent.
-            </p>
+    <div data-testid="unified-wallet" style={{ background: W.page, height: '100%', color: ventsColors.white, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div ref={scrollRef} data-testid="wallet-scroll"
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain',
+          padding: '12px 16px calc(24px + env(safe-area-inset-bottom))', paddingTop: 'calc(12px + env(safe-area-inset-top))' }}>
+        <div data-testid="wallet-card" style={{ maxWidth: 560, margin: '0 auto', border: `1px solid ${W.cardBorder}`, borderRadius: 28, padding: '16px 12px 20px', background: W.page, boxSizing: 'border-box' }}>
+          {/* Title row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 44, marginBottom: 12 }}>
+            <button type="button" onClick={onBack} aria-label="Back" data-testid="wallet-back"
+              style={{ width: 36, height: 44, marginLeft: -6, background: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+              <ArrowLeft size={20} color={ventsColors.white} />
+            </button>
+            <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, letterSpacing: '-0.01em', flex: 1, minWidth: 0 }}>VENTS Wallet</h1>
+            <span data-testid="wallet-unified-pill" style={{ background: W.unifiedBg, color: W.green, fontSize: 13, fontWeight: 500, padding: '4px 11px', borderRadius: 999, flexShrink: 0 }}>Unified</span>
           </div>
-        </div>
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <WalletScreen currentUser={currentUser} onBack={onBack} embedded />
+
+          {/* Two separate balances, side by side (never added together) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 9 }}>
+            <button type="button" data-testid="wallet-balance-card" onClick={() => selectTab('balance')} aria-describedby="wallet-balance-help"
+              style={{ ...summaryCard, background: W.balanceCard }}>
+              <span style={summaryLabel}>Wallet Balance</span>
+              <span data-testid="wallet-balance-amount" style={summaryAmount}>{loading && balanceKobo === null ? '···' : formatNairaShort(balanceKobo || 0)}</span>
+              <span style={{ ...pill, background: W.greenPillBg, color: W.green }}>Spendable</span>
+              <span id="wallet-balance-help" style={srOnly}>Money you can spend on VENTS tickets and services{transfersOn ? ' or send to friends' : ''}. It can't be withdrawn to a bank.</span>
+            </button>
+            <button type="button" data-testid="wallet-earnings-card" onClick={() => selectTab('earnings')} aria-describedby="wallet-earnings-help"
+              style={{ ...summaryCard, background: W.earningsCard }}>
+              <span style={summaryLabel}>Earnings</span>
+              <span data-testid="wallet-earnings-amount" style={summaryAmount}>{earningsKobo === null ? '···' : formatNairaShort(earningsKobo)}</span>
+              <span style={{ ...pill, background: W.greyPillBg, color: W.greyPillText }}>Withdrawable</span>
+              <span id="wallet-earnings-help" style={srOnly}>Money you earned on VENTS, withdrawable to your bank after settlement. It can't be spent or sent.</span>
+            </button>
+          </div>
+
+          {/* Tabs (stay on screen while the content scrolls) */}
+          <div ref={tabsRef} style={{ position: 'sticky', top: -1, zIndex: 2, background: W.page, padding: '12px 0 4px', margin: '0 -2px' }}>
+            <div role="tablist" aria-label="Wallet" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 999, background: W.tabTrack }}>
+              {tabButton('balance', 'Wallet', balanceTabRef)}
+              {tabButton('earnings', 'Earnings', earningsTabRef)}
+            </div>
+          </div>
+
+          {/* ── Wallet ── */}
+          <div role="tabpanel" id="wallet-panel-balance" aria-labelledby="wallet-tab-balance" hidden={tab !== 'balance'} data-testid="wallet-panel-balance"
+            style={{ display: tab === 'balance' ? 'block' : 'none' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${transfersOn ? 3 : 1}, minmax(0, 1fr))`, padding: '10px 0 14px' }}>
+              <ActionButton testId="wallet-deposit" icon={<PlusCircle size={26} strokeWidth={1.8} />} label="Deposit" onClick={() => { setDepositError(''); setDepositAmount(''); setShowDeposit(true); }} />
+              {transfersOn && <ActionButton testId="wallet-send" icon={<Send size={26} strokeWidth={1.8} />} label="Send" onClick={() => { setSendTo(null); setShowSend(true); }} />}
+              {transfersOn && <ActionButton testId="wallet-receive" icon={<Download size={26} strokeWidth={1.8} />} label="Receive" onClick={() => setShowReceive(true)} />}
+            </div>
+            <div style={{ height: 1, background: W.divider, margin: '0 0 22px' }} />
+
+            {flash && <div style={{ marginBottom: 12 }}><Notice tone="ok" testId="wallet-flash">{flash}</Notice></div>}
+
+            <section aria-label="Recent transactions">
+              <h2 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}>Recent transactions</h2>
+              {loading && txns.length === 0 ? (
+                <p style={{ padding: '20px 0', color: W.sub, fontSize: 14 }}>Loading…</p>
+              ) : loadError ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <Notice tone="error" testId="wallet-load-error">{loadError}</Notice>
+                  <PrimaryButton tone="ghost" onClick={() => void load()}>Try again</PrimaryButton>
+                </div>
+              ) : txns.length === 0 ? (
+                <p data-testid="wallet-empty" style={{ padding: '12px 0 4px', color: W.sub, fontSize: 14, lineHeight: 1.5 }}>
+                  No transactions yet. Deposits, purchases, refunds and transfers will show up here.
+                </p>
+              ) : (
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                  {txns.map((t) => <TxnRow key={t.id} t={t} onOpen={() => openTxn(t)} />)}
+                </ul>
+              )}
+              {hasMore && !loadError && (
+                <div style={{ marginTop: 10 }}>
+                  <PrimaryButton tone="ghost" testId="wallet-load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Load older transactions'}</PrimaryButton>
+                </div>
+              )}
+            </section>
+
+            <section aria-label="VENTS Cents" data-testid="wallet-vc-card"
+              style={{ marginTop: 20, background: W.earningsCard, borderRadius: 20, padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <Coins size={20} color="#FFD700" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
+                  VENTS Cents{vc !== null ? <span style={{ color: '#FFD700' }}> · {vc.toLocaleString('en-NG')} VC</span> : null}
+                </p>
+                <p style={{ margin: '4px 0 0', fontSize: 12.5, color: W.sub, lineHeight: 1.45 }}>
+                  Reward points, not naira, and not part of your Wallet Balance. Use them toward eligible tickets; at Gold tier you can convert them into Wallet Balance. VENTS Cents can't be withdrawn or sent.
+                </p>
+                {onOpenVentsCents && (
+                  <button type="button" data-testid="wallet-vc-open" onClick={onOpenVentsCents}
+                    style={{ minHeight: 44, padding: 0, background: 'none', border: 'none', color: W.lavender, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                    How VENTS Cents work →
+                  </button>
+                )}
+              </div>
+            </section>
+          </div>
+
+          {/* ── Earnings ── */}
+          <div role="tabpanel" id="wallet-panel-earnings" aria-labelledby="wallet-tab-earnings" hidden={tab !== 'earnings'} data-testid="wallet-panel-earnings"
+            style={{ display: tab === 'earnings' ? 'block' : 'none', paddingTop: 10 }}>
+            <div data-testid="earnings-explainer" style={{ background: W.earningsCard, borderRadius: 16, display: 'flex', gap: 10, padding: 12 }}>
+              <Info size={16} color={W.lavender} style={{ flexShrink: 0, marginTop: 2 }} />
+              <p style={{ margin: 0, fontSize: 12.5, color: W.sub, lineHeight: 1.45 }}>
+                Earnings are what you make on VENTS: ticket sales, services and rewards. They become withdrawable to your bank after settlement
+                (48 hours after the event ends or the booking is completed) and need your PIN. They can't be spent or sent.
+              </p>
+            </div>
+            <WalletScreen currentUser={currentUser} onBack={onBack} embedded />
+          </div>
         </div>
       </div>
 
@@ -404,39 +429,53 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   );
 }
 
-function ActionTile({ icon, label, onClick, testId }: { icon: React.ReactNode; label: string; onClick: () => void; testId: string }) {
+const summaryCard: React.CSSProperties = {
+  border: 'none', borderRadius: 22, minHeight: 112, padding: '14px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  gap: 8, cursor: 'pointer', minWidth: 0, color: '#FFFFFF', textAlign: 'center', boxSizing: 'border-box',
+};
+const summaryLabel: React.CSSProperties = { fontSize: 16, fontWeight: 500, color: W.lavender, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' };
+const summaryAmount: React.CSSProperties = { fontSize: 'clamp(17px, 5.6vw, 22px)', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em', maxWidth: '100%', overflowWrap: 'anywhere', lineHeight: 1.15 };
+const pill: React.CSSProperties = { fontSize: 13.5, fontWeight: 500, padding: '5px 12px', borderRadius: 999, whiteSpace: 'nowrap' };
+const srOnly: React.CSSProperties = { position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 };
+
+function ActionButton({ icon, label, onClick, testId }: { icon: React.ReactNode; label: string; onClick: () => void; testId: string }) {
   return (
     <button type="button" data-testid={testId} onClick={onClick}
-      style={{ minHeight: 64, borderRadius: 16, border: '1px solid rgba(255,255,255,0.16)', background: 'rgba(8,7,12,0.45)', color: ventsColors.white,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 800, fontSize: 13, cursor: 'pointer', minWidth: 0 }}>
-      {icon}{label}
+      style={{ minHeight: 72, background: 'none', border: 'none', color: '#FFFFFF', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 8, fontWeight: 500, fontSize: 15, cursor: 'pointer', minWidth: 0, padding: '6px 0' }}>
+      <span aria-hidden style={{ color: W.lavender, display: 'flex' }}>{icon}</span>
+      {label}
     </button>
   );
 }
 
+function txnIcon(t: WalletTxn): React.ReactNode {
+  const ref = t.reference_id || '';
+  switch (t.type) {
+    case 'transfer_in': return <ArrowDownLeft size={22} color={W.green} strokeWidth={2} />;
+    case 'transfer_out': return <ArrowUpRight size={22} color={W.lavender} strokeWidth={2} />;
+    case 'deposit': return <PlusCircle size={22} color={W.green} strokeWidth={1.8} />;
+    case 'refund': return <RotateCcw size={22} color={W.green} strokeWidth={1.8} />;
+    case 'vc_conversion': return <Coins size={22} color="#FFD700" strokeWidth={1.8} />;
+    case 'spend': return ref.startsWith('BKG-') ? <CalendarCheck size={24} color={W.lavender} strokeWidth={1.8} /> : <Ticket size={26} color={W.lavender} strokeWidth={1.8} />;
+    default: return <CircleDollarSign size={22} color={W.sub} strokeWidth={1.8} />;
+  }
+}
+
 function TxnRow({ t, onOpen }: { t: WalletTxn; onOpen: () => void }) {
   const dir = walletTxnDirection(t.type);
-  const color = dir === 'in' ? ventsColors.success : dir === 'out' ? ventsColors.ink1 : ventsColors.ink2;
-  const counterparty = t.metadata?.counterparty_username ? `@${t.metadata.counterparty_username}` : t.metadata?.counterparty_name;
   return (
     <li>
-      <button type="button" data-testid={`wallet-txn-${t.id}`} onClick={onOpen}
-        style={{ width: '100%', minHeight: 64, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', background: ventsColors.surface, border: `1px solid ${ventsColors.divider}`, borderRadius: 14, padding: '12px 12px', cursor: 'pointer', boxSizing: 'border-box' }}>
-        <span aria-hidden style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: dir === 'in' ? 'rgba(52,211,153,0.12)' : 'rgba(142,92,247,0.14)' }}>
-          {dir === 'in' ? <ArrowDownLeft size={18} color={ventsColors.success} /> : <ArrowUpRight size={18} color={ventsColors.accentSoft} />}
-        </span>
+      <button type="button" data-testid={`wallet-txn-${t.id}`} onClick={onOpen} aria-label={`${walletTxnKindLabel(t)}, ${walletTxnSubtitle(t)}, ${dir === 'in' ? 'plus' : dir === 'out' ? 'minus' : ''} ${formatNairaShort(t.amount_kobo)}, ${when(t.created_at)}, completed`}
+        style={{ width: '100%', minHeight: 64, display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', background: 'none', border: 'none', padding: '10px 0', cursor: 'pointer', color: '#FFFFFF' }}>
+        <span aria-hidden style={{ width: 28, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>{txnIcon(t)}</span>
         <span style={{ minWidth: 0, flex: 1 }}>
-          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: ventsColors.ink1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {walletTxnKindLabel(t)}{counterparty ? ` · ${counterparty}` : ''}
-          </span>
-          <span style={{ display: 'block', fontSize: 11.5, color: ventsColors.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {when(t.created_at)} · Completed
-          </span>
+          <span style={{ display: 'block', fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{walletTxnKindLabel(t)}</span>
+          <span style={{ display: 'block', fontSize: 14, color: W.sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{walletTxnSubtitle(t)}</span>
         </span>
-        <span data-testid={`wallet-txn-amount-${t.id}`} style={{ fontSize: 14, fontWeight: 800, color, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-          {dir === 'in' ? '+' : dir === 'out' ? '−' : ''}{formatNaira(t.amount_kobo)}
+        <span data-testid={`wallet-txn-amount-${t.id}`} style={{ fontSize: 18, fontWeight: 600, color: dir === 'in' ? W.green : '#FFFFFF', flexShrink: 0 }}>
+          {dir === 'in' ? '+' : dir === 'out' ? '−' : ''}{formatNairaShort(t.amount_kobo)}
         </span>
-        <ChevronRight size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
       </button>
     </li>
   );

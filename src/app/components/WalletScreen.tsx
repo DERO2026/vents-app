@@ -702,7 +702,9 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
   const totalEarned = wallet?.total_earned_kobo ?? 0;
 
   return (
-    <div style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden', position: 'relative' }}>
+    <div style={embedded
+      ? { color: ventsColors.ink1, position: 'relative' }
+      : { background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden', position: 'relative' }}>
       {/* Header (the unified wallet supplies its own when embedded) */}
       {!embedded && <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -712,11 +714,11 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
       </div>}
 
       {loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: embedded ? '32px 0' : undefined }}>
           <span style={{ color: ventsColors.ink2 }}>Loading…</span>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
+        <div style={embedded ? { padding: '16px 0 0' } : { flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
               <AlertCircle size={16} color={ventsColors.pending} style={{ flexShrink: 0 }} />
