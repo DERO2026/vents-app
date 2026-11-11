@@ -81,19 +81,39 @@ else fail "direct connection string not converted (rc=$RC)"; fi
 OUT=$(env BACKUP_DB_URL="" bash "$OPS/db-backup-dump.sh" "$W/x.gpg" "$OPS/db-backup-key.sh" 2>&1); RC=$?
 if [ $RC -ne 0 ] && [[ "$OUT" == *"secret is empty"* ]]; then pass "an empty DATABASE_URL fails loudly"; else fail "empty URL: rc=$RC"; fi
 
-# --- 2. passphrase ---------------------------------------------------------
-OUT=$(env BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" "$W/key" "$W/mode" 2>&1); RC=$?
-if [ $RC -eq 0 ] && [ "$(cat "$W/mode")" = "derived-from-DATABASE_URL" ] && [ "$(wc -c <"$W/key")" -eq 64 ] \
-   && [ "$(cat "$W/key")" = "$(printf '%s' "$URL" | openssl dgst -sha256 -hmac vents-db-backup-v1 -r | cut -d' ' -f1)" ] \
-   && [[ "$OUT" != *"$(cat "$W/key")"* ]] && [ "$(stat -c %a "$W/key")" = "600" ]; then
-  pass "without a passphrase secret the key is HMAC(URL), reproducible by hand, mode 600, never printed"
-else fail "derived key: rc=$RC $OUT"; fi
-OUT=$(env BACKUP_DB_URL="$URL" BACKUP_ENCRYPTION_PASSPHRASE="a-dedicated-passphrase-of-40-characters!" bash "$OPS/db-backup-key.sh" "$W/key2" "$W/mode2" 2>&1); RC=$?
-if [ $RC -eq 0 ] && [ "$(cat "$W/mode2")" = "passphrase-secret" ] && [[ "$OUT" != *"dedicated-passphrase"* ]]; then
-  pass "a BACKUP_ENCRYPTION_PASSPHRASE secret takes precedence and is never printed"
-else fail "passphrase secret: rc=$RC"; fi
-OUT=$(env BACKUP_ENCRYPTION_PASSPHRASE="short" bash "$OPS/db-backup-key.sh" "$W/key3" "$W/mode3" 2>&1); RC=$?
-if [ $RC -ne 0 ]; then pass "a passphrase shorter than 24 characters is refused"; else fail "short passphrase accepted"; fi
+# --- 2. passphrase (the only backup key; no fallback) ----------------------
+PP="a-dedicated-selftest-passphrase-of-48-characters"
+OUT=$(env BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" "$W/k0" "$W/m0" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"BACKUP_ENCRYPTION_PASSPHRASE is missing"* ]] && [ ! -s "$W/k0" ]; then
+  pass "without BACKUP_ENCRYPTION_PASSPHRASE the key step stops, even when a database URL is present"
+else fail "missing passphrase not refused: rc=$RC $OUT"; fi
+OUT=$(env BACKUP_DB_URL="$URL" BACKUP_ENCRYPTION_PASSPHRASE="$PP" bash "$OPS/db-backup-key.sh" "$W/key" "$W/mode" "$W/fp" 2>&1); RC=$?
+if [ $RC -eq 0 ] && [ "$(cat "$W/mode")" = "passphrase-secret" ] && [ "$(cat "$W/key")" = "$PP" ] \
+   && [[ "$OUT" != *"$PP"* ]] && [ "$(stat -c %a "$W/key")" = "600" ] \
+   && [ "$(cat "$W/fp")" = "$(printf 'vents-db-backup-key-check-v1:%s' "$PP" | sha256sum | cut -c1-16)" ]; then
+  pass "the passphrase secret is the key (mode 600, never printed) and its fingerprint is recorded"
+else fail "passphrase secret: rc=$RC $OUT"; fi
+SHORT_OK=1
+for short in "short" "twenty-four-characters!!" "thirty-one-characters-long-xxxx"; do
+  OUT=$(env BACKUP_ENCRYPTION_PASSPHRASE="$short" bash "$OPS/db-backup-key.sh" "$W/key3" "$W/mode3" 2>&1); RC=$?
+  [ $RC -ne 0 ] || { fail "a ${#short}-character passphrase was accepted"; SHORT_OK=0; }
+done
+[ "$SHORT_OK" = 1 ] && pass "passphrases shorter than 32 characters are refused (5, 24 and 31 tried)"
+OUT=$(env BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" --legacy-derived "$W/lkey" "$W/lmode" 2>&1); RC=$?
+if [ $RC -eq 0 ] && [ "$(cat "$W/lmode")" = "derived-from-DATABASE_URL" ] \
+   && [ "$(cat "$W/lkey")" = "$(printf '%s' "$URL" | openssl dgst -sha256 -hmac vents-db-backup-v1 -r | cut -d' ' -f1)" ]; then
+  pass "--legacy-derived rebuilds the old HMAC(URL) key for pre-passphrase artifacts"
+else fail "legacy derived key: rc=$RC $OUT"; fi
+OUT=$(env GITHUB_ACTIONS=true BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" --legacy-derived "$W/lkey2" "$W/lmode2" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [ ! -s "$W/lkey2" ]; then pass "--legacy-derived refuses to run on a GitHub runner"; else fail "legacy mode ran in CI"; fi
+OUT=$(env BACKUP_DB_URL="${URL}
+" bash "$OPS/db-backup-key.sh" --legacy-derived "$W/lkey3" "$W/lmode3" 2>&1)
+if [ "$(cat "$W/lkey3")" != "$(cat "$W/lkey")" ]; then
+  pass "the legacy key depends on the raw secret byte for byte (a trailing newline gives a different key)"
+else fail "legacy key ignored a trailing newline"; fi
+printf '%s\n' "$PP" >"$W/nl-key"
+OUT=$(bash "$OPS/db-backup-key-fingerprint.sh" "$W/nl-key" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"ends with a newline"* ]]; then pass "the fingerprint tool refuses a key file with a trailing newline"; else fail "newline key accepted"; fi
 
 # --- 3. good backup end to end -------------------------------------------
 DOUT=$(dump "$URL" "$W/backup.dump.gpg" "$W/key"); RC=$?
@@ -154,15 +174,42 @@ VOUT=$(FUNCTION_CHECK=enforce bash "$OPS/db-backup-validate.sh" "$W/drifted.gpg"
 if [ $RC -ne 0 ] && [[ "$VOUT" == *"not 19/19"* ]]; then pass "O4 mode (enforce) fails on a drifted function"; else fail "enforce mode: rc=$RC"; fi
 
 # --- 6. CI mode: secrets appear only on ::add-mask:: lines ------------------
-OUT=$(env GITHUB_ACTIONS=true BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" "$W/key6" "$W/mode6" 2>&1)
+OUT=$(env GITHUB_ACTIONS=true BACKUP_ENCRYPTION_PASSPHRASE="$PP" bash "$OPS/db-backup-key.sh" "$W/key6" "$W/mode6" 2>&1)
 K6="$(cat "$W/key6")"
 if echo "$OUT" | grep -qxF "::add-mask::$K6" && [ -z "$(echo "$OUT" | grep -F "$K6" | grep -v '^::add-mask::')" ]; then
-  pass "in CI the derived key is registered as a mask and appears on no other line"
+  pass "in CI the passphrase is registered as a mask and appears on no other line"
 else fail "CI-mode key output"; fi
 OUT=$(env GITHUB_ACTIONS=true BACKUP_SELFTEST=1 BACKUP_DB_URL="$URL" bash "$OPS/db-backup-dump.sh" "$W/ci.gpg" "$W/key6" 2>&1); RC=$?
 if [ $RC -eq 0 ] && echo "$OUT" | grep -qxF "::add-mask::$PW" && [ -z "$(echo "$OUT" | grep -F "$PW" | grep -v '^::add-mask::')" ]; then
   pass "in CI the database password is registered as a mask and appears on no other line"
 else fail "CI-mode dump output: rc=$RC"; fi
+
+# --- 7. owner-side decrypt: checksum, key fingerprint, then gpg -------------
+A="$W/artifact"; mkdir -p "$A"
+cp "$W/backup.dump.gpg" "$A/vents-db-SELFTEST.dump.gpg"
+( cd "$A" && sha256sum vents-db-SELFTEST.dump.gpg > vents-db-SELFTEST.dump.gpg.sha256 )
+{ echo "file=vents-db-SELFTEST.dump.gpg"; echo "sha256=$(cut -d' ' -f1 "$A/vents-db-SELFTEST.dump.gpg.sha256")"
+  echo "key_source=passphrase-secret"; echo "key_fingerprint=$(cat "$W/fp")"; } >"$A/manifest.txt"
+OUT=$(bash "$OPS/db-backup-decrypt.sh" "$A" "$W/key" "$W/restored.dump" 2>&1); RC=$?
+if [ $RC -eq 0 ] && [ "$(head -c 5 "$W/restored.dump")" = "PGDMP" ] && [ "$(stat -c %a "$W/restored.dump")" = "600" ] \
+   && [[ "$OUT" == *"fingerprint"*"matches"* ]] && [[ "$OUT" != *"$PP"* ]]; then
+  pass "decrypt: checksum and fingerprint checked, then a pg_dump archive (mode 600) is written"
+else fail "decrypt good artifact: rc=$RC $OUT"; fi
+rm -f "$W/restored.dump"
+OUT=$(bash "$OPS/db-backup-decrypt.sh" "$A" "$W/wrongkey" "$W/restored.dump" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"wrong key"* ]] && [ ! -e "$W/restored.dump" ]; then
+  pass "decrypt: a different key is refused by fingerprint before gpg runs"
+else fail "decrypt wrong key: rc=$RC $OUT"; fi
+cp -r "$A" "$W/legacy"; sed -i '/^key_fingerprint=/d; s/^key_source=.*/key_source=derived-from-DATABASE_URL/' "$W/legacy/manifest.txt"
+OUT=$(bash "$OPS/db-backup-decrypt.sh" "$W/legacy" "$W/wrongkey" "$W/restored.dump" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"predates key fingerprints"* ]] && [[ "$OUT" == *"decryption failed"* ]] && [ ! -e "$W/restored.dump" ]; then
+  pass "decrypt: an old manifest without a fingerprint says so, and a wrong key still fails loudly"
+else fail "decrypt legacy manifest: rc=$RC $OUT"; fi
+cp -r "$A" "$W/tamper"; printf 'x' >>"$W/tamper/vents-db-SELFTEST.dump.gpg"
+OUT=$(bash "$OPS/db-backup-decrypt.sh" "$W/tamper" "$W/key" "$W/restored.dump" 2>&1); RC=$?
+if [ $RC -ne 0 ] && [[ "$OUT" == *"checksum mismatch"* ]] && [ ! -e "$W/restored.dump" ]; then
+  pass "decrypt: a modified file is refused by checksum"
+else fail "decrypt tampered: rc=$RC $OUT"; fi
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES DB BACKUP PIPELINE SELF-TEST CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi

@@ -17,9 +17,12 @@
 # GitHub user. The log prints only pass/fail lines; the artifact is ciphertext.
 #
 # Secrets (environment o4-backup):
-#   DATABASE_URL                  required: session pooler URI, port 5432
-#   BACKUP_ENCRYPTION_PASSPHRASE  optional, recommended: if absent the key is
-#                                 derived from DATABASE_URL (scripts/ops/db-backup-key.sh)
+#   DATABASE_URL                  required: session pooler URI (port 5432), or the
+#                                 dashboard's direct URI, which is converted to it
+#   BACKUP_ENCRYPTION_PASSPHRASE  required: the ONLY encryption key (>= 32 chars).
+#                                 Keep your own copy: GitHub cannot show it back.
+#                                 Missing -> the run stops; there is no fallback key.
+#                                 The manifest records its fingerprint, not its value.
 # How to decrypt and restore: docs/db-backup.md.
 name: Database backup
 
@@ -92,15 +95,12 @@ jobs:
       - name: Install PostgreSQL 17
         run: bash scripts/ops/ci-install-pg17.sh
 
+      # Only the passphrase secret is given to this step: no database URL, so no
+      # other key can be derived. Missing or short secret -> the run stops.
       - name: Encryption key (value never printed)
         env:
-          BACKUP_DB_URL: ${{ secrets.DATABASE_URL }}
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
-        run: |
-          bash scripts/ops/db-backup-key.sh "$WORK/key" "$WORK/key-mode"
-          if [ "$(cat "$WORK/key-mode")" != passphrase-secret ]; then
-            echo "::warning title=Backup key derived from DATABASE_URL::Add an environment secret BACKUP_ENCRYPTION_PASSPHRASE (o4-backup) so backups stay decryptable after a database password change. See docs/db-backup.md."
-          fi
+        run: bash scripts/ops/db-backup-key.sh "$WORK/key" "$WORK/key-mode" "$WORK/key-fp"
 
       - name: Encrypted pg_dump of production (read only)
         env:
@@ -127,6 +127,7 @@ jobs:
             echo "pg_dump=$(pg_dump --version | grep -oE '[0-9]+\.[0-9]+' | head -1)"
             echo "scope=$DUMP_SCOPE"
             echo "key_source=$(cat "$WORK/key-mode")"
+            echo "key_fingerprint=$(cat "$WORK/key-fp")"
             echo "function_check=$FUNCTION_CHECK"
             echo "commit=$GITHUB_SHA"
             echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
