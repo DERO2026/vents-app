@@ -11,22 +11,19 @@
 // between each other here. VENTS Cents are shown on their own card: points,
 // not naira.
 //
-// Both tabs stay mounted, so switching never reloads or resets either side,
-// and each tab remembers its own scroll position (they share one scroll
-// container, so the positions are saved and restored on switch).
+// Both tabs stay mounted, so switching never reloads or resets either side.
 //
-// Layout rules that keep the Wallet/Earnings switch fixed in place:
-//   * the scroll container has NO top padding. Sticky elements are inset by
-//     their scroll container's padding, so a padded container left a strip
-//     (12px + the iPhone safe area) above the stuck switch where content
-//     scrolled through visibly. The safe area is padding on the
-//     non-scrolling root instead;
-//   * the switch sticks at top: 0;
-//   * each panel is at least one viewport (minus the switch) tall while the
-//     switch is stuck, so switching to a shorter tab can't make the browser
-//     clamp the scroll and drag the switch down the screen.
+// Layout: ONE scroll container (wallet-scroll) holds the whole screen --
+// title, the two balance cards, the Wallet/Earnings switch and the active
+// panel -- and scrolls as one page. Nothing is sticky or fixed inside it:
+// the switch scrolls with the cards, so it can never slide, overlap the
+// list or sit apart from the cards. Switching tabs never changes the
+// scroll position: each panel is at least as tall as the viewport below
+// the switch, so a shorter tab can't make the browser clamp the scroll
+// (which is what dragged the switch around before). The iPhone safe area
+// pads the non-scrolling root, never the scroller.
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, PlusCircle, Send, Download, ArrowDownLeft, ArrowUpRight, Ticket, CalendarCheck, RotateCcw, Coins, Info, CircleDollarSign, ChevronRight, Receipt } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Send, Download, ArrowDownLeft, ArrowUpRight, Ticket, CalendarCheck, RotateCcw, Coins, Info, CircleDollarSign, ChevronRight, Receipt, Clock } from 'lucide-react';
 import { supabase, getAuthToken } from '../../../lib/supabase';
 import { apiUrl } from '../../../lib/apiBase';
 import { openPaystackPopup } from '../../../lib/paystack';
@@ -35,7 +32,10 @@ import { validateWalletDepositAmountKobo, walletTxnLabel, walletTxnDirection } f
 import { friendlyOperationalError } from '../../../lib/operationalStatus';
 import { ventsColors } from '../../../lib/ventsDesignTokens';
 import { getVcBalance } from '../../../lib/vcBalanceCache';
-import { fetchTransferStatus, fetchTransferReceipt, formatNaira, PAY_TO_STORAGE_KEY, type TransferStatus, type TransferReceipt } from '../../../lib/walletTransfers';
+import {
+  fetchTransferAvailability, fetchTransferReceipt, formatNaira, transferUnavailableText, transferUnavailableStaffText,
+  PAY_TO_STORAGE_KEY, WALLET_RECEIPT_STORAGE_KEY, type TransferAvailability, type TransferReceipt,
+} from '../../../lib/walletTransfers';
 import { WalletScreen } from '../WalletScreen';
 import { SendMoneySheet } from './SendMoneySheet';
 import { ReceiveMoneySheet } from './ReceiveMoneySheet';
@@ -127,13 +127,13 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   const [earningsKobo, setEarningsKobo] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
-  // Not sticky: marks where the switch sits in the flow, which a stuck
-  // (sticky) element's own offsetTop does not.
-  const tabsAnchorRef = useRef<HTMLDivElement>(null);
-  const savedScroll = useRef<Record<WalletTab, number | null>>({ balance: null, earnings: null });
-  const pendingScroll = useRef<number | null>(null);
   const [panelMinHeight, setPanelMinHeight] = useState(0);
-  const [transferStatus, setTransferStatus] = useState<TransferStatus | null>(null);
+  const [availability, setAvailability] = useState<TransferAvailability>({ kind: 'loading' });
+  const transferStatus = availability.kind === 'ready' || availability.kind === 'disabled' ? availability.status : null;
+  const isStaff = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin';
+  // Send / Receive tapped (or a payment link opened) while transfers are unavailable.
+  const [unavailableFor, setUnavailableFor] = useState<'send' | 'receive' | null>(null);
+  const [receiptRef, setReceiptRef] = useState<string | null>(null);
   const [vc, setVc] = useState<number | null>(null);
 
   const [showDeposit, setShowDeposit] = useState(false);
@@ -148,7 +148,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   const [flash, setFlash] = useState<string | null>(null);
 
   const loadStatus = useCallback(() => {
-    fetchTransferStatus().then(setTransferStatus, () => setTransferStatus(null));
+    fetchTransferAvailability().then(setAvailability);
   }, []);
 
   const load = useCallback(async () => {
@@ -183,15 +183,24 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
     if (!currentUser?.id) return;
     getVcBalance(currentUser.id).then((r) => setVc(r ? r.spendable : null), () => setVc(null));
   }, [currentUser?.id]);
-  // A ?pay=<username> link (someone's Receive QR) opens Send Money to them once.
+  // A ?pay=<username> link (someone's Receive QR) opens Send Money to them once;
+  // a tapped "Money sent / received" notification opens that transfer's receipt.
   useEffect(() => {
-    let to: string | null = null;
-    try { to = sessionStorage.getItem(PAY_TO_STORAGE_KEY); sessionStorage.removeItem(PAY_TO_STORAGE_KEY); } catch { /* storage unavailable */ }
-    if (to) { setTab('balance'); setSendTo(to); }
+    let to: string | null = null, ref: string | null = null;
+    try {
+      to = sessionStorage.getItem(PAY_TO_STORAGE_KEY); sessionStorage.removeItem(PAY_TO_STORAGE_KEY);
+      ref = sessionStorage.getItem(WALLET_RECEIPT_STORAGE_KEY); sessionStorage.removeItem(WALLET_RECEIPT_STORAGE_KEY);
+    } catch { /* storage unavailable */ }
+    if (to || ref) setTab('balance');
+    if (to) setSendTo(to);
+    if (ref) setReceiptRef(ref);
   }, []);
+  // The payment link waits for the availability answer: Send Money when transfers are on, the reason when not.
   useEffect(() => {
-    if (sendTo && transferStatus?.enabled) setShowSend(true);
-  }, [sendTo, transferStatus?.enabled]);
+    if (!sendTo || availability.kind === 'loading') return;
+    if (availability.kind === 'ready') setShowSend(true);
+    else setUnavailableFor('send');
+  }, [sendTo, availability.kind]);
 
   const loadMore = async () => {
     if (loadingMore) return;
@@ -205,6 +214,14 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
     } catch (e) { Sentry.captureException(e); setFlash('Could not load more transactions.'); }
     finally { setLoadingMore(false); }
   };
+
+  // The notification's transfer, once the history has loaded.
+  useEffect(() => {
+    if (!receiptRef || loading) return;
+    const t = txns.find((x) => x.reference_id === receiptRef && (x.type === 'transfer_in' || x.type === 'transfer_out'));
+    setReceiptRef(null);
+    if (t) openTxn(t);
+  }, [receiptRef, loading, txns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openTxn = (t: WalletTxn) => {
     setSelected(t); setReceipt(null);
@@ -274,14 +291,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   // the migration exists, and enabled=false while the kill switch is on.
   const transfersOn = !!transferStatus?.enabled;
 
-  /** Scroll offset at which the switch reaches the top and sticks. */
-  const stickOffset = () => {
-    const sc = scrollRef.current, a = tabsAnchorRef.current;
-    if (!sc || !a) return 0;
-    return Math.max(0, Math.round(a.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop));
-  };
-
-  // Each panel is at least as tall as the viewport below the stuck switch.
+  // Each panel is at least as tall as the viewport below the switch.
   useLayoutEffect(() => {
     const sc = scrollRef.current, tb = tabsRef.current;
     if (!sc || !tb) return;
@@ -293,24 +303,16 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
     return () => ro.disconnect();
   }, []);
 
-  // Applied after the new panel is shown, so the browser never clamps it.
-  useLayoutEffect(() => {
-    const sc = scrollRef.current;
-    if (sc && pendingScroll.current !== null) { sc.scrollTop = pendingScroll.current; pendingScroll.current = null; }
-  }, [tab]);
+  // Switching never touches the scroll position (see the header comment).
+  const selectTab = (next: WalletTab) => { if (next !== tab) setTab(next); };
 
-  // While the switch is stuck, switching keeps it exactly where it is and shows the other tab
-  // where the user left it (or at its top). Above that point the page doesn't move.
-  const selectTab = (next: WalletTab) => {
-    if (next === tab) return;
-    const sc = scrollRef.current;
-    if (sc) {
-      const stick = stickOffset();
-      savedScroll.current[tab] = sc.scrollTop >= stick ? sc.scrollTop : null;
-      if (sc.scrollTop >= stick) pendingScroll.current = Math.max(stick, savedScroll.current[next] ?? stick);
-    }
-    setTab(next);
+  const onSendTap = () => {
+    if (availability.kind === 'ready') { setSendTo(null); setShowSend(true); } else setUnavailableFor('send');
   };
+  const onReceiveTap = () => {
+    if (availability.kind === 'ready') setShowReceive(true); else setUnavailableFor('receive');
+  };
+  const unavailableText = transferUnavailableText(availability);
 
   const onTabKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -368,9 +370,8 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
             </button>
           </div>
 
-          {/* Tabs (stay on screen while the content scrolls) */}
-          <div ref={tabsAnchorRef} aria-hidden data-testid="wallet-tabs-anchor" />
-          <div ref={tabsRef} data-testid="wallet-tabs" style={{ position: 'sticky', top: 0, zIndex: 2, background: W.page, padding: '12px 0 8px' }}>
+          {/* Tabs: part of the page, scroll with the balance cards */}
+          <div ref={tabsRef} data-testid="wallet-tabs" style={{ padding: '12px 0 8px' }}>
             <div role="tablist" aria-label="Wallet" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 999, background: W.tabTrack }}>
               {tabButton('balance', 'Wallet', balanceTabRef)}
               {tabButton('earnings', 'Earnings', earningsTabRef)}
@@ -380,27 +381,23 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
           {/* ── Wallet ── */}
           <div role="tabpanel" id="wallet-panel-balance" aria-labelledby="wallet-tab-balance" hidden={tab !== 'balance'} data-testid="wallet-panel-balance"
             style={{ display: tab === 'balance' ? 'block' : 'none', minHeight: panelMinHeight, paddingTop: 8, boxSizing: 'border-box' }}>
-            {transfersOn ? (
-              <div data-testid="wallet-actions" data-layout="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', padding: '2px 0 14px' }}>
-                <ActionButton testId="wallet-deposit" icon={<PlusCircle size={26} strokeWidth={1.8} />} label="Deposit" onClick={openDeposit} />
-                <ActionButton testId="wallet-send" icon={<Send size={26} strokeWidth={1.8} />} label="Send" onClick={() => { setSendTo(null); setShowSend(true); }} />
-                <ActionButton testId="wallet-receive" icon={<Download size={26} strokeWidth={1.8} />} label="Receive" onClick={() => setShowReceive(true)} />
-              </div>
-            ) : (
-              // One action: a full-width row, not a lone icon centred in a three-column slot.
-              <div data-testid="wallet-actions" data-layout="single" style={{ padding: '2px 0 14px' }}>
-                <button type="button" data-testid="wallet-deposit" onClick={openDeposit}
-                  style={{ width: '100%', minHeight: 64, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 24,
-                    background: W.earningsCard, border: `1px solid ${W.cardBorder}`, color: '#FFFFFF', cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
-                  <span aria-hidden style={{ width: 40, height: 40, borderRadius: 999, background: W.balanceCard, color: W.lavender, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <PlusCircle size={22} strokeWidth={1.8} />
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 16, fontWeight: 700 }}>Deposit</span>
-                    <span style={{ display: 'block', fontSize: 13, color: W.sub, marginTop: 2 }}>Add money by card or bank through Paystack</span>
-                  </span>
-                  <ChevronRight aria-hidden size={20} color={W.sub} style={{ flexShrink: 0 }} />
-                </button>
+            {/* Always the same three actions. Send / Receive say why when they can't be used (never silently hidden). */}
+            <div data-testid="wallet-actions" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, padding: '2px 0 10px' }}>
+              <ActionButton testId="wallet-deposit" icon={<PlusCircle size={26} strokeWidth={1.8} />} label="Deposit" onClick={openDeposit} />
+              <ActionButton testId="wallet-send" icon={<Send size={26} strokeWidth={1.8} />} label="Send" onClick={onSendTap} unavailable={!transfersOn} />
+              <ActionButton testId="wallet-receive" icon={<Download size={26} strokeWidth={1.8} />} label="Receive" onClick={onReceiveTap} unavailable={!transfersOn} />
+            </div>
+            {unavailableText && (
+              <div data-testid="wallet-transfers-note" data-reason={availability.kind} role="status"
+                style={{ display: 'flex', gap: 8, alignItems: 'flex-start', margin: '0 0 14px', padding: '10px 12px', borderRadius: 18, background: W.earningsCard, border: `1px solid ${W.cardBorder}` }}>
+                <Clock aria-hidden size={16} color={W.lavender} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: 12.5, color: W.sub, lineHeight: 1.45 }}>
+                  {availability.kind === 'loading' ? unavailableText : <>Send and Receive: {unavailableText}</>}
+                  {availability.kind === 'error' && (
+                    <button type="button" data-testid="wallet-transfers-retry" onClick={loadStatus}
+                      style={{ marginLeft: 6, minHeight: 32, background: 'none', border: 'none', color: W.lavender, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', padding: 0 }}>Try again</button>
+                  )}
+                </span>
               </div>
             )}
             <div style={{ height: 1, background: W.divider, margin: '0 0 20px' }} />
@@ -499,6 +496,25 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
         <ReceiveMoneySheet username={transferStatus?.username ?? currentUser?.username ?? null} displayName={currentUser?.full_name ?? null} onClose={() => setShowReceive(false)} />
       )}
 
+      {unavailableFor && (
+        <Sheet title={unavailableFor === 'send' ? 'Send Money' : 'Receive Money'} onClose={() => { setUnavailableFor(null); setSendTo(null); }} testId="transfers-unavailable-sheet">
+          {sendTo && unavailableFor === 'send' && (
+            <p data-testid="transfers-unavailable-payee" style={{ margin: '0 0 10px', fontSize: 13, color: ventsColors.ink2 }}>You opened a payment link for <b style={{ color: ventsColors.white }}>@{sendTo}</b>.</p>
+          )}
+          <Notice tone={availability.kind === 'error' ? 'error' : 'warn'} testId="transfers-unavailable-reason">{transferUnavailableText(availability)}</Notice>
+          {isStaff && transferUnavailableStaffText(availability) && (
+            <p data-testid="transfers-unavailable-staff" style={{ margin: '10px 0 0', fontSize: 12, color: ventsColors.ink3, lineHeight: 1.45 }}>{transferUnavailableStaffText(availability)}</p>
+          )}
+          <p style={{ margin: '12px 0 0', fontSize: 12.5, color: ventsColors.ink2, lineHeight: 1.5 }}>
+            Your Wallet Balance is unchanged. You can still deposit and pay for tickets and services with it.
+          </p>
+          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {availability.kind === 'error' && <PrimaryButton testId="transfers-unavailable-retry" onClick={() => { loadStatus(); }}>Try again</PrimaryButton>}
+            <PrimaryButton tone="ghost" onClick={() => { setUnavailableFor(null); setSendTo(null); }}>Close</PrimaryButton>
+          </div>
+        </Sheet>
+      )}
+
       {selected && (
         <Sheet title="Transaction details" onClose={() => setSelected(null)} testId="wallet-receipt">
           <ReceiptBody t={selected} receipt={receipt} />
@@ -517,12 +533,15 @@ const summaryAmount: React.CSSProperties = { fontSize: 'clamp(17px, 5.6vw, 22px)
 const pill: React.CSSProperties = { fontSize: 13.5, fontWeight: 500, padding: '5px 12px', borderRadius: 999, whiteSpace: 'nowrap' };
 const srOnly: React.CSSProperties = { position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 };
 
-function ActionButton({ icon, label, onClick, testId }: { icon: React.ReactNode; label: string; onClick: () => void; testId: string }) {
+/** One of the three wallet actions. "unavailable" keeps it visible and tappable (it opens the reason), only dimmed. */
+function ActionButton({ icon, label, onClick, testId, unavailable = false }: { icon: React.ReactNode; label: string; onClick: () => void; testId: string; unavailable?: boolean }) {
   return (
+    // Not aria-disabled: tapping it does something (opens the reason), so it is announced as a normal button.
     <button type="button" data-testid={testId} onClick={onClick}
-      style={{ minHeight: 72, background: 'none', border: 'none', color: '#FFFFFF', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        gap: 8, fontWeight: 500, fontSize: 15, cursor: 'pointer', minWidth: 0, padding: '6px 0' }}>
-      <span aria-hidden style={{ color: W.lavender, display: 'flex' }}>{icon}</span>
+      aria-label={unavailable ? `${label}, not available right now` : label} data-unavailable={unavailable ? 'true' : 'false'}
+      style={{ minHeight: 76, background: 'none', border: 'none', borderRadius: 20, color: '#FFFFFF', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 8, fontWeight: 500, fontSize: 15, cursor: 'pointer', minWidth: 0, padding: '6px 0', opacity: unavailable ? 0.5 : 1 }}>
+      <span aria-hidden style={{ width: 48, height: 48, borderRadius: 999, background: W.balanceCard, color: W.lavender, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
       {label}
     </button>
   );

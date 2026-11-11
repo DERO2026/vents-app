@@ -61,7 +61,7 @@ import { CreateEventScreen } from './components/CreateEventScreen';
 import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { UnifiedWalletScreen } from './components/wallet/UnifiedWalletScreen';
-import { PAY_PARAM, PAY_TO_STORAGE_KEY, usernameFromPayParam } from '../lib/walletTransfers';
+import { PAY_PARAM, PAY_TO_STORAGE_KEY, WALLET_RECEIPT_STORAGE_KEY, usernameFromPayParam } from '../lib/walletTransfers';
 import { TicketRefundScreen } from './components/TicketRefundScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
@@ -2093,9 +2093,11 @@ export default function App() {
           // rich instant-QR success screen this path has no data left for.
           await fetchUserTickets(currentUser.id);
           await fetchEvents(true);
-          setAppToastSuccess('Payment confirmed! Your ticket is in Wallet.');
+          // Tickets live in Tix ('my-tickets'). 'wallet' is the money wallet, and
+          // for organizers it opens Earnings: never the place to find a ticket.
+          setAppToastSuccess('Payment confirmed! Your ticket is in Tix.');
           setScreenStack([]);
-          setScreen('wallet');
+          setScreen('my-tickets');
           return;
         }
 
@@ -2254,7 +2256,7 @@ export default function App() {
 
         await fetchUserTickets(currentUser.id);
         await fetchEvents(true);
-        setAppToastSuccess('Payment confirmed! Your ticket is in Wallet.');
+        setAppToastSuccess('Payment confirmed! Your ticket is in Tix.');
       } catch (err: any) {
         console.error('Failed to resolve pending payment reference:', err);
         Sentry.captureException(err);
@@ -2619,7 +2621,13 @@ export default function App() {
     if (data.screen === 'notifications') { setScreenStack([]); setScreen('notifications'); return; }
     if (data.screen === 'my-tickets') { setScreenStack([]); setScreen('my-tickets'); return; }
     if (data.screen === 'wallet') { setScreenStack([]); setScreen('wallet'); return; }
-    if (data.screen === 'customer-wallet') { setScreenStack([]); setScreen('customer-wallet'); return; }
+    if (data.screen === 'customer-wallet') {
+      // "Money sent / received" (0215): open that transfer's receipt on the Wallet tab.
+      if (data.type === 'wallet_transfer' && data.reference) {
+        try { sessionStorage.setItem(WALLET_RECEIPT_STORAGE_KEY, data.reference); } catch { /* storage unavailable */ }
+      }
+      setScreenStack([]); setScreen('customer-wallet'); return;
+    }
   };
 
   // Stable identity (never recreated) wrapping the always-current

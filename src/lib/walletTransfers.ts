@@ -62,6 +62,73 @@ export interface TransferReceipt {
   recipient: { username: string | null; name: string | null };
 }
 
+/**
+ * Why Send / Receive can or cannot be used right now. The wallet always shows
+ * all three actions; when transfers are unavailable it says which of these
+ * reasons applies instead of hiding them.
+ *   not_deployed -- the database has no 0215 (get_my_wallet_transfer_status
+ *                   does not exist), so transfers cannot run at all;
+ *   disabled     -- 0215 is installed but the VENTS Admin kill switch
+ *                   (app_config.disable_wallet_transfers, ON by default) is on;
+ *   error        -- the status check itself failed (network, permission...);
+ *   ready        -- the server says transfers are enabled.
+ */
+export type TransferAvailability =
+  | { kind: 'loading' }
+  | { kind: 'not_deployed' }
+  | { kind: 'disabled'; status: TransferStatus }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; status: TransferStatus };
+
+export async function fetchTransferAvailability(): Promise<TransferAvailability> {
+  try {
+    const status = await fetchTransferStatus();
+    if (!status) return { kind: 'not_deployed' };
+    return status.enabled ? { kind: 'ready', status } : { kind: 'disabled', status };
+  } catch (e: any) {
+    return { kind: 'error', message: e?.message || 'Could not check transfers' };
+  }
+}
+
+/** Plain-language reason Send / Receive are unavailable, for everyone; null when they are available. */
+export function transferUnavailableText(a: TransferAvailability): string | null {
+  switch (a.kind) {
+    case 'ready': return null;
+    case 'loading': return 'Checking whether sending money is available…';
+    case 'not_deployed': return 'Sending and receiving money between VENTS users isn\'t live yet. Deposits and wallet payments work as normal.';
+    case 'disabled': return 'Sending and receiving money is paused by VENTS right now. Your balance is safe, and deposits and wallet payments work as normal.';
+    case 'error': return 'We couldn\'t check whether sending money is available. Check your connection and try again.';
+  }
+}
+
+/** The technical reason, shown only to VENTS staff. */
+export function transferUnavailableStaffText(a: TransferAvailability): string | null {
+  switch (a.kind) {
+    case 'not_deployed': return 'Staff: migration 0215 (wallet transfers) is not applied on this database, so get_my_wallet_transfer_status does not exist.';
+    case 'disabled': return 'Staff: 0215 is applied; the kill switch is on (app_config.disable_wallet_transfers). The VENTS Admin turns it off in System → Wallet Transfers.';
+    case 'error': return `Staff: get_my_wallet_transfer_status failed: ${a.message}`;
+    default: return null;
+  }
+}
+
+/**
+ * A reason this user cannot send right now even though transfers are on
+ * (the server enforces every one of these again; this only saves the user
+ * from filling the form in first). A missing PIN is not a block: the Send
+ * sheet creates it.
+ */
+export function sendBlockReason(s: TransferStatus, now: Date = new Date()): string | null {
+  if (!s.account_ok) return 'Your account can\'t send money right now. Contact support if you think this is a mistake.';
+  if (!s.email_verified) return 'Verify your email address to send money.';
+  if (!s.account_old_enough) return `New accounts can send money ${s.policy?.min_account_age_hours ?? 24} hours after signing up.`;
+  if (s.pin_locked) return 'Your PIN is locked after too many wrong attempts. Sending money and withdrawals are paused for now. Reset your PIN in Earnings → PIN.';
+  if (s.pin_paused_until && new Date(s.pin_paused_until) > now) {
+    return `Your PIN was changed recently. For your security, sending money resumes ${new Date(s.pin_paused_until).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}.`;
+  }
+  if (s.remaining_today_kobo <= 0 || (s.policy && s.sent_today_count >= s.policy.daily_count)) return 'You have reached today\'s sending limit. Try again tomorrow.';
+  return null;
+}
+
 /** The status RPC does not exist on a database without 0215: treated as "not available yet". */
 export async function fetchTransferStatus(): Promise<TransferStatus | null> {
   const { data, error } = await supabase.rpc('get_my_wallet_transfer_status' as any);
@@ -154,6 +221,8 @@ export async function fetchTransferReceipt(reference: string): Promise<TransferR
 export const PAY_LINK_BASE = 'https://getvents.com';
 export const PAY_PARAM = 'pay';
 export const PAY_TO_STORAGE_KEY = 'vents_pay_to';
+/** A tapped "Money sent / received" notification: the wallet opens that transfer's receipt. */
+export const WALLET_RECEIPT_STORAGE_KEY = 'vents_wallet_receipt';
 
 export function payLinkFor(username: string): string {
   return `${PAY_LINK_BASE}/?${PAY_PARAM}=${encodeURIComponent(username)}`;

@@ -28,6 +28,7 @@ import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
 import { SkeletonCard } from './SkeletonCard';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
+import { BOTTOM_NAV_CLEARANCE } from './BottomNav';
 
 // Root admin account — same convention used in App.tsx / the Admin Console.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -1749,7 +1750,7 @@ export function HomeScreen({
       {/* Scrollable content -- Events/Services quick-switch now lives here,
           as the first thing in the normal scroll flow, so it moves with the
           rest of Home instead of staying pinned in the fixed hero above. */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: BOTTOM_NAV_CLEARANCE }}>
 
         {/* Combined active-filter summary -- one place to see (and clear)
             category/state/price filters narrowing the feed. Country is

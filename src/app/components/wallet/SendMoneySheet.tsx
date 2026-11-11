@@ -7,7 +7,7 @@ import { BadgeCheck, Search, ArrowLeft } from 'lucide-react';
 import { ventsColors } from '../../../lib/ventsDesignTokens';
 import {
   findRecipient, usernameProblem, parseNairaToKobo, transferAmountProblem, formatNaira, newTransferKey, sendMoney,
-  transferRefusalText, type TransferRecipient, type TransferStatus, type TransferResult,
+  transferRefusalText, sendBlockReason, type TransferRecipient, type TransferStatus, type TransferResult,
 } from '../../../lib/walletTransfers';
 import { PIN_LENGTH, pinProblem, createPin } from '../../../lib/withdrawals';
 import { Sheet, PrimaryButton, FieldLabel, inputStyle, DetailRow, Notice } from './walletUi';
@@ -42,6 +42,8 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
   const amountKobo = parseNairaToKobo(amountText);
   const amountProblem = transferAmountProblem(amountKobo, balanceKobo, status);
   const noteMax = status.policy?.note_max_length ?? 140;
+  // Account-level reasons the server would refuse anyway (email, account age, PIN lock, daily limit): said up front.
+  const block = sendBlockReason(status);
 
   const lookup = async (raw = username) => {
     const problem = usernameProblem(raw);
@@ -106,6 +108,13 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
 
   return (
     <Sheet title={step === 'done' ? 'Money sent' : 'Send Money'} onClose={onClose} testId="send-money-sheet" busy={busy}>
+      {block && step !== 'done' ? (
+        <div data-testid="send-blocked">
+          <Notice tone="warn">{block}</Notice>
+          <p style={{ margin: '10px 0 14px', fontSize: 12.5, color: ventsColors.ink2, lineHeight: 1.5 }}>Nothing was sent. Your Wallet Balance is unchanged.</p>
+          <PrimaryButton tone="ghost" onClick={onClose}>Close</PrimaryButton>
+        </div>
+      ) : (<>
       {step !== 'recipient' && step !== 'done' && (
         <button type="button" onClick={back} disabled={busy} data-testid="send-back"
           style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 44, background: 'none', border: 'none', color: ventsColors.ink2, fontSize: 13, cursor: 'pointer', padding: 0, marginTop: -8 }}>
@@ -222,6 +231,7 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
           <div style={{ marginTop: 16 }}><PrimaryButton testId="send-done-close" onClick={onClose}>Done</PrimaryButton></div>
         </div>
       )}
+      </>)}
     </Sheet>
   );
 }

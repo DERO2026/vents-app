@@ -19,7 +19,14 @@ describe('wallet entry points', () => {
     expect(app).toMatch(/initialTab=\{screen === 'wallet' && \(\s*!!currentUser\?\.isOrganizer \|\| currentUser\?\.is_service_provider === true \|\|\s*currentUser\?\.role === 'admin' \|\| currentUser\?\.role === 'sub-admin'\s*\) \? 'earnings' : 'balance'\}/);
   });
   it('wallet notifications open the wallet', () => {
-    expect(app).toMatch(/data\.screen === 'customer-wallet'\) \{ setScreenStack\(\[\]\); setScreen\('customer-wallet'\)/);
+    expect(app).toMatch(/if \(data\.screen === 'customer-wallet'\) \{[\s\S]{0,400}setScreenStack\(\[\]\); setScreen\('customer-wallet'\); return;/);
+  });
+  it('a transfer notification opens its receipt (reference handed over in sessionStorage only)', () => {
+    expect(app).toMatch(/data\.type === 'wallet_transfer' && data\.reference\) \{\s*try \{ sessionStorage\.setItem\(WALLET_RECEIPT_STORAGE_KEY, data\.reference\)/);
+  });
+  it('a confirmed ticket payment never routes to the money wallet (organizers would land on Earnings)', () => {
+    expect(app).not.toMatch(/Your ticket is in Wallet/);
+    expect(app).toMatch(/Your ticket is in Tix\.'\);\s*setScreenStack\(\[\]\);\s*setScreen\('my-tickets'\)/);
   });
   it('?pay= is validated, stripped from the URL and only stored for the Send Money sheet', () => {
     expect(app).toMatch(/const payTo = usernameFromPayParam\(params\.get\(PAY_PARAM\)\)/);

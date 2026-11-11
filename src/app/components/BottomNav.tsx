@@ -62,6 +62,14 @@ const TABS: { id: TabId; label: string; Icon: typeof Home }[] = [
 // component spec calls for explicitly ("purple glow is reserved for one
 // thing per screen: the primary action or the AI entry") -- not a new
 // visual invented here, just the one glow the design docs already ask for.
+// Compact dock (Nov 2026): 60px tall, 10px above the safe area (was 68px,
+// 14px). Each button is still 52px tall (> the 44px minimum), icons 20px,
+// labels unchanged at 9.5px.
+export const BOTTOM_NAV_HEIGHT = 60;
+export const BOTTOM_NAV_OFFSET = 10;
+/** Bottom padding a nav-root scroll area needs so its last row clears the dock (with a 14px gap). */
+export const BOTTOM_NAV_CLEARANCE = `calc(${BOTTOM_NAV_HEIGHT + BOTTOM_NAV_OFFSET + 14}px + env(safe-area-inset-bottom))`;
+
 export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, siEnabled = true, onOpenSi }: BottomNavProps) {
   return (
     <div
@@ -69,16 +77,16 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
         position: 'absolute',
         left: '10px',
         right: '10px',
-        bottom: `calc(14px + env(safe-area-inset-bottom, 0px))`,
-        height: '68px',
-        borderRadius: '34px',
+        bottom: `calc(${BOTTOM_NAV_OFFSET}px + env(safe-area-inset-bottom, 0px))`,
+        height: `${BOTTOM_NAV_HEIGHT}px`,
+        borderRadius: '30px',
         background: 'rgba(28,22,56,0.62)',
         backdropFilter: 'blur(26px) saturate(150%)',
         WebkitBackdropFilter: 'blur(26px) saturate(150%)',
         border: '1px solid rgba(255,255,255,0.16)',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 14px 34px rgba(0,0,0,0.55)',
         display: 'flex',
-        padding: '5px',
+        padding: '4px',
         gap: '2px',
         zIndex: 50,
         maxWidth: '480px',
@@ -98,24 +106,24 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
               minWidth: 0,
               position: 'relative',
               border: 'none',
-              borderRadius: '28px',
+              borderRadius: '26px',
               background: isActive ? 'rgba(139,92,246,0.55)' : 'transparent',
               color: isActive ? '#fff' : '#b4aecb',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '3px',
+              gap: '2px',
               padding: 0,
               cursor: 'pointer',
               transition: 'background 0.15s ease',
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <Icon size={22} strokeWidth={1.8} color="currentColor" />
+            <Icon size={20} strokeWidth={1.8} color="currentColor" />
             {id === 'explore' && hasUnreadChats && (
               <span style={{
-                position: 'absolute', top: '6px', right: 'calc(50% - 15px)',
+                position: 'absolute', top: '5px', right: 'calc(50% - 14px)',
                 width: '7px', height: '7px', borderRadius: '9999px',
                 background: '#8E5CF7', border: '1.5px solid #1c1638', display: 'block',
               }} />
@@ -146,14 +154,14 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
             flex: 1,
             minWidth: 0,
             border: 'none',
-            borderRadius: '28px',
+            borderRadius: '26px',
             background: siActive ? '#7B2FBE' : 'transparent',
             color: siActive ? '#fff' : '#c4b5fd',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '3px',
+            gap: '2px',
             padding: 0,
             cursor: siEnabled ? 'pointer' : 'default',
             opacity: siEnabled ? 1 : 0.35,
@@ -163,7 +171,7 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <Sparkle size={22} strokeWidth={1.8} color="currentColor" fill={siActive ? 'currentColor' : 'none'} />
+          <Sparkle size={20} strokeWidth={1.8} color="currentColor" fill={siActive ? 'currentColor' : 'none'} />
           <span style={{ font: "600 9.5px 'Manrope', sans-serif", whiteSpace: 'nowrap' }}>VENTS AI</span>
         </button>
       )}

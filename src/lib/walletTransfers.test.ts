@@ -3,7 +3,9 @@ vi.mock('./supabase', () => ({ supabase: { rpc: vi.fn() } }));
 import {
   parseNairaToKobo, usernameProblem, normalizeUsernameInput, transferAmountProblem, payLinkFor, usernameFromPayParam,
   newTransferKey, transferRefusalText, formatNaira, type TransferStatus,
+  fetchTransferAvailability, sendBlockReason, transferUnavailableText, transferUnavailableStaffText,
 } from './walletTransfers';
+import { supabase } from './supabase';
 import { isWalletCredit, walletTxnDirection, walletTxnLabel } from './walletMath';
 import { classifyWalletTransaction } from './walletTransactionClassifier';
 
@@ -79,5 +81,54 @@ describe('transaction direction (regression: VC conversions were shown as money 
     expect(classifyWalletTransaction({ type: 'transfer_out', referenceId: 'VTABC' })).toBe('transfer_out');
     expect(classifyWalletTransaction({ type: 'vc_conversion', referenceId: 'x' })).toBe('vc_conversion');
     expect(classifyWalletTransaction({ type: 'spend', referenceId: 'VNT-1' })).toBe('ticket_purchase');
+  });
+});
+
+describe('transfer availability: why Send / Receive can or cannot be used', () => {
+  const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+  it('no 0215 on the database (function missing) -> not_deployed', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'Could not find the function public.get_my_wallet_transfer_status without parameters in the schema cache', code: 'PGRST202' } });
+    expect((await fetchTransferAvailability()).kind).toBe('not_deployed');
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'function public.get_my_wallet_transfer_status() does not exist', code: '42883' } });
+    expect((await fetchTransferAvailability()).kind).toBe('not_deployed');
+  });
+  it('kill switch on -> disabled; on -> ready; any other failure -> error (never mistaken for "not deployed")', async () => {
+    rpc.mockResolvedValueOnce({ data: status({ enabled: false }), error: null });
+    expect((await fetchTransferAvailability()).kind).toBe('disabled');
+    rpc.mockResolvedValueOnce({ data: status(), error: null });
+    expect((await fetchTransferAvailability()).kind).toBe('ready');
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'permission denied for function', code: '42501' } });
+    expect(await fetchTransferAvailability()).toEqual({ kind: 'error', message: 'permission denied for function' });
+    rpc.mockRejectedValueOnce(new Error('Failed to fetch'));
+    expect((await fetchTransferAvailability()).kind).toBe('error');
+  });
+  it('every unavailable state has a plain reason; staff text names the cause; ready has none', () => {
+    expect(transferUnavailableText({ kind: 'ready', status: status() })).toBeNull();
+    for (const a of [{ kind: 'not_deployed' }, { kind: 'disabled', status: status({ enabled: false }) }, { kind: 'error', message: 'x' }, { kind: 'loading' }] as const) {
+      expect(transferUnavailableText(a as any)).toBeTruthy();
+      expect(transferUnavailableText(a as any)).not.toMatch(/0215|kill switch|app_config/);   // no internals for users
+    }
+    expect(transferUnavailableStaffText({ kind: 'not_deployed' })).toMatch(/0215.*not applied/);
+    expect(transferUnavailableStaffText({ kind: 'disabled', status: status({ enabled: false }) })).toMatch(/kill switch is on/);
+  });
+});
+
+describe('sendBlockReason: account-level refusals said before the form', () => {
+  const now = new Date('2026-11-11T12:00:00Z');
+  it('nothing blocks a normal account (a missing PIN is created in the sheet, not a block)', () => {
+    expect(sendBlockReason(status(), now)).toBeNull();
+    expect(sendBlockReason(status({ has_pin: false }), now)).toBeNull();
+  });
+  it.each([
+    [{ account_ok: false }, /can't send money/],
+    [{ email_verified: false }, /Verify your email/],
+    [{ account_old_enough: false }, /24 hours after signing up/],
+    [{ pin_locked: true }, /PIN is locked/],
+    [{ pin_paused_until: '2026-11-12T00:00:00Z' }, /changed recently/],
+    [{ remaining_today_kobo: 0 }, /today's sending limit/],
+    [{ sent_today_count: 20 }, /today's sending limit/],
+  ])('%j blocks', (over, text) => { expect(sendBlockReason(status(over as any), now)).toMatch(text); });
+  it('a PIN pause that has already ended does not block', () => {
+    expect(sendBlockReason(status({ pin_paused_until: '2026-11-10T00:00:00Z' }), now)).toBeNull();
   });
 });
