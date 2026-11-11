@@ -154,21 +154,18 @@ describe('Wallet Balance', () => {
     expect(q('wallet-vc-card')!.textContent).toMatch(/can't be withdrawn or sent/);
   });
 
-  it('Send and Receive appear only when the server says transfers are on', async () => {
+  it('Deposit, Send and Receive are always shown; Send and Receive only work when the server says transfers are on', async () => {
     rpcResult.get_my_wallet_transfer_status = () => ({ data: { ...statusOn, enabled: false }, error: null });
     await render();
-    expect(q('wallet-deposit')).toBeTruthy();
-    expect(q('wallet-send')).toBeNull();
-    expect(q('wallet-receive')).toBeNull();
-    act(() => root!.unmount()); container!.remove(); container = null; root = null;
-    rpcResult.get_my_wallet_transfer_status = () => ({ data: null, error: { message: 'Could not find the function public.get_my_wallet_transfer_status', code: 'PGRST202' } });
-    await render();
-    expect(q('wallet-send')).toBeNull();
+    for (const id of ['wallet-deposit', 'wallet-send', 'wallet-receive']) expect(q(id)).toBeTruthy();
+    expect(q('wallet-send')!.dataset.unavailable).toBe('true');
+    expect(q('wallet-receive')!.dataset.unavailable).toBe('true');
     act(() => root!.unmount()); container!.remove(); container = null; root = null;
     rpcResult.get_my_wallet_transfer_status = () => ({ data: statusOn, error: null });
     await render();
-    expect(q('wallet-send')).toBeTruthy();
-    expect(q('wallet-receive')).toBeTruthy();
+    expect(q('wallet-send')!.dataset.unavailable).toBe('false');
+    expect(q('wallet-receive')!.dataset.unavailable).toBe('false');
+    expect(q('wallet-transfers-note')).toBeNull();
   });
 
   it('history: every type has the right label, sign and colour; VC conversions are money in', async () => {
@@ -357,52 +354,39 @@ describe('Receive Money', () => {
 });
 
 // Regression: the Wallet/Earnings switch moved while scrolling and on tab
-// switch, and Deposit sat alone in the middle of a three-column row.
-describe('switch position and actions (layout regressions)', () => {
-  const geometry = (sc: HTMLElement, anchorTopInFlow: number) => {
-    // jsdom has no layout: give the scroll container and anchor real-looking geometry.
-    sc.getBoundingClientRect = () => ({ top: 0, left: 0, right: 390, bottom: 800, width: 390, height: 800, x: 0, y: 0, toJSON() {} }) as DOMRect;
-    q('wallet-tabs-anchor')!.getBoundingClientRect = () => ({ top: anchorTopInFlow - sc.scrollTop, left: 0, right: 390, bottom: anchorTopInFlow - sc.scrollTop, width: 390, height: 0, x: 0, y: 0, toJSON() {} }) as DOMRect;
-  };
-
-  it('the scroll container has no top padding (it would inset the sticky switch); the safe area is on the non-scrolling root', async () => {
+// switch (it was sticky inside a padded scroller), and Send / Receive were
+// silently missing whenever transfers were unavailable.
+describe('one stable screen (layout regressions)', () => {
+  it('one scroll container for the whole wallet; nothing inside it is sticky or fixed, and it has no top padding', async () => {
     await render();
     const sc = q('wallet-scroll')!;
+    expect(sc.style.overflowY).toBe('auto');
     expect(sc.style.paddingTop).toBe('0px');
+    const positioned = [...sc.querySelectorAll<HTMLElement>('*')].filter((el) => ['sticky', 'fixed'].includes(el.style.position));
+    expect(positioned).toEqual([]);
+    const innerScrollers = [...sc.querySelectorAll<HTMLElement>('*')].filter((el) => ['auto', 'scroll'].includes(el.style.overflowY) || ['auto', 'scroll'].includes(el.style.overflow));
+    expect(innerScrollers).toEqual([]);
+    expect(q('wallet-tabs')!.style.position).toBe('');
     // jsdom drops env() values, so this rule is checked in the source: the safe area pads the root, never the scroller.
-    expect(walletSource).toMatch(/data-testid="unified-wallet"[^>]*\n?[^>]*paddingTop: 'env\(safe-area-inset-top\)'/);
+    expect(walletSource).toMatch(/data-testid="unified-wallet"[^>]*paddingTop: 'env\(safe-area-inset-top\)'/);
     expect(walletSource).not.toMatch(/data-testid="wallet-scroll"[\s\S]{0,300}safe-area-inset-top/);
-    const tabs = q('wallet-tabs')!;
-    expect(tabs.style.position).toBe('sticky');
-    expect(tabs.style.top).toBe('0px');
-    expect(tabs.style.background).not.toBe('');           // opaque: content never shows through
-    expect(tabs.previousElementSibling).toBe(q('wallet-tabs-anchor'));
+    expect(walletSource).not.toMatch(/position: 'sticky'/);
   });
 
-  it('switching while the switch is stuck keeps it in place: the other tab opens at its top, and each tab keeps its own position', async () => {
+  it('switching tabs never moves the page, in either direction', async () => {
     await render();
     const sc = q('wallet-scroll')!;
-    geometry(sc, 210);
-    sc.scrollTop = 900;                                   // deep in the Wallet history
+    sc.scrollTop = 240;
     await click(q('wallet-tab-earnings'));
-    expect(sc.scrollTop).toBe(210);                       // Earnings at its top, switch still stuck
-    sc.scrollTop = 400;
+    expect(sc.scrollTop).toBe(240);
     await click(q('wallet-tab-balance'));
-    expect(sc.scrollTop).toBe(900);                       // Wallet where the user left it
-    await click(q('wallet-tab-earnings'));
-    expect(sc.scrollTop).toBe(400);                       // and Earnings too
+    expect(sc.scrollTop).toBe(240);
+    await click(q('wallet-earnings-card'));               // the balance cards switch tabs too
+    expect(q('wallet-panel-earnings')!.hidden).toBe(false);
+    expect(sc.scrollTop).toBe(240);
   });
 
-  it('switching above the stick point does not move the page', async () => {
-    await render();
-    const sc = q('wallet-scroll')!;
-    geometry(sc, 210);
-    sc.scrollTop = 50;
-    await click(q('wallet-tab-earnings'));
-    expect(sc.scrollTop).toBe(50);
-  });
-
-  it('each panel is at least one viewport below the switch, so a short tab cannot drag the switch down', async () => {
+  it('each panel is at least one viewport below the switch, so a short tab cannot make the browser pull the page up', async () => {
     const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
     const oh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
     Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return (this as HTMLElement).dataset.testid === 'wallet-scroll' ? 800 : 0; } });
@@ -417,36 +401,96 @@ describe('switch position and actions (layout regressions)', () => {
     }
   });
 
-  it('with transfers unavailable, Deposit is one full-width row and Send/Receive do not exist (0215 missing, switched off, or status error)', async () => {
-    const cases = [
-      () => ({ data: null, error: { message: 'Could not find the function public.get_my_wallet_transfer_status', code: 'PGRST202' } }),
-      () => ({ data: { ...statusOn, enabled: false }, error: null }),
-      () => ({ data: null, error: { message: 'permission denied', code: '42501' } }),
-    ];
-    for (const status of cases) {
+  it('the three actions share one row with identical sizing', async () => {
+    await render();
+    expect(q('wallet-actions')!.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
+    const sizes = ['wallet-deposit', 'wallet-send', 'wallet-receive'].map((id) => `${q(id)!.style.minHeight}|${q(id)!.style.fontSize}`);
+    expect(new Set(sizes).size).toBe(1);
+    expect(parseInt(q('wallet-send')!.style.minHeight)).toBeGreaterThanOrEqual(44);
+  });
+});
+
+describe('Send / Receive availability is explained, never silently hidden', () => {
+  const NOT_DEPLOYED = () => ({ data: null, error: { message: 'Could not find the function public.get_my_wallet_transfer_status without parameters in the schema cache', code: 'PGRST202' } });
+  const cases: [string, () => any, RegExp][] = [
+    ['not_deployed', NOT_DEPLOYED, /isn't live yet/],
+    ['disabled', () => ({ data: { ...statusOn, enabled: false }, error: null }), /paused by VENTS/],
+    ['error', () => ({ data: null, error: { message: 'permission denied', code: '42501' } }), /couldn't check/],
+  ];
+  for (const [kind, status, text] of cases) {
+    it(`${kind}: Send and Receive stay visible, the reason is on screen, tapping shows it, and nothing is sent`, async () => {
       rpcResult.get_my_wallet_transfer_status = status;
       await render();
-      expect(q('wallet-actions')!.dataset.layout).toBe('single');
-      expect(q('wallet-deposit')!.style.width).toBe('100%');
-      expect(q('wallet-deposit')!.textContent).toMatch(/Deposit.*Paystack/);
-      expect(q('wallet-send')).toBeNull();
-      expect(q('wallet-receive')).toBeNull();
-      expect(container!.textContent).not.toMatch(/\btransfers\b/i);   // no promise of a feature that is off
-      act(() => root!.unmount()); container!.remove(); container = null; root = null;
-    }
+      expect(q('wallet-transfers-note')!.dataset.reason).toBe(kind);
+      expect(q('wallet-transfers-note')!.textContent).toMatch(text);
+      expect(q('wallet-send')!.getAttribute('aria-label')).toBe('Send, not available right now');
+      expect(q('wallet-send')!.hasAttribute('disabled')).toBe(false);
+      await click(q('wallet-send'));
+      expect(q('send-money-sheet')).toBeNull();
+      expect(q('transfers-unavailable-reason')!.textContent).toMatch(text);
+      expect(q('transfers-unavailable-staff')).toBeNull();            // technical detail is staff-only
+      expect(q('transfers-unavailable-sheet')!.textContent).toMatch(/Balance is unchanged/);
+      await click(q('transfers-unavailable-sheet')!.querySelector('button:last-of-type'));
+      await click(q('wallet-receive'));
+      expect(q('receive-money-sheet')).toBeNull();
+      expect(q('transfers-unavailable-sheet')).toBeTruthy();
+      expect(rpcCalls.some((c) => ['find_wallet_transfer_recipient', 'transfer_wallet_funds'].includes(c.name))).toBe(false);
+    });
+  }
+
+  it('staff also see the technical reason (migration missing vs kill switch)', async () => {
+    rpcResult.get_my_wallet_transfer_status = NOT_DEPLOYED;
+    await render({ currentUser: { ...user, role: 'admin' } });
+    await click(q('wallet-send'));
+    expect(q('transfers-unavailable-staff')!.textContent).toMatch(/0215.*not applied/);
+    act(() => root!.unmount()); container!.remove(); container = null; root = null;
+    rpcResult.get_my_wallet_transfer_status = () => ({ data: { ...statusOn, enabled: false }, error: null });
+    await render({ currentUser: { ...user, role: 'admin' } });
+    await click(q('wallet-send'));
+    expect(q('transfers-unavailable-staff')!.textContent).toMatch(/kill switch is on/);
   });
 
-  it('with transfers on, the three actions share one row', async () => {
+  it('a failed status check can be retried from the wallet', async () => {
+    let calls = 0;
+    rpcResult.get_my_wallet_transfer_status = () => (++calls === 1 ? { data: null, error: { message: 'timeout', code: '57014' } } : { data: statusOn, error: null });
     await render();
-    expect(q('wallet-actions')!.dataset.layout).toBe('grid');
-    expect(q('wallet-actions')!.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
-    for (const id of ['wallet-deposit', 'wallet-send', 'wallet-receive']) expect(q(id)).toBeTruthy();
+    expect(q('wallet-transfers-note')!.dataset.reason).toBe('error');
+    await click(q('wallet-transfers-retry'));
+    await act(async () => { await flush(); });
+    expect(q('wallet-transfers-note')).toBeNull();
+    expect(q('wallet-send')!.dataset.unavailable).toBe('false');
   });
 
-  it('the Deposit row opens the deposit sheet', async () => {
-    rpcResult.get_my_wallet_transfer_status = () => ({ data: null, error: { message: 'x', code: 'PGRST202' } });
+  it('a payment link opened while transfers are unavailable says so (with the payee) instead of doing nothing', async () => {
+    rpcResult.get_my_wallet_transfer_status = NOT_DEPLOYED;
+    sessionStorage.setItem('vents_pay_to', 'bola');
     await render();
-    await click(q('wallet-deposit'));
-    expect(q('deposit-sheet')).toBeTruthy();
+    expect(q('transfers-unavailable-sheet')).toBeTruthy();
+    expect(q('transfers-unavailable-payee')!.textContent).toMatch(/@bola/);
+    expect(q('send-money-sheet')).toBeNull();
+  });
+
+  it('a payment link opens Send Money with the recipient looked up when transfers are on', async () => {
+    sessionStorage.setItem('vents_pay_to', 'bola');
+    await render();
+    expect(q('send-money-sheet')).toBeTruthy();
+    expect(rpcCalls.find((c) => c.name === 'find_wallet_transfer_recipient')!.params).toEqual({ p_username: 'bola' });
+  });
+
+  it('a "Money received" notification opens that transfer\'s receipt', async () => {
+    sessionStorage.setItem('vents_wallet_receipt', 'VTIN');
+    await render();
+    await act(async () => { await flush(); });
+    expect(q('wallet-receipt')).toBeTruthy();
+    expect(q('wallet-receipt-ref')!.textContent).toMatch(/VTIN/);
+    expect(q('wallet-panel-balance')!.hidden).toBe(false);
+  });
+
+  it('Send is blocked up front, with the reason, when the account cannot send (email not verified)', async () => {
+    rpcResult.get_my_wallet_transfer_status = () => ({ data: { ...statusOn, email_verified: false }, error: null });
+    await render();
+    await click(q('wallet-send'));
+    expect(q('send-blocked')!.textContent).toMatch(/Verify your email/);
+    expect(q('send-money-sheet')!.querySelector('input')).toBeNull();
   });
 });

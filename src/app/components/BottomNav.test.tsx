@@ -108,3 +108,33 @@ describe('BottomNav', () => {
     expect(homeButton.querySelectorAll('span').length).toBe(1);
   });
 });
+
+describe('BottomNav compact dock (size, touch targets, clearance)', () => {
+  it('is 60px tall, 10px above the safe area, and every button stays >= 44px tall with readable labels', async () => {
+    const { BOTTOM_NAV_HEIGHT, BOTTOM_NAV_OFFSET } = await import('./BottomNav');
+    act(() => { root!.render(<BottomNav activeTab="home" onTabChange={() => {}} />); });
+    const dock = container!.firstElementChild as HTMLElement;
+    expect(dock.style.height).toBe('60px');
+    expect(BOTTOM_NAV_HEIGHT).toBe(60);
+    expect(BOTTOM_NAV_OFFSET).toBe(10);
+    const pad = parseInt(dock.style.padding);
+    expect(BOTTOM_NAV_HEIGHT - 2 * pad).toBeGreaterThanOrEqual(44);   // button height
+    for (const b of container!.querySelectorAll('button')) {
+      const label = b.querySelector('span:last-child') as HTMLElement;
+      expect(label.style.font).toMatch(/9\.5px/);
+      expect(b.querySelector('svg')!.getAttribute('width')).toBe('20');
+    }
+  });
+  it('the bottom keeps the iPhone safe area (source check: jsdom drops env())', async () => {
+    const src = (await import('./BottomNav.tsx?raw')).default;
+    expect(src).toMatch(/bottom: `calc\(\$\{BOTTOM_NAV_OFFSET\}px \+ env\(safe-area-inset-bottom, 0px\)\)`/);
+  });
+  it('nav screens clear the dock: their bottom padding is the shared clearance (dock + offset + 14px gap)', async () => {
+    const { BOTTOM_NAV_CLEARANCE } = await import('./BottomNav');
+    expect(BOTTOM_NAV_CLEARANCE).toBe('calc(84px + env(safe-area-inset-bottom))');
+    for (const f of ['./HomeScreen.tsx?raw', './ExploreScreen.tsx?raw', './ServicesHomeScreen.tsx?raw']) {
+      const src = (await import(/* @vite-ignore */ f)).default as string;
+      expect(src).toMatch(/BOTTOM_NAV_CLEARANCE/);
+    }
+  });
+});

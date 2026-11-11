@@ -9,6 +9,7 @@ import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { haptics } from '../../lib/haptics';
 import { Sentry } from '../../lib/sentry';
 import { avatarFill } from '../../lib/avatarFill';
+import { BOTTOM_NAV_CLEARANCE } from './BottomNav';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -388,7 +389,7 @@ export function ExploreScreen({
       )}
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: BOTTOM_NAV_CLEARANCE }}>
 
         {!currentUserId ? (
           <p style={{ color: ventsColors.ink2, textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Sign in to see your messages.</p>

@@ -803,7 +803,8 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
           )}
 
           {/* Withdrawal PIN (0211): create / change / reset */}
-          {isEarner && pinSupported && pinStatus && (
+          {/* Anyone with a PIN can change or reset it here: Send Money (0215) creates one for non-earners too. */}
+          {(isEarner || pinStatus?.has_pin) && pinSupported && pinStatus && (
             <div data-testid="withdrawal-pin-row" style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
               <ShieldCheck size={18} color={pinStatus.has_pin && !pinStatus.locked ? ventsColors.success : ventsColors.pending} />
               <div style={{ flex: 1, minWidth: 0 }}>

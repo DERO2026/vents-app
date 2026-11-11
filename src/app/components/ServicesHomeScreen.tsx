@@ -11,6 +11,7 @@ import { ServiceProviderCard, ServiceProviderCompactCard } from './ServiceProvid
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { PickerSheet } from './shared/PickerSheet';
+import { BOTTOM_NAV_CLEARANCE } from './BottomNav';
 
 interface ServicesHomeScreenProps {
   onBack: () => void;
@@ -305,7 +306,7 @@ export function ServicesHomeScreen({
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px ${BOTTOM_NAV_CLEARANCE}` }}>
         {isSearching ? (
           <>
             <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, margin: '0 0 12px' }}>

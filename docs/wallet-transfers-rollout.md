@@ -9,7 +9,7 @@ Nothing here has been run against production. Every step marked **[owner]** need
 | Frontend | getvents.com = `dpl_34rMQ4ydQiu4k8n72vC6xDKLkiCC`, commit `0677d97` (PR #102 + #103). The unified wallet is live. |
 | 0213 (VENTS Admin payout authority) | Applied 2026-11-10, per the rollout record. |
 | 0214 (payouts list) | Not applied. The screen falls back to 0213. |
-| 0215 (transfers) | Not applied. The live wallet shows only Deposit; Send and Receive are hidden, because `get_my_wallet_transfer_status` does not exist yet. |
+| 0215 (transfers) | Not applied (per the rollout record; not re-checked: production reads need approval). Live (`main`): the wallet shows only Deposit, because `get_my_wallet_transfer_status` does not exist. After PR #105: Deposit, Send and Receive are always shown; Send and Receive explain why they can't be used ("isn't live yet" without 0215, "paused" while the kill switch is on, "couldn't check" on an error), and staff also see the technical cause. Nothing can be sent until 0215 is applied **and** the VENTS Admin turns transfers on. |
 
 ## 1. Pre-flight (read-only) **[owner approval: production read]**
 
