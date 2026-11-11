@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ventsColors, ventsStatusColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -196,6 +196,10 @@ async function authedFetch(path: string, body: any) {
   if (!res.ok) throw new Error(json.error || 'Request failed');
   return json;
 }
+
+const sectionHeading: React.CSSProperties = { fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' };
+// Inside the unified wallet: the same section heading as the Wallet tab's "Recent transactions".
+const embeddedSectionHeading: React.CSSProperties = { margin: '0 0 12px', fontSize: 18, fontWeight: 600, color: ventsColors.white };
 
 export function WalletScreen({ currentUser, onBack, embedded = false }: WalletScreenProps) {
   // Earnings/withdrawal/bank-account sections only apply to accounts that
@@ -714,11 +718,11 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
       </div>}
 
       {loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: embedded ? '32px 0' : undefined }}>
-          <span style={{ color: ventsColors.ink2 }}>Loading…</span>
+        <div data-testid="earnings-loading" style={embedded ? { padding: '20px 0' } : { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ color: ventsColors.ink2, fontSize: embedded ? 14 : undefined }}>Loading…</span>
         </div>
       ) : (
-        <div style={embedded ? { padding: '16px 0 0' } : { flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
+        <div style={embedded ? { padding: '12px 0 0' } : { flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '16px', padding: '12px 16px', marginBottom: '20px' }}>
               <AlertCircle size={16} color={ventsColors.pending} style={{ flexShrink: 0 }} />
@@ -827,7 +831,7 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
               earnings that made this an earner were later reversed. */}
           {bankAccounts.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
+              <p style={embedded ? embeddedSectionHeading : sectionHeading}>Payout Accounts</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {bankAccounts.map(acct => (
                   <div key={acct.id} style={{ background: 'rgba(255,255,255,0.04)', border: acct.is_default ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '14px 16px' }}>
@@ -862,7 +866,7 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
           )}
 
           {/* Transaction history */}
-          <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Transactions</p>
+          <p style={embedded ? embeddedSectionHeading : sectionHeading}>Transactions</p>
           {txnsError ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '24px 0' }}>
               <AlertCircle size={18} color={ventsColors.error} />

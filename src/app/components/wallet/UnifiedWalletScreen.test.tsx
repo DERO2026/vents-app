@@ -35,6 +35,7 @@ vi.mock('../WalletScreen', () => ({ WalletScreen: (p: any) => <div data-testid="
 vi.mock('qrcode', () => ({ default: { toDataURL: async () => 'data:image/png;base64,QR' } }));
 
 import { UnifiedWalletScreen } from './UnifiedWalletScreen';
+import walletSource from './UnifiedWalletScreen.tsx?raw';
 
 const user = { id: 'u1', email: 'a@example.test', full_name: 'Ada', role: 'user', username: 'ada' };
 const statusOn = { enabled: true, username: 'ada', sent_today_kobo: 0, sent_today_count: 0, remaining_today_kobo: 50000000, account_ok: true, account_old_enough: true,
@@ -352,5 +353,100 @@ describe('Receive Money', () => {
     await act(async () => { await flush(); });
     await click(q('wallet-receive'));
     expect(q('receive-no-username')).toBeTruthy();
+  });
+});
+
+// Regression: the Wallet/Earnings switch moved while scrolling and on tab
+// switch, and Deposit sat alone in the middle of a three-column row.
+describe('switch position and actions (layout regressions)', () => {
+  const geometry = (sc: HTMLElement, anchorTopInFlow: number) => {
+    // jsdom has no layout: give the scroll container and anchor real-looking geometry.
+    sc.getBoundingClientRect = () => ({ top: 0, left: 0, right: 390, bottom: 800, width: 390, height: 800, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    q('wallet-tabs-anchor')!.getBoundingClientRect = () => ({ top: anchorTopInFlow - sc.scrollTop, left: 0, right: 390, bottom: anchorTopInFlow - sc.scrollTop, width: 390, height: 0, x: 0, y: 0, toJSON() {} }) as DOMRect;
+  };
+
+  it('the scroll container has no top padding (it would inset the sticky switch); the safe area is on the non-scrolling root', async () => {
+    await render();
+    const sc = q('wallet-scroll')!;
+    expect(sc.style.paddingTop).toBe('0px');
+    // jsdom drops env() values, so this rule is checked in the source: the safe area pads the root, never the scroller.
+    expect(walletSource).toMatch(/data-testid="unified-wallet"[^>]*\n?[^>]*paddingTop: 'env\(safe-area-inset-top\)'/);
+    expect(walletSource).not.toMatch(/data-testid="wallet-scroll"[\s\S]{0,300}safe-area-inset-top/);
+    const tabs = q('wallet-tabs')!;
+    expect(tabs.style.position).toBe('sticky');
+    expect(tabs.style.top).toBe('0px');
+    expect(tabs.style.background).not.toBe('');           // opaque: content never shows through
+    expect(tabs.previousElementSibling).toBe(q('wallet-tabs-anchor'));
+  });
+
+  it('switching while the switch is stuck keeps it in place: the other tab opens at its top, and each tab keeps its own position', async () => {
+    await render();
+    const sc = q('wallet-scroll')!;
+    geometry(sc, 210);
+    sc.scrollTop = 900;                                   // deep in the Wallet history
+    await click(q('wallet-tab-earnings'));
+    expect(sc.scrollTop).toBe(210);                       // Earnings at its top, switch still stuck
+    sc.scrollTop = 400;
+    await click(q('wallet-tab-balance'));
+    expect(sc.scrollTop).toBe(900);                       // Wallet where the user left it
+    await click(q('wallet-tab-earnings'));
+    expect(sc.scrollTop).toBe(400);                       // and Earnings too
+  });
+
+  it('switching above the stick point does not move the page', async () => {
+    await render();
+    const sc = q('wallet-scroll')!;
+    geometry(sc, 210);
+    sc.scrollTop = 50;
+    await click(q('wallet-tab-earnings'));
+    expect(sc.scrollTop).toBe(50);
+  });
+
+  it('each panel is at least one viewport below the switch, so a short tab cannot drag the switch down', async () => {
+    const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    const oh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return (this as HTMLElement).dataset.testid === 'wallet-scroll' ? 800 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return (this as HTMLElement).dataset.testid === 'wallet-tabs' ? 72 : 0; } });
+    try {
+      await render();
+      expect(q('wallet-panel-balance')!.style.minHeight).toBe('728px');
+      expect(q('wallet-panel-earnings')!.style.minHeight).toBe('728px');
+    } finally {
+      if (ch) Object.defineProperty(HTMLElement.prototype, 'clientHeight', ch);
+      if (oh) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', oh);
+    }
+  });
+
+  it('with transfers unavailable, Deposit is one full-width row and Send/Receive do not exist (0215 missing, switched off, or status error)', async () => {
+    const cases = [
+      () => ({ data: null, error: { message: 'Could not find the function public.get_my_wallet_transfer_status', code: 'PGRST202' } }),
+      () => ({ data: { ...statusOn, enabled: false }, error: null }),
+      () => ({ data: null, error: { message: 'permission denied', code: '42501' } }),
+    ];
+    for (const status of cases) {
+      rpcResult.get_my_wallet_transfer_status = status;
+      await render();
+      expect(q('wallet-actions')!.dataset.layout).toBe('single');
+      expect(q('wallet-deposit')!.style.width).toBe('100%');
+      expect(q('wallet-deposit')!.textContent).toMatch(/Deposit.*Paystack/);
+      expect(q('wallet-send')).toBeNull();
+      expect(q('wallet-receive')).toBeNull();
+      expect(container!.textContent).not.toMatch(/\btransfers\b/i);   // no promise of a feature that is off
+      act(() => root!.unmount()); container!.remove(); container = null; root = null;
+    }
+  });
+
+  it('with transfers on, the three actions share one row', async () => {
+    await render();
+    expect(q('wallet-actions')!.dataset.layout).toBe('grid');
+    expect(q('wallet-actions')!.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
+    for (const id of ['wallet-deposit', 'wallet-send', 'wallet-receive']) expect(q(id)).toBeTruthy();
+  });
+
+  it('the Deposit row opens the deposit sheet', async () => {
+    rpcResult.get_my_wallet_transfer_status = () => ({ data: null, error: { message: 'x', code: 'PGRST202' } });
+    await render();
+    await click(q('wallet-deposit'));
+    expect(q('deposit-sheet')).toBeTruthy();
   });
 });
