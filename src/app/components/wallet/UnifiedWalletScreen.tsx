@@ -11,10 +11,22 @@
 // between each other here. VENTS Cents are shown on their own card: points,
 // not naira.
 //
-// Both tabs stay mounted, so switching never reloads or resets either side
-// and each keeps its own scroll position.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, PlusCircle, Send, Download, ArrowDownLeft, ArrowUpRight, Ticket, CalendarCheck, RotateCcw, Coins, Info, CircleDollarSign } from 'lucide-react';
+// Both tabs stay mounted, so switching never reloads or resets either side,
+// and each tab remembers its own scroll position (they share one scroll
+// container, so the positions are saved and restored on switch).
+//
+// Layout rules that keep the Wallet/Earnings switch fixed in place:
+//   * the scroll container has NO top padding. Sticky elements are inset by
+//     their scroll container's padding, so a padded container left a strip
+//     (12px + the iPhone safe area) above the stuck switch where content
+//     scrolled through visibly. The safe area is padding on the
+//     non-scrolling root instead;
+//   * the switch sticks at top: 0;
+//   * each panel is at least one viewport (minus the switch) tall while the
+//     switch is stuck, so switching to a shorter tab can't make the browser
+//     clamp the scroll and drag the switch down the screen.
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowLeft, PlusCircle, Send, Download, ArrowDownLeft, ArrowUpRight, Ticket, CalendarCheck, RotateCcw, Coins, Info, CircleDollarSign, ChevronRight, Receipt } from 'lucide-react';
 import { supabase, getAuthToken } from '../../../lib/supabase';
 import { apiUrl } from '../../../lib/apiBase';
 import { openPaystackPopup } from '../../../lib/paystack';
@@ -115,6 +127,12 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   const [earningsKobo, setEarningsKobo] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
+  // Not sticky: marks where the switch sits in the flow, which a stuck
+  // (sticky) element's own offsetTop does not.
+  const tabsAnchorRef = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef<Record<WalletTab, number | null>>({ balance: null, earnings: null });
+  const pendingScroll = useRef<number | null>(null);
+  const [panelMinHeight, setPanelMinHeight] = useState(0);
   const [transferStatus, setTransferStatus] = useState<TransferStatus | null>(null);
   const [vc, setVc] = useState<number | null>(null);
 
@@ -195,6 +213,8 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
     }
   };
 
+  const openDeposit = () => { setDepositError(''); setDepositAmount(''); setShowDeposit(true); };
+
   const handleDeposit = async () => {
     const amountKobo = Math.round(Number(depositAmount) * 100);
     const validationError = validateWalletDepositAmountKobo(amountKobo);
@@ -249,12 +269,47 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
     }
   };
 
+  // Send and Receive exist only once 0215 is applied AND the VENTS Admin has
+  // switched transfers on: get_my_wallet_transfer_status answers null until
+  // the migration exists, and enabled=false while the kill switch is on.
   const transfersOn = !!transferStatus?.enabled;
-  // Switching tabs keeps the layout; if the user had scrolled below the tabs, the new tab starts at its top.
-  const selectTab = (next: WalletTab) => {
-    setTab(next);
+
+  /** Scroll offset at which the switch reaches the top and sticks. */
+  const stickOffset = () => {
+    const sc = scrollRef.current, a = tabsAnchorRef.current;
+    if (!sc || !a) return 0;
+    return Math.max(0, Math.round(a.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop));
+  };
+
+  // Each panel is at least as tall as the viewport below the stuck switch.
+  useLayoutEffect(() => {
     const sc = scrollRef.current, tb = tabsRef.current;
-    if (sc && tb && sc.scrollTop > tb.offsetTop) sc.scrollTop = tb.offsetTop;
+    if (!sc || !tb) return;
+    const measure = () => setPanelMinHeight(Math.max(0, sc.clientHeight - tb.offsetHeight));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(sc); ro.observe(tb);
+    return () => ro.disconnect();
+  }, []);
+
+  // Applied after the new panel is shown, so the browser never clamps it.
+  useLayoutEffect(() => {
+    const sc = scrollRef.current;
+    if (sc && pendingScroll.current !== null) { sc.scrollTop = pendingScroll.current; pendingScroll.current = null; }
+  }, [tab]);
+
+  // While the switch is stuck, switching keeps it exactly where it is and shows the other tab
+  // where the user left it (or at its top). Above that point the page doesn't move.
+  const selectTab = (next: WalletTab) => {
+    if (next === tab) return;
+    const sc = scrollRef.current;
+    if (sc) {
+      const stick = stickOffset();
+      savedScroll.current[tab] = sc.scrollTop >= stick ? sc.scrollTop : null;
+      if (sc.scrollTop >= stick) pendingScroll.current = Math.max(stick, savedScroll.current[next] ?? stick);
+    }
+    setTab(next);
   };
 
   const onTabKey = (e: React.KeyboardEvent) => {
@@ -278,11 +333,13 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
   };
 
   return (
-    <div data-testid="unified-wallet" style={{ background: W.page, height: '100%', color: ventsColors.white, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div data-testid="unified-wallet" style={{ background: W.page, height: '100%', color: ventsColors.white, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      paddingTop: 'env(safe-area-inset-top)', boxSizing: 'border-box' }}>
+      {/* No top padding here: it would inset the sticky switch (see the header comment). */}
       <div ref={scrollRef} data-testid="wallet-scroll"
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain',
-          padding: '12px 16px calc(24px + env(safe-area-inset-bottom))', paddingTop: 'calc(12px + env(safe-area-inset-top))' }}>
-        <div data-testid="wallet-card" style={{ maxWidth: 560, margin: '0 auto', border: `1px solid ${W.cardBorder}`, borderRadius: 36, padding: '16px 12px 20px', background: W.page, boxSizing: 'border-box' }}>
+          paddingTop: 0, paddingLeft: 16, paddingRight: 16, paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+        <div data-testid="wallet-card" style={{ maxWidth: 560, margin: '12px auto 0', border: `1px solid ${W.cardBorder}`, borderRadius: 36, padding: '16px 12px 20px', background: W.page, boxSizing: 'border-box' }}>
           {/* Title row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 44, marginBottom: 12 }}>
             <button type="button" onClick={onBack} aria-label="Back" data-testid="wallet-back"
@@ -312,7 +369,8 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
           </div>
 
           {/* Tabs (stay on screen while the content scrolls) */}
-          <div ref={tabsRef} style={{ position: 'sticky', top: -1, zIndex: 2, background: W.page, padding: '12px 0 4px', margin: '0 -2px' }}>
+          <div ref={tabsAnchorRef} aria-hidden data-testid="wallet-tabs-anchor" />
+          <div ref={tabsRef} data-testid="wallet-tabs" style={{ position: 'sticky', top: 0, zIndex: 2, background: W.page, padding: '12px 0 8px' }}>
             <div role="tablist" aria-label="Wallet" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 999, background: W.tabTrack }}>
               {tabButton('balance', 'Wallet', balanceTabRef)}
               {tabButton('earnings', 'Earnings', earningsTabRef)}
@@ -321,13 +379,31 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
 
           {/* ── Wallet ── */}
           <div role="tabpanel" id="wallet-panel-balance" aria-labelledby="wallet-tab-balance" hidden={tab !== 'balance'} data-testid="wallet-panel-balance"
-            style={{ display: tab === 'balance' ? 'block' : 'none' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${transfersOn ? 3 : 1}, minmax(0, 1fr))`, padding: '10px 0 14px' }}>
-              <ActionButton testId="wallet-deposit" icon={<PlusCircle size={26} strokeWidth={1.8} />} label="Deposit" onClick={() => { setDepositError(''); setDepositAmount(''); setShowDeposit(true); }} />
-              {transfersOn && <ActionButton testId="wallet-send" icon={<Send size={26} strokeWidth={1.8} />} label="Send" onClick={() => { setSendTo(null); setShowSend(true); }} />}
-              {transfersOn && <ActionButton testId="wallet-receive" icon={<Download size={26} strokeWidth={1.8} />} label="Receive" onClick={() => setShowReceive(true)} />}
-            </div>
-            <div style={{ height: 1, background: W.divider, margin: '0 0 22px' }} />
+            style={{ display: tab === 'balance' ? 'block' : 'none', minHeight: panelMinHeight, paddingTop: 8, boxSizing: 'border-box' }}>
+            {transfersOn ? (
+              <div data-testid="wallet-actions" data-layout="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', padding: '2px 0 14px' }}>
+                <ActionButton testId="wallet-deposit" icon={<PlusCircle size={26} strokeWidth={1.8} />} label="Deposit" onClick={openDeposit} />
+                <ActionButton testId="wallet-send" icon={<Send size={26} strokeWidth={1.8} />} label="Send" onClick={() => { setSendTo(null); setShowSend(true); }} />
+                <ActionButton testId="wallet-receive" icon={<Download size={26} strokeWidth={1.8} />} label="Receive" onClick={() => setShowReceive(true)} />
+              </div>
+            ) : (
+              // One action: a full-width row, not a lone icon centred in a three-column slot.
+              <div data-testid="wallet-actions" data-layout="single" style={{ padding: '2px 0 14px' }}>
+                <button type="button" data-testid="wallet-deposit" onClick={openDeposit}
+                  style={{ width: '100%', minHeight: 64, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 24,
+                    background: W.earningsCard, border: `1px solid ${W.cardBorder}`, color: '#FFFFFF', cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
+                  <span aria-hidden style={{ width: 40, height: 40, borderRadius: 999, background: W.balanceCard, color: W.lavender, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <PlusCircle size={22} strokeWidth={1.8} />
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 16, fontWeight: 700 }}>Deposit</span>
+                    <span style={{ display: 'block', fontSize: 13, color: W.sub, marginTop: 2 }}>Add money by card or bank through Paystack</span>
+                  </span>
+                  <ChevronRight aria-hidden size={20} color={W.sub} style={{ flexShrink: 0 }} />
+                </button>
+              </div>
+            )}
+            <div style={{ height: 1, background: W.divider, margin: '0 0 20px' }} />
 
             {flash && <div style={{ marginBottom: 12 }}><Notice tone="ok" testId="wallet-flash">{flash}</Notice></div>}
 
@@ -341,9 +417,12 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
                   <PrimaryButton tone="ghost" onClick={() => void load()}>Try again</PrimaryButton>
                 </div>
               ) : txns.length === 0 ? (
-                <p data-testid="wallet-empty" style={{ padding: '12px 0 4px', color: W.sub, fontSize: 14, lineHeight: 1.5 }}>
-                  No transactions yet. Deposits, purchases, refunds and transfers will show up here.
-                </p>
+                <div data-testid="wallet-empty" style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 14, borderRadius: 24, border: `1px dashed ${W.cardBorder}` }}>
+                  <Receipt aria-hidden size={20} color={W.sub} style={{ flexShrink: 0 }} />
+                  <p style={{ margin: 0, color: W.sub, fontSize: 14, lineHeight: 1.5 }}>
+                    No transactions yet. Deposits, purchases and refunds{transfersOn ? ' and transfers' : ''} will show up here.
+                  </p>
+                </div>
               ) : (
                 <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                   {txns.map((t) => <TxnRow key={t.id} t={t} onOpen={() => openTxn(t)} />)}
@@ -357,7 +436,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
             </section>
 
             <section aria-label="VENTS Cents" data-testid="wallet-vc-card"
-              style={{ marginTop: 20, background: W.earningsCard, borderRadius: 26, padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              style={{ marginTop: 20, background: W.earningsCard, border: `1px solid ${W.cardBorder}`, borderRadius: 24, padding: '12px 14px', display: 'flex', gap: 12, alignItems: 'flex-start', boxSizing: 'border-box' }}>
               <Coins size={20} color="#FFD700" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
@@ -378,8 +457,8 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
 
           {/* ── Earnings ── */}
           <div role="tabpanel" id="wallet-panel-earnings" aria-labelledby="wallet-tab-earnings" hidden={tab !== 'earnings'} data-testid="wallet-panel-earnings"
-            style={{ display: tab === 'earnings' ? 'block' : 'none', paddingTop: 10 }}>
-            <div data-testid="earnings-explainer" style={{ background: W.earningsCard, borderRadius: 24, display: 'flex', gap: 10, padding: 12 }}>
+            style={{ display: tab === 'earnings' ? 'block' : 'none', minHeight: panelMinHeight, paddingTop: 8, boxSizing: 'border-box' }}>
+            <div data-testid="earnings-explainer" style={{ background: W.earningsCard, border: `1px solid ${W.cardBorder}`, borderRadius: 24, display: 'flex', gap: 12, padding: '12px 14px', boxSizing: 'border-box' }}>
               <Info size={16} color={W.lavender} style={{ flexShrink: 0, marginTop: 2 }} />
               <p style={{ margin: 0, fontSize: 12.5, color: W.sub, lineHeight: 1.45 }}>
                 Earnings are what you make on VENTS: ticket sales, services and rewards. They become withdrawable to your bank after settlement

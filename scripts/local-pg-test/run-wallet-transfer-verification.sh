@@ -231,17 +231,47 @@ done
 ORGW_BEFORE=$(val "SELECT md5(string_agg(organizer_id::text || balance_kobo || '/' || pending_kobo, ',' ORDER BY organizer_id)) FROM public.organizer_wallets;")
 PRE=$(val "$WSTATE")
 
+echo "== Preflight (supabase/preflight/0215_preflight.sql) and the apply guard =="
+PF="$REPO_ROOT/supabase/preflight/0215_preflight.sql"
+HDR="$REPO_ROOT/supabase/preflight/0215_apply_header.sql"
+preflight() { "${PSQL[@]}" -qtA -f - <"$PF" 2>"$ERR" | python3 -c "import sys; t=sys.stdin.read(); print(t[t.find('{'):t.rfind('}')+1].replace(chr(10), ' '))"; }
+pf_field() { printf '%s' "$1" | python3 -c "import json,sys; v=json.load(sys.stdin); [v:=v[k] for k in sys.argv[1].split('.')]; print(json.dumps(v, sort_keys=True))" "$2"; }
+PF0="$(preflight)"
+expect_value "preflight runs read-only" "$(pf_field "$PF0" read_only)" '"on"'
+expect_value "preflight before 0215: no blockers" "$(pf_field "$PF0" blockers)" '[]'
+expect_value "preflight reports the case-twin usernames (informational)" "$(pf_field "$PF0" baseline.Q10_duplicate_case_username_groups)" '1'
+expect_value "preflight changed nothing" "$(val "$WSTATE")" "$PRE"
+expect_error "preflight cannot write even if edited to (READ ONLY transaction)" "read-only transaction" \
+  "BEGIN TRANSACTION READ ONLY; UPDATE public.user_wallets SET balance_kobo = balance_kobo; ROLLBACK;"
+# Statement by statement (no transaction): SET LOCAL does not hold, the guard stops before any DDL.
+if "${PSQL[@]}" -q -f - < <(cat "$HDR" "$M15") >"$OUT" 2>"$ERR"; then fail "apply guard: ran outside one transaction"; else
+  grep -q "not running inside one transaction" "$ERR" && pass "apply guard: outside one transaction it stops before any DDL" || { fail "apply guard message"; cat "$ERR" >&2; }; fi
+expect_value "...and nothing was applied" "$(val "$WSTATE")" "$PRE"
+# A session holding a lock on app_config: 0215 gives up after lock_timeout (5s) instead of queueing the app behind it.
+"${PSQL[@]}" -q -c "BEGIN; LOCK TABLE public.app_config IN ACCESS SHARE MODE; SELECT pg_sleep(12); COMMIT;" >/dev/null 2>&1 &
+HOLDER=$!; sleep 1
+T0=$(date +%s)
+if "${PSQL[@]}" -q -c "BEGIN; $(cat "$HDR" "$M15") COMMIT;" >"$OUT" 2>"$ERR"; then fail "lock_timeout: applied while app_config was locked"; else
+  T1=$(date +%s)
+  if grep -q "lock timeout" "$ERR" && [ $((T1 - T0)) -le 9 ]; then pass "lock_timeout: blocked by a lock, 0215 fails within ~5s ($((T1 - T0))s)"; else fail "lock_timeout: $((T1 - T0))s"; cat "$ERR" >&2; fi; fi
+wait "$HOLDER" 2>/dev/null
+expect_value "...and nothing was applied" "$(val "$WSTATE")" "$PRE"
+
 echo "== Applying 0215 =="
 expect_error "0215 refuses a ledger type constraint that drifted from 0146" "expected 0146's four types" \
   "BEGIN; ALTER TABLE public.user_wallet_transactions DROP CONSTRAINT user_wallet_transactions_type_check; ALTER TABLE public.user_wallet_transactions ADD CONSTRAINT user_wallet_transactions_type_check CHECK (type = ANY (ARRAY['deposit', 'spend', 'refund', 'vc_conversion', 'mystery'])); $(cat "$M15") ROLLBACK;"
 expect_value "...and changed nothing" "$(val "$WSTATE")" "$PRE"
-expect_ok "0215 applies" "$(cat "$M15")"
+expect_ok "0215 applies (wrapped: BEGIN; apply header; 0215; COMMIT)" "BEGIN; $(cat "$HDR" "$M15") COMMIT;"
 POST=$(val "$WSTATE")
+expect_value "the timeouts were transaction-only: a new session has the defaults" "$(val "SELECT current_setting('lock_timeout') || '/' || current_setting('statement_timeout');")" "0/0"
+PF1="$(preflight)"
+expect_value "preflight after 0215: blocks re-apply (objects already present)" "$(pf_field "$PF1" blockers | grep -c 'Q7 an object 0215 creates already exists')" "1"
 expect_ok "0215 is idempotent" "$(cat "$M15")"
 expect_value "a second run changes nothing" "$(val "$WSTATE")" "$POST"
 expect_value "transfers are OFF after applying" "$(val "SELECT public.wallet_transfers_disabled()::text;")" "true"
 expect_error "undo_0215 needs its confirmation" "to confirm" "$(cat "$U15")"
 expect_ok "undo_0215 with no transfers" "SET vents.rollback_confirm = 'undo-0215'; $(cat "$U15")"
+expect_value "preflight after undo_0215: no blockers again" "$(pf_field "$(preflight)" blockers)" '[]'
 expect_value "...restores the exact pre-0215 schema" "$(val "$WSTATE")" "$PRE"
 expect_ok "0215 re-applies" "$(cat "$M15")"
 expect_value "...to the same state" "$(val "$WSTATE")" "$POST"
