@@ -141,6 +141,55 @@ describe('AiPlansScreen: real current-tier status (never a hardcoded "unlocked" 
     expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeTruthy();
   });
 
+  // The expiry boundary, on the real screen: resolveHasRealAiAccess() treats period_end as
+  // passed only when it is strictly before now (src/lib/aiEntitlementClient.ts).
+  const atPeriodEnd = (deltaMs: number) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(new Date(PERIOD_END).getTime() + deltaMs));
+  };
+  const showsCurrent = () => {
+    expect(container!.textContent).toContain("You're on");
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeFalsy();
+  };
+  const showsNoAccess = () => {
+    expect(container!.textContent).toContain("don't have an active VENTS AI subscription");
+    expect(container!.textContent).not.toContain("You're on");
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeTruthy();
+  };
+
+  it.each([
+    ['1 ms before period_end', -1, true],
+    ['exactly at period_end', 0, true],
+    ['1 ms after period_end', 1, false],
+  ])('expiry boundary: %s', async (_label, deltaMs, current) => {
+    atPeriodEnd(deltaMs);
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockResolvedValueOnce({ data: { plan_id: 'ai_plus', status: 'active', period_end: PERIOD_END, grace_until: null }, error: null });
+    await mount();
+    if (current) showsCurrent(); else showsNoAccess();
+  });
+
+  it('in the grace period after period_end: still the current plan, shown as overdue (not "Renews")', async () => {
+    atPeriodEnd(2 * 24 * 60 * 60 * 1000);                              // 2 days after period_end
+    const graceUntil = new Date(new Date(PERIOD_END).getTime() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockResolvedValueOnce({ data: { plan_id: 'ai_plus', status: 'grace', period_end: PERIOD_END, grace_until: graceUntil }, error: null });
+    await mount();
+    showsCurrent();
+    expect(container!.textContent).toContain('Renewal is overdue');
+    expect(container!.textContent).not.toContain('Renews');
+  });
+
+  it('after the grace period ends: no access', async () => {
+    const graceUntilMs = new Date(PERIOD_END).getTime() + 5 * 24 * 60 * 60 * 1000;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(graceUntilMs + 1));                       // 1 ms after grace_until
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockResolvedValueOnce({ data: { plan_id: 'ai_plus', status: 'grace', period_end: PERIOD_END, grace_until: new Date(graceUntilMs).toISOString() }, error: null });
+    await mount();
+    showsNoAccess();
+  });
+
   it('shows an honest "no active subscription" message for a user with no entitlement row, never a renewal date', async () => {
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     rpc.mockResolvedValueOnce({ data: { plan_id: null, status: 'inactive' }, error: null });
