@@ -4,7 +4,8 @@ import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { uploadAllowanceError } from '../../lib/uploadAllowance';
-import { PRIVATE_CHANNEL_OPTIONS, dmTopic, userTopic } from '../../lib/realtimeTopics';
+import { PRIVATE_CHANNEL_OPTIONS, dmTopic } from '../../lib/realtimeTopics';
+import { onUserRealtime } from '../../lib/userRealtime';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
@@ -239,17 +240,16 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
     // My own private topic -- the server-side notify_new_direct_message()
     // trigger signals new_message here (no body; the thread reloads through
-    // direct_messages' own RLS). Only I can join it (migration 0199).
-    const receiveChannel = supabase.channel(userTopic(currentUser.id), PRIVATE_CHANNEL_OPTIONS);
-
-    receiveChannel.on('broadcast', { event: 'new_message' }, (msg) => {
+    // direct_messages' own RLS). Only I can join it (migration 0199). The
+    // channel is shared with App's badge listener (userRealtime): closing
+    // this conversation only drops this handler, never the channel.
+    const offNewMessage = onUserRealtime(currentUser.id, 'new_message', (msg) => {
       const payload = msg.payload as any;
       if (payload?.sender_id === otherUser.id || payload?.recipient_id === otherUser.id) {
         load();
         loadRequestStatus();
       }
     });
-    receiveChannel.subscribe();
 
     // Typing indicators: this conversation's private topic, which only the
     // two of us can join (never the other user's personal topic).
@@ -268,7 +268,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     return () => {
       clearInterval(interval);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      supabase.removeChannel(receiveChannel);
+      offNewMessage();
+      // The dm:<a>:<b> typing channel belongs to this screen alone.
       supabase.removeChannel(typingChannel);
       typingSendChannelRef.current = null;
     };

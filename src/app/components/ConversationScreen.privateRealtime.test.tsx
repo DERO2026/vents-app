@@ -89,8 +89,9 @@ describe('ConversationScreen private Realtime', () => {
     expect(byTopic(`user:${OTHER}`)).toBeUndefined();
   });
 
-  it('listens for new_message on my topic and typing on the conversation topic only', () => {
-    expect(byTopic(`user:${ME}`)!.handlers.map((h) => h.event)).toEqual(['new_message']);
+  it('listens on my topic through the shared userRealtime dispatcher, and for typing on the conversation topic only', () => {
+    // userRealtime binds ONE '*' broadcast listener per user topic and routes by event name.
+    expect(byTopic(`user:${ME}`)!.handlers.map((h) => h.event)).toEqual(['*']);
     expect(byTopic(DM)!.handlers.map((h) => h.event)).toEqual(['typing']);
   });
 
@@ -115,16 +116,20 @@ describe('ConversationScreen private Realtime', () => {
     const before = fromCalls.filter((t) => t === 'direct_messages').length;
     const ch = byTopic(`user:${ME}`)!;
     await act(async () => {
-      ch.handlers.filter((h) => h.event === 'new_message')
-        .forEach((h) => h.cb({ payload: { id: 'm1', sender_id: OTHER, recipient_id: ME, created_at: '2026-10-28T10:00:00Z' } }));
+      ch.handlers.filter((h) => h.event === '*')
+        .forEach((h) => h.cb({ type: 'broadcast', event: 'new_message', payload: { id: 'm1', sender_id: OTHER, recipient_id: ME, created_at: '2026-10-28T10:00:00Z' } }));
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(fromCalls.filter((t) => t === 'direct_messages').length).toBeGreaterThan(before);
   });
 
-  it('removes both channels when the conversation closes', () => {
+  it('closing the conversation removes its own dm channel, and the user channel only because nothing else holds it', async () => {
     const opened = [...channels];
     act(() => root.unmount());
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    // Here the conversation is the user topic's only listener, so userRealtime releases it too;
+    // with the app's badge listener registered it stays open (src/lib/userRealtime.test.ts,
+    // src/app/components/userRealtime.screens.test.tsx).
     for (const c of opened) expect(removeChannel).toHaveBeenCalledWith(c);
     root = createRoot(container); // afterEach unmounts again harmlessly
   });
