@@ -107,7 +107,7 @@ const at = (i: number) => new Date(Date.UTC(2026, 9, 28) - i * 3600_000).toISOSt
 const claim = (id: string, status: string, i = 0) => ({ id, at: at(i), organizer_id: `o-${id}`, organizer_name: `Org ${id}`, event_title: `Event ${id}`, status, amount_kobo: 5000000, reward_month: '2026-10-01', decision_reason: null });
 const rewards = (over: any = {}) => ({
   representative: { status: 'active' }, payouts_enabled: true, programme_open: true, funding_available: true,
-  current_rate_kobo: 7500000, rate_review_threshold: 9, qualifying_this_month: 2, qualifying_last_month: 9,
+  base_reward_kobo: 5000000, current_rate_kobo: 7500000, rate_review_threshold: 9, qualifying_this_month: 2, qualifying_last_month: 9,
   ...over,
 });
 
@@ -155,9 +155,15 @@ describe('Representative dashboard', () => {
     expect(byTestId('rep-wallet-pending')?.textContent).toContain('₦10,000');
     expect(byTestId('rep-wallet-pending')?.textContent).toContain('₦3,000 on hold');
     expect(byTestId('rep-month-progress')?.textContent).toContain('2 qualifying organizers');
-    expect(byTestId('rep-month-progress')?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('2');
+    // The reward is fixed at N50,000 (0217): no progress toward a rate review, no higher-rate promise.
+    expect(byTestId('rep-month-progress')?.textContent).toContain('₦50,000 each · a fixed reward, no monthly bonus');
+    expect(byTestId('rep-month-progress')?.querySelector('[role="progressbar"]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/higher rate|rate review/i);
     await click(byTestId('rep-withdraw')!);
-    expect(onNavigate).toHaveBeenCalledWith('wallet');
+    // The Earnings tab, whatever the representative's other roles (not 'wallet', which
+    // opens Wallet Balance for someone who is not an organizer, provider or admin).
+    expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
+    expect(onNavigate).not.toHaveBeenCalledWith('wallet');
     await click(byTestId('rep-invite')!);
     expect(onNavigate).toHaveBeenCalledWith('representatives');
   });
@@ -188,12 +194,15 @@ describe('Representative dashboard', () => {
     expect(document.body.textContent).not.toContain('7-day settlement');
   });
 
-  it('the rules note states the approved rules: one reward per organizer, event after acceptance, free events verified', async () => {
+  it('the rules note states the approved rules: one reward per organizer, event after acceptance, free events never qualify', async () => {
     await dash('rewards');
     const t = document.body.textContent!;
     expect(t).toContain('one reward per organizer you referred, ever');
     expect(t).toContain('created after they accepted your partnership');
-    expect(t).toContain('a free event counts only if VENTS confirms it was genuine');
+    expect(t).toContain('It must be a paid event that has ended');
+    expect(t).toContain('free events never qualify');
+    // The retired 0201 override must not be offered to representatives.
+    expect(t).not.toMatch(/free event counts|confirms it was genuine/);
     expect(t).toContain('two VENTS admins review it');
   });
 
@@ -206,15 +215,17 @@ describe('Representative dashboard', () => {
     expect(byTestId('lifecycle-credited')?.textContent).toMatch(/Paid.*1 · ₦50,000/);
   });
 
-  it('monthly: six months, newest first, with qualifying count, rate and paid', async () => {
+  it('monthly: six months, newest first, with qualifying count and paid; the reward is fixed (no monthly rate)', async () => {
     await dash('monthly');
     const rows = [...byTestId('rep-monthly')!.querySelectorAll('[data-testid^="month-"]')];
     expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual(['month-2026-10', 'month-2026-09', 'month-2026-08', 'month-2026-07', 'month-2026-06', 'month-2026-05']);
     expect(rows[0].textContent).toContain('2 qualifying');
-    expect(rows[0].textContent).toContain('Rate ₦75,000');
-    expect(rows[1].textContent).toContain('paid ₦50,000');
+    // Even a (historical) month whose server row carries another rate shows no rate at all.
+    expect(rows[0].textContent).not.toMatch(/Rate|₦75,000/);
+    expect(rows[1].textContent).toContain('Paid ₦50,000');
     expect(document.body.textContent).toContain('can still rise after it ends');
-    expect(document.body.textContent).toContain('Nothing rises automatically');
+    expect(document.body.textContent).toContain('Each qualifying organizer earns a fixed ₦50,000; there is no monthly rate, uplift or bonus.');
+    expect(document.body.textContent).not.toMatch(/higher rate|or more in a month/i);
   });
 
   it('rewards: the stage filter is applied by the server, counts are server totals, and Paid opens the earnings wallet', async () => {
@@ -228,7 +239,7 @@ describe('Representative dashboard', () => {
     await click(byTestId('stage-credited')!);
     expect(byTestId('claim-d')?.textContent).toContain('Paid');
     await click(byTestId('claim-wallet-d')!);
-    expect(onNavigate).toHaveBeenCalledWith('wallet');
+    expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
   });
 
   it('rewards: loads 20 at a time, "Show more" continues from the cursor without repeats, and disappears at the end', async () => {
@@ -462,7 +473,7 @@ describe('VENTS Work hub: entry points', () => {
     await click(byTestId('shortcut-bookings')!); expect(bookings).toHaveBeenCalled();
     await click(byTestId('shortcut-services')!); expect(onNavigate).toHaveBeenCalledWith('service-provider-setup');
     await click(byTestId('shortcut-representative')!); expect(onNavigate).toHaveBeenCalledWith('representative-dashboard');
-    await click(byTestId('shortcut-wallet')!); expect(onNavigate).toHaveBeenCalledWith('wallet');
+    await click(byTestId('shortcut-wallet')!); expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
   });
 
   it('a failed earnings-wallet read shows "—" on the hub, never ₦0', async () => {

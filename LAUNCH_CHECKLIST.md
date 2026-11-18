@@ -247,7 +247,7 @@ variables are shown as working only where production behaviour proves it.
 - [x] VENTS Earn screen with separately labelled balances. Service providers now reach the earnings wallet.
 - [x] Retired 10% commission copy replaced with the ₦50,000 qualifying-organizer reward.
 - [x] Representative dashboard header (mockup D), Rewards screen (claims, eligible events, expenses), and Admin Console → VENTS Earn (all decisions dual-control).
-- [x] Migration 0201 (attribution, claims, realized-profit pool with locked reservations, idempotent credit to the withdrawable earnings wallet through the existing ledger and payout flow, expenses, monthly rate review, append-only audit), verified by 203 local checks.
+- [x] Migration 0201 (attribution, claims, realized-profit pool with locked reservations, idempotent credit to the withdrawable earnings wallet through the existing ledger and payout flow, expenses, monthly rate review (discontinued by 0217: the reward is fixed at ₦50,000), append-only audit), verified by 203 local checks.
 - [ ] **Apply 0201 to production** (needs approval).
 - [x] Payout engine safety fixes (no double payouts, reversals returned, fixed transfer reference, reconciliation report) in migration 0202 and the payout API, verified by 49 local checks and 15 mocked API tests. See `docs/money-flow-audit.md`.
 - [ ] **Apply 0202 to production** (needs approval; before enabling reward credit).

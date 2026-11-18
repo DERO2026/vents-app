@@ -44,7 +44,6 @@ export function AdminEarnScreen() {
   const [candidate, setCandidate] = useState<any>(null);
   const [cost, setCost] = useState('');
   const [costNote, setCostNote] = useState('');
-  const [rate, setRate] = useState({ repId: '', month: '', amount: '', reason: '' });
 
   const load = useCallback(async () => {
     setError(null);
@@ -70,11 +69,6 @@ export function AdminEarnScreen() {
   };
 
   const ask = (q: string) => (window.prompt(q) || '').trim();
-  // The approver sees target_label, not target_id, so name the representative.
-  const repLabel = (id: string) => {
-    const name = data?.claims.find((c) => c.representative_id === id)?.representative_name;
-    return name ? `${name} (${id})` : id;
-  };
 
   // Only the latest check may set the candidate, so a slow response for an
   // earlier Event ID can never become the one "Request: recognize" submits.
@@ -159,19 +153,24 @@ export function AdminEarnScreen() {
           <div key={c.id} style={{ borderTop: `1px solid ${adminTheme.borderSoft}`, paddingTop: 10, display: 'grid', gap: 6 }}>
             <div style={{ fontSize: 13, color: adminTheme.text }}>
               <strong>{c.representative_name || 'Representative'}</strong> → {c.organizer_name || 'Organizer'} · {c.event_title} · {formatNaira(c.amount_kobo)} · {c.reward_month.slice(0, 7)}
-              {c.is_free_event && ' · FREE EVENT'}
+              {c.is_free_event && ' · FREE EVENT (never qualifies)'}
               {c.organizer_verified_now === false && ' · ORGANIZER NOT VERIFIED'}
             </div>
             <div style={muted}>{STATUS_LABEL[c.status] ?? c.status}{c.decision_reason ? ` · ${c.decision_reason}` : ''}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {c.status === 'pending_review' && (
-                <button style={btn()} disabled={c.organizer_verified_now === false} title={c.organizer_verified_now === false ? 'The organizer needs an approved organizer verification first' : undefined} onClick={() => {
+              {c.status === 'pending_review' && c.is_free_event && (
+                // Approved rule: free events never qualify. The server refuses
+                // to approve one (0209 eligibility, 0216 executor), so there is
+                // no approve action here; the claim can only be rejected.
+                <span data-testid={`earn-claim-free-${c.id}`} style={muted}>Free event: never qualifies for the reward. Request rejection.</span>
+              )}
+              {c.status === 'pending_review' && !c.is_free_event && (
+                <button data-testid={`earn-claim-approve-${c.id}`} style={btn()} disabled={c.organizer_verified_now === false} title={c.organizer_verified_now === false ? 'The organizer needs an approved organizer verification first' : undefined} onClick={() => {
                   // Approved rule: the qualifying event must be verified by the approving admins.
                   // Event occurrence confirmation: the event happened, its date has
                   // passed and it was not cancelled. A second admin must approve.
                   if (!window.confirm(`Event occurrence: confirm you verified "${c.event_title}" actually took place as listed (not cancelled, date passed). A second admin must still approve.`)) return;
-                  if (c.is_free_event && !window.confirm('This is a free event. Confirm you verified it was a genuine event?')) return;
-                  request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, event_verified: true, free_event_verified: c.is_free_event }, c.id);
+                  request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, event_verified: true }, c.id);
                 }}>Confirm event took place · request approval</button>
               )}
               {['pending_organizer', 'pending_review', 'approved'].includes(c.status) && (
@@ -206,22 +205,12 @@ export function AdminEarnScreen() {
 
       <div style={card}>
         <h3 style={h}>Monthly qualifying organizers</h3>
-        <div style={muted}>At 9 or more in a month, management may approve a higher rate for the next month. Rates never rise automatically.</div>
+        <div style={muted} data-testid="earn-fixed-reward-note">The reward is fixed at ₦50,000 per qualifying organizer. There is no monthly rate, uplift or bonus; these counts are for reporting only.</div>
         {data.monthly_counts.map((m) => (
-          <div key={`${m.representative_id}-${m.month}`} style={{ fontSize: 13, color: m.count >= 9 ? adminTheme.green : adminTheme.text }}>
+          <div key={`${m.representative_id}-${m.month}`} style={{ fontSize: 13, color: adminTheme.text }}>
             {data.claims.find((c) => c.representative_id === m.representative_id)?.representative_name || m.representative_id.slice(0, 8)} · {m.month.slice(0, 7)} · {m.count}
           </div>
         ))}
-        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <input aria-label="Representative ID" placeholder="Representative ID" value={rate.repId} onChange={(e) => setRate({ ...rate, repId: e.target.value })} style={input} />
-          <input aria-label="Month" type="month" value={rate.month} onChange={(e) => setRate({ ...rate, month: e.target.value })} style={input} />
-          <input aria-label="New rate (₦)" placeholder="New rate (₦), above 50,000" inputMode="decimal" value={rate.amount} onChange={(e) => setRate({ ...rate, amount: e.target.value.replace(/[^0-9.]/g, '') })} style={input} />
-          <input aria-label="Reason" placeholder="Reason" value={rate.reason} onChange={(e) => setRate({ ...rate, reason: e.target.value })} style={input} />
-        </div>
-        <button style={btn()} disabled={!rate.repId || !rate.month || !rate.amount || !rate.reason.trim()}
-          onClick={() => request('earn_set_monthly_rate', `Rate ${formatNaira(Math.round(Number(rate.amount) * 100))} for ${rate.month} · representative ${repLabel(rate.repId.trim())}`, { month: `${rate.month}-01`, reward_kobo: Math.round(Number(rate.amount) * 100), reason: rate.reason.trim() }, rate.repId.trim())}>
-          Request higher rate
-        </button>
       </div>
 
       <div style={card}>

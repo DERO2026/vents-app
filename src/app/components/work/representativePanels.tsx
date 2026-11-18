@@ -38,6 +38,9 @@ export interface Expense {
 export interface Rewards {
   representative: { status: string } | null;
   payouts_enabled: boolean; programme_open: boolean; funding_available: boolean;
+  // The fixed N50,000 reward (0217: no monthly rate). current_rate_kobo and
+  // rate_review_threshold are still returned for older app versions; unused here.
+  base_reward_kobo: number;
   current_rate_kobo: number; rate_review_threshold: number;
   qualifying_this_month: number; qualifying_last_month: number;
 }
@@ -304,7 +307,7 @@ export function RewardsPanel({ rewards, totals, reload, onNavigate }: {
                 </WorkButton>
               )}
               {c.status === 'credited' && (
-                <WorkButton ghost testId={`claim-wallet-${c.id}`} onClick={() => onNavigate('wallet')}>Open earnings wallet</WorkButton>
+                <WorkButton ghost testId={`claim-wallet-${c.id}`} onClick={() => onNavigate('earnings-wallet')}>Open earnings wallet</WorkButton>
               )}
             </div>
           );

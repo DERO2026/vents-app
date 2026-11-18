@@ -448,7 +448,13 @@ expect_error "a reversed reward cannot be reversed again" "cannot be reversed" "
 expect_value "a reversed organizer cannot be claimed again (same claim comes back, no new one)" \
   "$(val "$(as "$WR" "SELECT public.submit_representative_reward_claim('${WO%%|*}', '${WO##*|}')->>'status';")")/$(val "SELECT count(*) FROM public.representative_reward_claims WHERE organizer_id = '${WO%%|*}';")" "reversed/1"
 
-echo "== Free events =="
+echo "== Free events (0201 ALONE: historical; superseded) =="
+# 0201 shipped an "admin-verified free event" override. The approved rule is
+# that free events NEVER qualify: 0209 removed free events from eligibility
+# and 0216 removed the override and blocks crediting one. This harness only
+# applies 0201, so it still records 0201's original behaviour; the current
+# rule is verified by run-representative-referral-verification.sh (0209) and
+# run-representative-reward-integrity-verification.sh (0216).
 "${PSQL[@]}" -q -c "$(as "$REP" "SELECT public.submit_representative_reward_claim('$ORG_FREE', '00000000-0000-0000-0000-0000000e0009');")" >/dev/null
 CF=$(claim_id_for "$ORG_FREE")
 "${PSQL[@]}" -q -c "$(as "$ORG_FREE" "SELECT public.respond_to_representative_reward_claim('$CF', true);")" >/dev/null
@@ -462,9 +468,15 @@ RB=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_
 expect_error "free_event_verified = false (a real boolean) still does not qualify a free event" "free event must be explicitly verified" "$(approve "$ADMIN_B" "$RB")"
 expect_value "the free-event claim is still under review" "$(val "SELECT status FROM public.representative_reward_claims WHERE id = '$CF';")" "pending_review"
 RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_verified\":true,\"free_event_verified\":true}")
-expect_ok "a verified free event qualifies" "$(approve "$ADMIN_B" "$RF")"
+expect_ok "0201 alone (superseded by 0209/0216): a verified free event was approvable" "$(approve "$ADMIN_B" "$RF")"
 
-echo "== Monthly rate review =="
+echo "== Monthly rate review (0201 ALONE: historical; discontinued) =="
+# 0201 shipped a dual-control higher next-month rate at 9+ qualifying
+# organizers. The confirmed policy is a FIXED N50,000 with no monthly uplift:
+# 0217 removes it (refused at request and approval, rates frozen, every amount
+# N50,000). This harness only applies 0201, so it still records 0201's original
+# behaviour; the current rule is verified by
+# run-representative-reward-integrity-verification.sh (0216 + 0217).
 NEXT=$(val "SELECT (date_trunc('month', now() AT TIME ZONE 'Africa/Lagos') + interval '1 month')::date;")
 THIS=$(val "SELECT date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;")
 RM=$(request "$ADMIN_A" earn_set_monthly_rate "'$REP'" "{\"month\":\"$NEXT\",\"reward_kobo\":7500000,\"reason\":\"strong month\"}")

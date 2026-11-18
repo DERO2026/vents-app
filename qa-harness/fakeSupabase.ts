@@ -191,6 +191,8 @@ const FIXTURES: Record<string, Row[]> = {
   ],
   organizer_wallets: [
     { organizer_id: 'org-1', balance_kobo: 32500000, pending_kobo: 5000000, total_earned_kobo: 172000000, total_withdrawn_kobo: 134500000 },
+    // rep-1: a Representative (not an organizer) holding one credited N50,000 reward.
+    { organizer_id: 'rep-1', balance_kobo: 5000000, pending_kobo: 0, total_earned_kobo: 5000000, total_withdrawn_kobo: 0 },
   ],
   service_provider_requests: [
     {
@@ -209,6 +211,16 @@ const FIXTURES: Record<string, Row[]> = {
   // when mounting the real, unmodified App (the 'full-app' harness route)
   // to verify real in-app navigation end-to-end, not just source reading.
   users: [
+    // A VENTS Representative with no organizer, provider or admin capability
+    // (signed in with ?screen=full-app&as=rep-1).
+    {
+      id: 'rep-1', email: 'rep@example.com', full_name: 'Adaeze Okonkwo', username: 'adaeze',
+      role: 'user', is_organizer: false, is_service_provider: false,
+      avatar_url: null, cover_url: null, is_verified: false, state: 'Lagos',
+      phone_number: '+2348010000009', status: 'active', banned_until: null, deleted_at: null,
+      interests: [], bio: '', vc_badge: null, instagram_handle: null, x_handle: null, tiktok_handle: null,
+      country: 'NG', created_at: new Date().toISOString(),
+    },
     {
       id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', username: 'test.organizer',
       // Organizer is the independent is_organizer capability, not role
@@ -580,10 +592,15 @@ export const supabase = {
     getSession: async () => {
       const isFullApp = typeof window !== 'undefined' && window.location.search.includes('screen=full-app');
       if (!isFullApp) return { data: { session: null }, error: null };
+      // ?as=rep-1 signs the full app in as the fixture Representative who is
+      // NOT an organizer, provider or admin (earnings-navigation.e2e.mjs).
+      // Only fixture ids are accepted.
+      const as = new URLSearchParams(window.location.search).get('as');
+      const user = as === 'rep-1' ? { id: 'rep-1', email: 'rep@example.com' } : { id: 'org-1', email: 'organizer@example.com' };
       return {
         data: {
           session: {
-            user: { id: 'org-1', email: 'organizer@example.com' },
+            user,
             access_token: 'qa-harness-fake-token',
           },
         },
