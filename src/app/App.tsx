@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode, Suspense, lazy } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
-import { PRIVATE_CHANNEL_OPTIONS, userTopic } from '../lib/realtimeTopics';
+import { onUserRealtime, closeAllUserRealtime } from '../lib/userRealtime';
 import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
@@ -1051,6 +1051,7 @@ export default function App() {
       // app itself initiated -- skip here to avoid two competing navigations
       // racing off the same underlying signOut() call.
       if (explicitSignOutRef.current) return;
+      void closeAllUserRealtime();
       setCurrentUser(null);
       setUserRole('attendee');
       setScreenStack([]);
@@ -1808,15 +1809,12 @@ export default function App() {
     fetchUnreadCount();
   }, [currentUser, fetchUnreadCount]);
 
-  // Realtime: subscribe to user channel for badge updates
+  // Realtime: live unread badge. The user:<uid> channel is shared with
+  // NotificationsScreen and ConversationScreen through userRealtime, so a
+  // screen closing only drops its own handler and never this one.
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = supabase.channel(userTopic(currentUser.id), PRIVATE_CHANNEL_OPTIONS);
-    channel.on('broadcast', { event: 'new_notification' }, () => fetchUnreadCount());
-    channel.subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return onUserRealtime(currentUser.id, 'new_notification', () => fetchUnreadCount());
   }, [currentUser?.id, fetchUnreadCount]);
 
   useEffect(() => {
@@ -2841,6 +2839,8 @@ export default function App() {
       console.error("Sign out error:", err);
       Sentry.captureException(err);
     }
+    // Every user:<uid> channel and handler, whoever registered it.
+    void closeAllUserRealtime();
     setCurrentUser(null);
     setUserRole('attendee');
     setScreenStack([]);

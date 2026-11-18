@@ -119,15 +119,31 @@ describe('app source: Realtime channels for user and dm topics', () => {
     expect(raw).toEqual([]);
   });
 
-  it('every user/dm channel is opened as a private channel', () => {
-    const personal = channelCalls.filter((c) => /userTopic\(|dmTopic\(/.test(c.call));
-    expect(personal.length).toBeGreaterThanOrEqual(4); // App, Notifications, Conversation (user + dm)
-    for (const c of personal) expect(c.call, c.file).toMatch(/PRIVATE_CHANNEL_OPTIONS/);
+  it('every dm channel is opened as a private channel', () => {
+    const dm = channelCalls.filter((c) => /dmTopic\(/.test(c.call));
+    expect(dm.length).toBeGreaterThanOrEqual(1); // ConversationScreen's typing channel
+    for (const c of dm) expect(c.call, c.file).toMatch(/PRIVATE_CHANNEL_OPTIONS/);
   });
 
-  it('only ever joins the signed-in user\'s own personal topic', () => {
-    for (const c of channelCalls.filter((x) => /userTopic\(/.test(x.call))) {
-      expect(c.call, c.file).toMatch(/userTopic\(currentUser\.id\)/);
-    }
+  // The user:<uid> topic is opened in exactly one place, src/lib/userRealtime.ts (a shared,
+  // reference-counted subscription: screens leaving no longer tear down App's badge listener).
+  const userRealtimeSrc = readFileSync(join(root, 'src', 'lib', 'userRealtime.ts'), 'utf8');
+
+  it('only userRealtime opens user: channels, privately, from userTopic()', () => {
+    expect(channelCalls.filter((c) => /userTopic\(/.test(c.call))).toEqual([]);
+    const opens = [...userRealtimeSrc.matchAll(/supabase\.channel\(([^;]*?)\);/g)].map((m) => m[1]);
+    expect(opens).toEqual(['entry.topic, PRIVATE_CHANNEL_OPTIONS']);
+    expect(userRealtimeSrc).toMatch(/const topic = userTopic\(userId\);/);
+    expect(userRealtimeSrc).toMatch(/const created: Entry = \{ topic,/);
+    // Every other channel opened anywhere in src is a dm channel or an unrelated (non user:/dm:) topic.
+    for (const c of channelCalls.filter((x) => x.file !== 'src/lib/userRealtime.ts')) expect(c.call, c.file).not.toMatch(/entry\.topic|userTopic\(|[`'"]user:/);
+  });
+
+  it('only ever subscribes to the signed-in user\'s own personal topic', () => {
+    const calls = srcFiles.flatMap((f) =>
+      [...readFileSync(f, 'utf8').matchAll(/onUserRealtime\(([^,]+),/g)].map((m) => ({ file: relative(root, f), userArg: m[1].trim() })),
+    ).filter((c) => !c.file.endsWith('userRealtime.ts'));
+    expect(calls.length).toBeGreaterThanOrEqual(3); // App badge, Notifications, Conversation
+    for (const c of calls) expect(c.userArg, c.file).toBe('currentUser.id');
   });
 });
