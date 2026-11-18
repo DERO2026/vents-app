@@ -62,6 +62,7 @@ import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { UnifiedWalletScreen } from './components/wallet/UnifiedWalletScreen';
 import { PAY_PARAM, PAY_TO_STORAGE_KEY, WALLET_RECEIPT_STORAGE_KEY, usernameFromPayParam } from '../lib/walletTransfers';
+import { routeOpenedUrl } from '../lib/openedUrl';
 import { TicketRefundScreen } from './components/TicketRefundScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
@@ -546,6 +547,15 @@ export default function App() {
   // id a second time -- this ref guards that instead, keyed per type so
   // 'event:<id>'/'user:<id>'/'provider:<id>' can never collide.
   const processedDeepLinkIdsRef = useRef<Set<string>>(new Set());
+  // Wallet deep links (a ?pay= link, a "Money sent / received" notification)
+  // hand their target over in sessionStorage, which the wallet reads when it
+  // mounts. Bumping this re-keys the wallet so a link opened while the wallet
+  // is ALREADY on screen is picked up too, not ignored.
+  const [walletLinkNonce, setWalletLinkNonce] = useState(0);
+  // Used by the native appUrlOpen handler (registered once, below); refs so
+  // it always calls the current implementation.
+  const openPayLinkRef = useRef<(username: string) => void>(() => {});
+  const openProviderLinkRef = useRef<(providerId: string) => void>(() => {});
   useEffect(() => {
     if (screen === 'splash') return;
     if (lastPageviewRef.current === screen) return;
@@ -2440,6 +2450,35 @@ export default function App() {
   // scope the moment the listener was attached (which could be stale by
   // the time a user actually taps a notification, possibly minutes later
   // with the app backgrounded).
+  // A payment link (?pay=<username>) only OPENS the wallet's Send Money sheet
+  // with that recipient looked up; the sender still confirms recipient, amount
+  // and PIN, and the server authorises the transfer. The username is public.
+  openPayLinkRef.current = (username: string) => {
+    try { sessionStorage.setItem(PAY_TO_STORAGE_KEY, username); } catch { /* storage unavailable */ }
+    setWalletLinkNonce((n) => n + 1);
+    setScreenStack([]);
+    setScreen('customer-wallet');
+  };
+  // Native ?provider=<id> (appUrlOpen): the same fetch and friendly fallbacks
+  // as the web page-load handler above, which keeps its own copy because it
+  // also manages the address bar. A native tap is always new, so no de-dupe.
+  openProviderLinkRef.current = (providerId: string) => {
+    setDeepLinkPending(true);
+    Promise.resolve(fetchServiceProviderById(providerId))
+      .then(async (providerData) => {
+        if (!providerData) { setAppToastError('This provider is no longer available.'); return; }
+        const [rated] = await withProviderRatings([providerData]);
+        setSelectedServiceProvider(rated);
+        setScreenStack([]);
+        setScreen('service-provider-profile');
+      }, (err: any) => {
+        console.error('Native provider link fetch failed:', err);
+        Sentry.captureException(err);
+        setAppToastError('Could not open that provider link. Please try again.');
+      })
+      .finally(() => { setDeepLinkPending(false); });
+  };
+
   const pushActionRef = useRef<(data: Record<string, any>) => void>(() => {});
   pushActionRef.current = (data: Record<string, any>) => {
     // Checked before the generic data.eventId/data.userId branches below —
@@ -2623,6 +2662,7 @@ export default function App() {
       // "Money sent / received" (0215): open that transfer's receipt on the Wallet tab.
       if (data.type === 'wallet_transfer' && data.reference) {
         try { sessionStorage.setItem(WALLET_RECEIPT_STORAGE_KEY, data.reference); } catch { /* storage unavailable */ }
+        setWalletLinkNonce((n) => n + 1);
       }
       setScreenStack([]); setScreen('customer-wallet'); return;
     }
@@ -2670,7 +2710,7 @@ export default function App() {
   //     (ios/App/App/App.entitlements, applinks:getvents.com) wired into
   //     ios/App/App.xcodeproj/project.pbxproj via CODE_SIGN_ENTITLEMENTS, and
   //     public/.well-known/apple-app-site-association is checked in with
-  //     event/user link paths and the real Apple Developer Team ID
+  //     ?event= / ?user= / ?provider= / ?pay= links and the real Apple Developer Team ID
   //     (V7774S7GHB.com.getvents.app). Still needs to be verified reachable
   //     at https://getvents.com/.well-known/apple-app-site-association in
   //     production before Apple's own verification/Universal Links will
@@ -2685,44 +2725,59 @@ export default function App() {
     (async () => {
       const { App: CapacitorApp } = await import('@capacitor/app');
       const sub = await CapacitorApp.addListener('appUrlOpen', ({ url }) => {
-        try {
-          const parsed = new URL(url);
+        // Cold start and already-open both arrive here (@capacitor/app keeps a
+        // launch URL until this listener exists). routeOpenedUrl() only
+        // honours https://getvents.com and vents:// links and validates ids.
+        const route = routeOpenedUrl(url);
+        switch (route.kind) {
           // vents://verify?email=... — completes the handoff started by the
-          // "Verify Account" email button's best-effort vents:// redirect
-          // (App.tsx's verify_email query-param handling above). Same
-          // pre-fill-the-OTP-screen behavior as the web ?verify_email= path,
-          // just reached via the custom scheme instead of a query param.
-          const verifyEmail = parsed.hostname === 'verify' ? parsed.searchParams.get('email') : null;
-          // vents://reset?email=... — same round trip as verify above, for
-          // the "Reset Password" email link's best-effort native redirect
-          // (App.tsx's reset_email query-param handling). Jumps straight to
-          // the forgot-password OTP screen; does NOT re-request a code.
-          const resetEmail = parsed.hostname === 'reset' ? parsed.searchParams.get('email') : null;
-          // vents://payment?ref=... — same round trip, for Paystack's own
-          // post-payment redirect (App.tsx's ?reference=/?trxref= handling
-          // above) on channels that leave the iframe entirely.
-          const paymentRef = parsed.hostname === 'payment' ? parsed.searchParams.get('ref') : null;
-          const eventId = parsed.searchParams.get('event');
-          const userId = parsed.searchParams.get('user');
-          const screen = parsed.searchParams.get('screen');
-          if (verifyEmail) {
-            setPendingVerificationEmail(verifyEmail);
+          // "Verify Account" email button's best-effort vents:// redirect.
+          case 'verify_email':
+            setPendingVerificationEmail(route.email);
             setAuthMode('signup');
             setScreen('auth');
-          }
-          else if (resetEmail) {
-            setPendingResetEmail(resetEmail);
+            break;
+          // vents://reset?email=... — the "Reset Password" email link's
+          // native redirect; does NOT re-request a code.
+          case 'reset_password':
+            setPendingResetEmail(route.email);
             setAuthMode('forgot');
             setScreen('auth');
-          }
-          else if (paymentRef) {
-            setPendingPaymentRef(paymentRef);
-          }
-          else if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
-          else if (userId) pushActionRef.current({ userId, screen: screen || undefined });
-          else if (screen) pushActionRef.current({ screen });
-        } catch (err) {
-          console.warn('[deep-link] failed to parse appUrlOpen url:', err);
+            break;
+          // vents://payment?ref=... — Paystack's own post-payment redirect on
+          // channels that leave the iframe entirely.
+          case 'payment_return':
+            setPendingPaymentRef(route.ref);
+            break;
+          // https://getvents.com/?pay=<username> (a Receive QR / payment link):
+          // same as the web ?pay= path — remembered for the wallet's Send
+          // Money sheet, where the sender still confirms the recipient,
+          // amount and PIN. Nothing is sent from a link.
+          case 'pay':
+            openPayLinkRef.current(route.username);
+            break;
+          case 'invalid_pay':
+            setAppToastError('That payment link is not valid. Ask for a new one.');
+            break;
+          // https://getvents.com/?payment_request=VNT-… ("someone else is paying"):
+          // the same screen as the web link and its notification.
+          case 'payment_request':
+            pushActionRef.current({ paymentRef: route.paymentRef });
+            break;
+          case 'event':
+            pushActionRef.current({ eventId: route.eventId, screen: route.screen });
+            break;
+          case 'user':
+            pushActionRef.current({ userId: route.userId, screen: route.screen });
+            break;
+          case 'provider':
+            openProviderLinkRef.current(route.providerId);
+            break;
+          case 'screen':
+            pushActionRef.current({ screen: route.screen });
+            break;
+          case 'none':
+            break;
         }
       });
       removeListener = () => sub.remove();
@@ -3926,7 +3981,7 @@ export default function App() {
               after paying for a ticket). ── */}
           {(screen === 'wallet' || screen === 'customer-wallet') && (
             <UnifiedWalletScreen
-              key={screen}
+              key={`${screen}:${walletLinkNonce}`}
               currentUser={currentUser}
               onBack={goBack}
               initialTab={screen === 'wallet' && (
