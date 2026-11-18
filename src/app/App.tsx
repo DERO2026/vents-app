@@ -1522,6 +1522,7 @@ export default function App() {
             checkedIn: !!t.checked_in,
             status: t.status,
             paymentStatus: t.payment_status,
+            eventCancelledAt: dbEvent.cancelled_at ?? null,
           };
         });
 
@@ -2493,6 +2494,23 @@ export default function App() {
       setViewingPaymentRequestRef(data.paymentRef);
       setScreenStack([]);
       setScreen('payment-request');
+      return;
+    }
+    if (data.type === 'event_cancellation') {
+      // Event cancellation (0218). Ticket holders: their ticket's refund view
+      // (or Tix); the organizer: Manage Events, where the request's status and
+      // refund progress show; admins: the Admin Console's Cancellations queue.
+      if (data.stage === 'review') {
+        const adminTier = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID;
+        setScreenStack([]); setScreen(adminTier ? 'admin-console' : 'notifications');
+        return;
+      }
+      if (data.stage === 'cancelled' || data.stage === 'refund_attention') {
+        if (data.ticketId) { setRefundTicketId(data.ticketId); setScreenStack([]); setScreen('ticket-refund'); return; }
+        setScreenStack([]); setScreen('my-tickets');
+        return;
+      }
+      setScreenStack([]); setScreen('manage-events');
       return;
     }
     if (data.transferId) {
@@ -3608,7 +3626,7 @@ export default function App() {
                   // refund_id/refund_reason/timestamp) instead of the QR
                   // view, reusing the same mechanism a refund notification
                   // tap already uses (see refundTicketId above).
-                  if (ticket.status === 'cancelled' || ticket.paymentStatus === 'refunded' || ticket.paymentStatus === 'refund_pending') {
+                  if (ticket.eventCancelledAt || ticket.status === 'cancelled' || ticket.paymentStatus === 'refunded' || ticket.paymentStatus === 'refund_pending') {
                     setRefundTicketId(ticket.ticketId);
                     navigateTo('ticket-refund');
                     return;

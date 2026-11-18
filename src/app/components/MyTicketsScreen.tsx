@@ -13,6 +13,7 @@ import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
 import { triggerPushDelivery } from '../../lib/pushNotifications';
 import { UserAutocomplete } from './shared/UserAutocomplete';
+import { fetchMyCancellationRefunds, attendeeRefundLabel, type RefundRowStatus } from '../../lib/eventCancellation';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -79,7 +80,13 @@ function transferStatusBadge(status: TicketTransfer['status'], isOutgoing: boole
 // Real ticket-status badge, from tickets.status/payment_status -- shown on
 // a Past ticket card in place of the "View QR" pill when there's no valid
 // QR to show.
-function ticketStatusBadge(t: PurchasedTicket): { label: string; color: string; bg: string } | null {
+function ticketStatusBadge(t: PurchasedTicket, refunds?: Record<string, RefundRowStatus>): { label: string; color: string; bg: string } | null {
+  // A cancelled event (0218): say so, with this ticket's own refund status.
+  if (t.eventCancelledAt) {
+    const label = attendeeRefundLabel(refunds?.[t.ticketId], t.paymentStatus);
+    const done = label === 'Refunded';
+    return { label: `Event cancelled · ${label}`, color: done ? ventsColors.ink2 : ventsColors.pending, bg: done ? 'rgba(148,163,184,0.14)' : 'rgba(245,158,11,0.14)' };
+  }
   if (t.status === 'cancelled') return { label: 'Cancelled', color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)' };
   if (t.paymentStatus === 'refunded') return { label: 'Refunded', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)' };
   if (t.paymentStatus === 'refund_pending') return { label: 'Refund Pending', color: ventsColors.pending, bg: 'rgba(245,158,11,0.14)' };
@@ -106,6 +113,18 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   // tab open on first render -- only an actual bump (a real notification
   // tap) does.
   const focusTransfersFirstRunRef = useRef(true);
+  // Refund status of this user's tickets for cancelled events (0218), only
+  // when there is one: the user's own rows, never anyone else's.
+  const [cancellationRefunds, setCancellationRefunds] = useState<Record<string, RefundRowStatus>>({});
+  const hasCancelledEvent = tickets.some((t) => !!t.eventCancelledAt);
+  useEffect(() => {
+    if (!hasCancelledEvent) return;
+    let live = true;
+    fetchMyCancellationRefunds()
+      .then((rows) => { if (live) setCancellationRefunds(Object.fromEntries(rows.map((r) => [r.ticket_id, r.status]))); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [hasCancelledEvent, refreshSignal]);
   useEffect(() => {
     if (focusTransfersFirstRunRef.current) { focusTransfersFirstRunRef.current = false; return; }
     setActiveTab('transfers');
@@ -456,7 +475,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   // date -- it belongs in Past/history, never in Upcoming, even for a
   // future event.
   const isCancelledOrRefunded = (t: PurchasedTicket) =>
-    t.status === 'cancelled' || t.paymentStatus === 'refunded' || t.paymentStatus === 'refund_pending';
+    !!t.eventCancelledAt || t.status === 'cancelled' || t.paymentStatus === 'refunded' || t.paymentStatus === 'refund_pending';
   const upcoming = tickets.filter((t) => {
     if (isCancelledOrRefunded(t)) return false;
     try {
@@ -914,7 +933,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     </span>
                   </div>
                   {(() => {
-                    const statusBadge = ticketStatusBadge(ticket);
+                    const statusBadge = ticketStatusBadge(ticket, cancellationRefunds);
                     return statusBadge ? (
                       <div
                         style={{

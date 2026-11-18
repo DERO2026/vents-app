@@ -47,7 +47,8 @@ export type AdminConsoleViewKey =
   | 'verification'
   | 'system'
   | 'auditLogs'
-  | 'serviceBookings';
+  | 'serviceBookings'
+  | 'cancellations';
 
 export interface AdminNavItemDef {
   key: AdminConsoleViewKey;
@@ -72,6 +73,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItemDef[] = [
   { key: 'overview', label: 'Dashboard', mono: 'OV' },
   { key: 'users', label: 'Users', mono: 'US' },
   { key: 'events', label: 'Events', mono: 'EV' },
+  { key: 'cancellations', label: 'Cancellations', mono: 'CX' },
   { key: 'organizers', label: 'Organizers', mono: 'OR' },
   { key: 'providers', label: 'Service Providers', mono: 'SP' },
   { key: 'serviceBookings', label: 'Bookings', mono: 'BK' },

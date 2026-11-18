@@ -22,6 +22,7 @@ import { AdminAnalyticsScreen } from './AdminAnalyticsScreen';
 import { AdminVerificationScreen } from './AdminVerificationScreen';
 import { AdminSystemScreen } from './AdminSystemScreen';
 import { AdminServiceBookingsScreen } from './AdminServiceBookingsScreen';
+import { AdminCancellationsScreen } from './AdminCancellationsScreen';
 import { AdminActionsTab } from '../AdminActionsTab';
 import { isRoot as permIsRoot, isSuperAdmin as permIsSuperAdmin, isAdminTier as permIsAdminTier, type PermissionUser } from '../../../lib/permissions';
 import { supabase } from '../../../lib/supabase';
@@ -160,6 +161,8 @@ export function AdminConsoleShell({ currentUser, onBack }: AdminConsoleShellProp
       <AdminActionsTab isSuperAdmin={isSuperAdmin} flash={flash} onCountChange={refreshPendingCount} />
     ) : view === 'serviceBookings' ? (
       <AdminServiceBookingsScreen />
+    ) : view === 'cancellations' ? (
+      <AdminCancellationsScreen isSuperAdmin={isSuperAdmin} />
     ) : view === 'system' && isRoot ? (
       <AdminSystemScreen currentUser={currentUser as { id: string; role?: string }} />
     ) : (
