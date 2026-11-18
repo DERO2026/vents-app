@@ -146,12 +146,12 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
               onClick={() => onNavigate('representatives')} />
           )}
         </Tiles>
-        <WorkButton testId="earn-withdraw" onClick={() => onNavigate('wallet')}>Withdraw earnings</WorkButton>
+        <WorkButton testId="earn-withdraw" onClick={() => onNavigate('earnings-wallet')}>Withdraw earnings</WorkButton>
         <div style={{ fontSize: 10.5, color: '#9AA0B8', padding: '0 4px' }}>
           Ticket earnings become withdrawable 48 hours after the event ends; service earnings 48 hours after the booking is
           completed. Each withdrawal is approved by two VENTS admins before it is sent to your bank.
         </div>
-        <WorkButton ghost onClick={() => onNavigate('wallet')}>Statement</WorkButton>
+        <WorkButton ghost onClick={() => onNavigate('earnings-wallet')}>Statement</WorkButton>
       </div>
     </div>
   );

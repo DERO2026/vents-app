@@ -128,11 +128,11 @@ function Overview({ rep, perf, onNavigate, goTab }: {
         <>
           <MLabel>Earnings wallet</MLabel>
           <Tiles>
-            <Tile testId="rep-wallet-available" k="Withdrawable" v={formatNaira(perf.wallet.balance_kobo)} s="All your VENTS earnings ›" onClick={() => onNavigate('wallet')} />
+            <Tile testId="rep-wallet-available" k="Withdrawable" v={formatNaira(perf.wallet.balance_kobo)} s="All your VENTS earnings ›" onClick={() => onNavigate('earnings-wallet')} />
             <Tile testId="rep-wallet-pending" k="Withdrawal pending" v={formatNaira(perf.wallet.pending_kobo)}
               s={perf.wallet.on_hold_kobo > 0 ? `${formatNaira(perf.wallet.on_hold_kobo)} on hold` : 'Two-admin approval'} />
           </Tiles>
-          <WorkButton testId="rep-withdraw" onClick={() => onNavigate('wallet')}>Withdraw earnings</WorkButton>
+          <WorkButton testId="rep-withdraw" onClick={() => onNavigate('earnings-wallet')}>Withdraw earnings</WorkButton>
 
           <MLabel>This month</MLabel>
           <MCard testId="rep-month-progress">

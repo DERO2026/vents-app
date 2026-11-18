@@ -304,7 +304,7 @@ export function RewardsPanel({ rewards, totals, reload, onNavigate }: {
                 </WorkButton>
               )}
               {c.status === 'credited' && (
-                <WorkButton ghost testId={`claim-wallet-${c.id}`} onClick={() => onNavigate('wallet')}>Open earnings wallet</WorkButton>
+                <WorkButton ghost testId={`claim-wallet-${c.id}`} onClick={() => onNavigate('earnings-wallet')}>Open earnings wallet</WorkButton>
               )}
             </div>
           );

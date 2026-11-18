@@ -3991,6 +3991,20 @@ export default function App() {
               onOpenVentsCents={() => navigateTo('referral')}
             />
           )}
+          {/* 'earnings-wallet': the Earnings tab for anyone who earns, whatever
+              their role (VENTS Work's "Withdraw earnings": a representative
+              need not be an organizer, provider or admin, so 'wallet' would
+              open their Wallet Balance). Navigation only: balance, PIN,
+              bank and payout checks are unchanged and server-enforced. */}
+          {screen === 'earnings-wallet' && (
+            <UnifiedWalletScreen
+              key={`${screen}:${walletLinkNonce}`}
+              currentUser={currentUser}
+              onBack={goBack}
+              initialTab="earnings"
+              onOpenVentsCents={() => navigateTo('referral')}
+            />
+          )}
 
           {/* ── VENTS WORK (hub), VENTS EARN (earnings), REPRESENTATIVE REWARDS ── */}
           {screen === 'vents-work' && (

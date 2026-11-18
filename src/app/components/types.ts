@@ -350,6 +350,11 @@ export type Screen =
   | 'conversation'
   | 'wallet'
   | 'customer-wallet'
+  // The withdrawable Earnings tab for anyone, whatever their role: VENTS
+  // Work's "Withdraw earnings" / "Earnings wallet" links (a representative
+  // need not be an organizer). Same UnifiedWalletScreen; the server still
+  // enforces every withdrawal rule.
+  | 'earnings-wallet'
   | 'representatives'
   | 'services-home'
   | 'services-category'

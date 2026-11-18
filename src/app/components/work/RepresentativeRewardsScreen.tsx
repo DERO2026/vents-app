@@ -52,8 +52,8 @@ export function RewardRulesNote({ programmeOpen, payoutsEnabled, holdDays }: { p
   return (
     <NoteBand>
       You can earn one reward per organizer you referred, ever. They qualify after hosting an event created after they
-      accepted your partnership. The event must have ended, not be cancelled and have finished its{' '}{hold}; a free event counts
-      only if VENTS confirms it was genuine. The organizer must be verified and confirm you referred them, then two
+      accepted your partnership. It must be a paid event that has ended, isn&apos;t cancelled and has finished its{' '}{hold};
+      free events never qualify. The organizer must be verified and confirm you referred them, then two
       VENTS admins review it. Approved rewards are funded from VENTS ticket profit; once funded and payouts are on,
       you add them to your earnings wallet and can withdraw them.
       {!programmeOpen && ' Rewards open once VENTS finishes moving representatives off the old commission plan.'}

@@ -135,7 +135,7 @@ describe('VENTS Earn (earnings)', () => {
     expect(byTestId('earn-tile-vc')?.textContent).toContain('Lifetime 4,900 VC');
     expect(byTestId('earn-tile-rep')?.textContent).toContain('Not joined');
     await click(byTestId('earn-withdraw')!);
-    expect(onNavigate).toHaveBeenCalledWith('wallet');
+    expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
   });
 
   it('a representative still shows as one (no reward figure) before the rewards backend is deployed', async () => {

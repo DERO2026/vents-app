@@ -159,19 +159,24 @@ export function AdminEarnScreen() {
           <div key={c.id} style={{ borderTop: `1px solid ${adminTheme.borderSoft}`, paddingTop: 10, display: 'grid', gap: 6 }}>
             <div style={{ fontSize: 13, color: adminTheme.text }}>
               <strong>{c.representative_name || 'Representative'}</strong> → {c.organizer_name || 'Organizer'} · {c.event_title} · {formatNaira(c.amount_kobo)} · {c.reward_month.slice(0, 7)}
-              {c.is_free_event && ' · FREE EVENT'}
+              {c.is_free_event && ' · FREE EVENT (never qualifies)'}
               {c.organizer_verified_now === false && ' · ORGANIZER NOT VERIFIED'}
             </div>
             <div style={muted}>{STATUS_LABEL[c.status] ?? c.status}{c.decision_reason ? ` · ${c.decision_reason}` : ''}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {c.status === 'pending_review' && (
-                <button style={btn()} disabled={c.organizer_verified_now === false} title={c.organizer_verified_now === false ? 'The organizer needs an approved organizer verification first' : undefined} onClick={() => {
+              {c.status === 'pending_review' && c.is_free_event && (
+                // Approved rule: free events never qualify. The server refuses
+                // to approve one (0209 eligibility, 0216 executor), so there is
+                // no approve action here; the claim can only be rejected.
+                <span data-testid={`earn-claim-free-${c.id}`} style={muted}>Free event: never qualifies for the reward. Request rejection.</span>
+              )}
+              {c.status === 'pending_review' && !c.is_free_event && (
+                <button data-testid={`earn-claim-approve-${c.id}`} style={btn()} disabled={c.organizer_verified_now === false} title={c.organizer_verified_now === false ? 'The organizer needs an approved organizer verification first' : undefined} onClick={() => {
                   // Approved rule: the qualifying event must be verified by the approving admins.
                   // Event occurrence confirmation: the event happened, its date has
                   // passed and it was not cancelled. A second admin must approve.
                   if (!window.confirm(`Event occurrence: confirm you verified "${c.event_title}" actually took place as listed (not cancelled, date passed). A second admin must still approve.`)) return;
-                  if (c.is_free_event && !window.confirm('This is a free event. Confirm you verified it was a genuine event?')) return;
-                  request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, event_verified: true, free_event_verified: c.is_free_event }, c.id);
+                  request('earn_approve_reward', `Approve reward: ${c.organizer_name}`, { claim_id: c.id, event_verified: true }, c.id);
                 }}>Confirm event took place · request approval</button>
               )}
               {['pending_organizer', 'pending_review', 'approved'].includes(c.status) && (

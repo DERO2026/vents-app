@@ -18,6 +18,26 @@ describe('wallet entry points', () => {
   it("'wallet' opens Earnings only for people who earn; everyone else gets Wallet Balance", () => {
     expect(app).toMatch(/initialTab=\{screen === 'wallet' && \(\s*!!currentUser\?\.isOrganizer \|\| currentUser\?\.is_service_provider === true \|\|\s*currentUser\?\.role === 'admin' \|\| currentUser\?\.role === 'sub-admin'\s*\) \? 'earnings' : 'balance'\}/);
   });
+  it("'earnings-wallet' always opens the Earnings tab, for anyone (a representative need not be an organizer)", () => {
+    const block = app.slice(app.indexOf("{screen === 'earnings-wallet' && ("), app.indexOf('{/* ── VENTS WORK (hub)'));
+    expect(block).toMatch(/^\{screen === 'earnings-wallet' && \(\s*<UnifiedWalletScreen/);
+    expect(block).toMatch(/initialTab="earnings"/);
+    expect(block).not.toMatch(/isOrganizer|is_service_provider|role ===/);   // no role decides the tab
+    expect(block).toMatch(/onBack=\{goBack\}/);
+    // Navigation only: gated exactly like 'wallet' (not at all in the client;
+    // balance, PIN, bank and two-admin payout rules live on the server).
+    const perms = readFileSync(join(root, 'src', 'lib', 'permissions.ts'), 'utf8');
+    expect(perms).not.toMatch(/'earnings-wallet'|'wallet':/);
+  });
+  it("every VENTS Work earnings link opens 'earnings-wallet'; organizer screens keep 'wallet'", () => {
+    const work = (f: string) => readFileSync(join(root, 'src', 'app', 'components', 'work', f), 'utf8');
+    for (const f of ['VentsEarningsScreen.tsx', 'RepresentativeDashboardScreen.tsx', 'VentsWorkScreen.tsx', 'representativePanels.tsx']) {
+      expect(work(f), f).not.toContain("onNavigate('wallet')");
+      expect(work(f), f).toContain("onNavigate('earnings-wallet')");
+    }
+    const org = readFileSync(join(root, 'src', 'app', 'components', 'OrganizerDashboard.tsx'), 'utf8');
+    expect(org).toContain("onNavigate('wallet')");
+  });
   it('wallet notifications open the wallet', () => {
     expect(app).toMatch(/if \(data\.screen === 'customer-wallet'\) \{[\s\S]{0,400}setScreenStack\(\[\]\); setScreen\('customer-wallet'\); return;/);
   });

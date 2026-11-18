@@ -56,7 +56,10 @@ not in the UI.
    - over (`end_date`, else `event_date`) plus a settlement hold;
    - free of `pending` payments, pending `pending_purchases`, and `refund_pending` tickets.
 
-   A free event qualifies only if the approving admin explicitly verifies it as genuine.
+   **Free events never qualify** (owner correction 2026-11-09). 0201 shipped an "admin-verified free event" override; 0209 removed
+   free events from eligibility (reason `free_event`) and 0216 removed the override itself: an approval request carrying
+   `free_event_verified` is refused, the approval branch refuses a free event whatever the request says, and crediting
+   refuses a claim recorded as a free event (one approved before 0209/0216 stays on hold for admin rejection or reversal).
 3. **Flow.** The claim moves through these steps:
    - The representative submits.
    - The organizer confirms (or declines).
@@ -70,6 +73,8 @@ not in the UI.
    - A per-claim idempotency key stops retries from double-reserving.
    - If the pool is short, the claim stays Approved ("waiting for VENTS profit").
 6. **Credit (confirmed decision, 2026-10-30): the withdrawable earnings wallet.** A funded reward is credited once to the representative's `organizer_wallets` row, the same wallet organizers and service providers withdraw from. It only happens while `earn_settings.payouts_enabled` is true, which ships **false**. See "Earnings wallet integration" below.
+   Since 0216, funding and credit first re-check the claim: a claim recorded as a free event, or whose event is no longer found, live, undeleted and unhidden (or is now free), is refused with "on hold for admin review". Nothing is reserved or credited; admins reject or reverse it through dual control.
+   Events have only `live` and `draft` statuses (`events_status_check`), so "cancelled" means taken off live, deleted or hidden, the same reasons eligibility already uses. An organizer who moves an ended event back to draft also puts an approved reward on hold until the event is live again.
 7. **Monthly count** is by calendar month (Africa/Lagos) of the qualifying event's end. At 9 or more, a dual-control request may set a higher rate (above ₦50,000) for the following month only. Nothing rises automatically.
 8. **Expenses** (transport/support) are submitted by the representative and approved or rejected through dual control. They are tracked separately and never touch rewards, the pool or a wallet.
 9. **Audit trail.** `earn_audit_log` and `earn_profit_ledger` are append-only. They record attribution, duplicate/self-referral blocks, eligibility snapshots, reviews, recognitions, reservations, credits, reversals, expenses, rate changes and settings changes.
@@ -143,6 +148,8 @@ recognized event later takes that ticket's fee back out of the pool.
 5. **Expense reimbursement** is approval and tracking only. No payout path exists.
 6. **VENTS Unlock / Split / Circle:** definitions needed before anything can be built.
 7. **Profile layout.** Mockup A's surrounding profile (compact header, three-row menu) is a sketch. Only the VENTS Work card was changed; the existing profile header, stats and menu were kept.
+8. **Higher monthly rate vs. "fixed ₦50,000".** Rule 7 of "Representative reward (migration 0201)" above (a dual-control higher rate for the next month at 9+ qualifying organizers) is recorded as approved in `MONETIZATION_IMPLEMENTATION_MASTER_CHECKLIST.md` §10, while later briefs state the reward as a fixed ₦50,000 with no alternative amount or bonus. The mechanism is unchanged (0216 does not touch it, and nothing raises a rate automatically). The owner should confirm whether it stays.
+9. **Fraud and duplicate-event screening** is the approving admins' judgement (`event_verified`). The database stops a second reward for the same organizer or event, and free events are refused, but nothing detects a cloned event, and one cheap paid ticket makes an event "paid". Any automated rule (minimum sales, distinct buyers) is a business-policy decision; none was added.
 
 ## Deploying (not done; needs approval)
 
@@ -163,7 +170,19 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
   - ordinary organizer withdrawals unchanged.
 
   It refuses to run, before connecting, if any database URL or `PG*` connection variable is set, or if any environment value names a hosted database host. It connects only over the local Unix socket, then confirms the server is local and not Supabase-managed (no server address, no `supabase_admin` role). It creates and always drops its own `vents_local_pg_payout_gate_audit` database.
-- **`src/lib/representativeRewards.security.test.ts`:** static invariants.
+- **`scripts/local-pg-test/run-representative-reward-integrity-verification.sh`:** 0216 on the full 0201 → 0210 stack (94 checks). It covers:
+  - referral attribution through the real link;
+  - a paid event's full path: claim, organizer confirmation, two distinct admins, realized-profit funding, and credit of exactly ₦50,000 to the earnings wallet with the VENTS Wallet untouched;
+  - free events refused at submit, at approval (with or without the old `free_event_verified` flag, and even if eligibility misreported), by the table CHECK, and at credit for a pre-0216 approval;
+  - events taken off live, deleted or hidden, refused at submit and at credit after approval;
+  - duplicate claims, self-approval, double approval, sub-admin, user and representative approvers;
+  - same-key, new-key and four-way concurrent credit retries (one ledger row);
+  - 0216's order guard, idempotency and exact undo.
+
+  Same local-only safety guards as the referral harness.
+- **`src/lib/representativeRewards.security.test.ts`:** static invariants of 0201 (its free-event override checks pin 0201's original text; 0216 replaces that behaviour).
+- **`src/lib/representativeRewardsFreeEvents.security.test.ts`:** static invariants of 0216.
+- **`src/app/components/admin/AdminEarnScreen.test.tsx`:** no approval for a free-event claim, and approval requests never carry `free_event_verified`.
 - **`src/lib/workRoles.test.ts`:** role state machine.
 - **`src/app/components/work/ventsWork.render.test.tsx`:** the screens.
 
@@ -187,7 +206,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 **Rules shown are the server's rules** (checked against "Representative reward (migration 0201)" above):
 - one reward per organizer, ever;
 - the event was created after the organizer accepted the partnership, has ended, and finished the settlement hold (the admin-set `settlement_hold_days`; the app never hardcodes it);
-- a free event counts only if the approving admin confirms it was genuine;
+- free events never qualify (0209 eligibility; 0216 approval and credit);
 - the organizer is verified and confirms the referral, then two admins review;
 - an approved reward waits to be funded from VENTS profit; once funded and payouts are on, the representative adds it to the earnings wallet;
 - a month's count is by the qualifying event's end month (Lagos), so it can still rise after the month ends; 9 or more lets two admins set a higher rate for the next month, and nothing rises automatically;

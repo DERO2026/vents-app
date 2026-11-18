@@ -26,6 +26,7 @@ describe('shouldShowVentsAiOrb', () => {
     'payment-requests',
     'wallet',
     'customer-wallet',
+    'earnings-wallet',
     'ticket-refund',
     'ticket-select',
     'vents-ai',

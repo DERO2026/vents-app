@@ -1,0 +1,169 @@
+-- 0216: VENTS Representative rewards -- free events never qualify (server
+-- side, every path), and a reward is credited only for a qualifying event.
+--
+-- Approved rule (owner correction 2026-11-09, MONETIZATION_IMPLEMENTATION_
+-- MASTER_CHECKLIST.md section 10): a fixed N50,000 per qualifying organizer;
+-- the organizer and the event verified and approved by two distinct admins;
+-- the event not cancelled; FREE EVENTS NEVER QUALIFY; no duplicate reward;
+-- credited to the withdrawable earnings wallet.
+--
+-- What was still wrong after 0209:
+--   0209 made earn_event_eligibility() return reason 'free_event', so a free
+--   event can no longer be submitted or approved. But 0201's obsolete
+--   "admin-verified free event" override was still in the code:
+--     * earn_execute_admin_action accepted payload.free_event_verified = true
+--       and would approve a free event if eligibility ever stopped flagging
+--       it (the only thing standing between the override and a payout was a
+--       text patch to another function);
+--     * claim_representative_reward never looked at the event again, so a
+--       free-event claim approved before 0209 could still be funded and
+--       credited, and so could a claim whose event was cancelled (taken off
+--       'live'), deleted or hidden by an admin after approval;
+--     * the table CHECK representative_reward_claims_free_needs_verification
+--       still allowed an approved/funded/credited free-event claim.
+--
+-- This migration, and nothing else:
+--   1. earn_execute_admin_action: refuses any approval request that still
+--      carries free_event_verified (anything but false); refuses a free event
+--      regardless of the request (fails closed if the flag is missing);
+--      always records free_event_verified = false.
+--   2. claim_representative_reward: before reserving or crediting, refuses a
+--      claim recorded as a free event, and a claim whose event is no longer
+--      found, live, undeleted and unhidden (or is now free). These are the
+--      existing eligibility reasons; no new rule or threshold. The claim
+--      stays where it is ("on hold for admin review"); admins reject or
+--      reverse it through the existing dual control. No money moves.
+--   3. Replaces the CHECK with representative_reward_claims_free_never_
+--      qualifies (NOT VALID: existing rows are reported below, not changed).
+--
+-- Unchanged: the N50,000 base reward and its CHECK, the monthly-rate review,
+-- attribution, one reward per organizer, dual control, the profit pool,
+-- idempotent crediting into organizer_wallets, reversals, withdrawals.
+--
+-- Prerequisite: 0201 and 0209 (whose 'free_event' eligibility reason this
+-- relies on). One transaction; idempotent (marker [0216]); refuses to patch
+-- a function whose text is not the expected 0201 version.
+-- Rollback: supabase/rollback/undo_0216.sql.
+
+DO $pre$
+BEGIN
+  IF to_regprocedure('public.earn_execute_admin_action(uuid)') IS NULL
+     OR to_regprocedure('public.claim_representative_reward(uuid,uuid)') IS NULL THEN
+    RAISE EXCEPTION '0216 requires 0201 (representative reward functions are missing)';
+  END IF;
+  IF position('[0209]' IN pg_get_functiondef('public.earn_event_eligibility(uuid)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION '0216 requires 0209 (earn_event_eligibility does not exclude free events yet)';
+  END IF;
+END
+$pre$;
+
+DO $patch$
+DECLARE
+  v_def text;
+  v_pairs text[][];
+  i int;
+
+  -- 1a. The obsolete override in the request payload.
+  a1_old constant text := $a$  IF r.action_type = 'earn_approve_reward' AND r.payload ? 'free_event_verified'
+     AND jsonb_typeof(r.payload->'free_event_verified') IS DISTINCT FROM 'boolean' THEN
+    RAISE EXCEPTION 'payload.free_event_verified must be true or false';
+  END IF;$a$;
+  a1_new constant text := $a$  -- [0216] free events never qualify: the old free-event override is refused
+  IF r.action_type = 'earn_approve_reward' AND r.payload ? 'free_event_verified'
+     AND r.payload->'free_event_verified' IS DISTINCT FROM 'false'::jsonb THEN
+    RAISE EXCEPTION 'Free events never qualify for a representative reward; payload.free_event_verified is no longer accepted';
+  END IF;$a$;
+
+  -- 1b. The approval branch: a free event is refused whatever the request says.
+  a2_old constant text := $a$    IF (v_elig->>'is_free_event')::boolean AND COALESCE((r.payload->>'free_event_verified')::boolean, false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'A free event must be explicitly verified as genuine (payload.free_event_verified = true)';
+    END IF;$a$;
+  a2_new constant text := $a$    -- [0216] free events never qualify (fails closed if the flag is missing)
+    IF COALESCE((v_elig->>'is_free_event')::boolean, true) THEN
+      RAISE EXCEPTION 'Free events never qualify for a representative reward';
+    END IF;$a$;
+
+  -- 1c. Never record a free-event verification.
+  a3_old constant text := $a$           free_event_verified = COALESCE((r.payload->>'free_event_verified')::boolean, false),$a$;
+  a3_new constant text := $a$           free_event_verified = false,  -- [0216]$a$;
+
+  -- 2a. claim_representative_reward: a local for the eligibility snapshot.
+  b1_old constant text := $a$  v_tx uuid;
+BEGIN$a$;
+  b1_new constant text := $a$  v_tx uuid;
+  v_elig jsonb;  -- [0216]
+BEGIN$a$;
+
+  -- 2b. Re-check the event before any money is reserved or credited.
+  b2_old constant text := $a$  IF NOT public.earn_organizer_is_verified(c.organizer_id) THEN
+    RAISE EXCEPTION 'The organizer is no longer verified; this reward is on hold for admin review';
+  END IF;$a$;
+  b2_new constant text := $a$  IF NOT public.earn_organizer_is_verified(c.organizer_id) THEN
+    RAISE EXCEPTION 'The organizer is no longer verified; this reward is on hold for admin review';
+  END IF;
+
+  -- [0216] Credited only for a qualifying event: never a free event (an
+  -- approval recorded before 0209/0216), and never an event that was
+  -- cancelled, deleted or hidden after approval. Existing eligibility
+  -- reasons only; nothing is moved -- admins reject or reverse the claim.
+  IF c.is_free_event OR c.free_event_verified THEN
+    RAISE EXCEPTION 'Free events never qualify for a representative reward; this reward is on hold for admin review';
+  END IF;
+  v_elig := public.earn_event_eligibility(c.event_id);
+  IF (v_elig->'reasons') ?| ARRAY['event_not_found', 'event_deleted', 'event_hidden_by_admin', 'event_not_live', 'free_event'] THEN
+    RAISE EXCEPTION 'The qualifying event was cancelled, deleted or hidden; this reward is on hold for admin review'
+      USING DETAIL = 'eligibility reasons: ' || (v_elig->'reasons')::text;
+  END IF;$a$;
+BEGIN
+  -- 1. earn_execute_admin_action
+  v_def := pg_get_functiondef('public.earn_execute_admin_action(uuid)'::regprocedure);
+  IF position('[0216]' IN v_def) = 0 THEN
+    v_pairs := ARRAY[[a1_old, a1_new], [a2_old, a2_new], [a3_old, a3_new]];
+    FOR i IN 1 .. array_length(v_pairs, 1) LOOP
+      IF (length(v_def) - length(replace(v_def, v_pairs[i][1], ''))) / length(v_pairs[i][1]) <> 1 THEN
+        RAISE EXCEPTION '0216: earn_execute_admin_action is not the expected 0201 version (anchor % not found exactly once)', i;
+      END IF;
+      v_def := replace(v_def, v_pairs[i][1], v_pairs[i][2]);
+    END LOOP;
+    EXECUTE v_def;
+  END IF;
+
+  -- 2. claim_representative_reward
+  v_def := pg_get_functiondef('public.claim_representative_reward(uuid,uuid)'::regprocedure);
+  IF position('[0216]' IN v_def) = 0 THEN
+    v_pairs := ARRAY[[b1_old, b1_new], [b2_old, b2_new]];
+    FOR i IN 1 .. array_length(v_pairs, 1) LOOP
+      IF (length(v_def) - length(replace(v_def, v_pairs[i][1], ''))) / length(v_pairs[i][1]) <> 1 THEN
+        RAISE EXCEPTION '0216: claim_representative_reward is not the expected 0201 version (anchor % not found exactly once)', i;
+      END IF;
+      v_def := replace(v_def, v_pairs[i][1], v_pairs[i][2]);
+    END LOOP;
+    EXECUTE v_def;
+  END IF;
+END
+$patch$;
+
+-- 3. The table rule: an approved, funded or credited claim is never a free
+-- event. NOT VALID so existing rows are not rewritten or refused here; every
+-- new or updated row is checked. Existing rows are reported below.
+ALTER TABLE public.representative_reward_claims
+  DROP CONSTRAINT IF EXISTS representative_reward_claims_free_needs_verification;
+ALTER TABLE public.representative_reward_claims
+  DROP CONSTRAINT IF EXISTS representative_reward_claims_free_never_qualifies;
+ALTER TABLE public.representative_reward_claims
+  ADD CONSTRAINT representative_reward_claims_free_never_qualifies
+  CHECK (status NOT IN ('approved', 'funded', 'credited') OR NOT is_free_event) NOT VALID;
+
+-- Report (read-only) any claim the old override let through, for the owner
+-- to reject or reverse through dual control. Changes nothing.
+DO $report$
+DECLARE
+  v_n integer;
+BEGIN
+  SELECT count(*) INTO v_n FROM public.representative_reward_claims
+   WHERE (is_free_event OR free_event_verified) AND status IN ('approved', 'funded', 'credited');
+  IF v_n > 0 THEN
+    RAISE WARNING '0216: % free-event reward claim(s) are approved, funded or credited; they can no longer be credited and need an admin rejection or reversal', v_n;
+  END IF;
+END
+$report$;

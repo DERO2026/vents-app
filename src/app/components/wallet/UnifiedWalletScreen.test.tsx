@@ -112,6 +112,16 @@ describe('two tabs in one screen', () => {
     expect(q('wallet-tab-balance')!.getAttribute('aria-selected')).toBe('true');
   });
 
+  it("a representative who is not an organizer, provider or admin lands on Earnings from 'earnings-wallet'", async () => {
+    // App.tsx renders 'earnings-wallet' with initialTab="earnings" for anyone
+    // (src/lib/unifiedWalletWiring.security.test.ts pins that wiring).
+    await render({ currentUser: { ...user, isOrganizer: false, is_service_provider: false, role: 'user' }, initialTab: 'earnings' });
+    expect(q('wallet-tab-earnings')!.getAttribute('aria-selected')).toBe('true');
+    expect(q('wallet-panel-earnings')!.hidden).toBe(false);
+    expect(q('earnings-body')!.textContent).toBe('EARNINGS embedded');   // the withdrawal screen itself
+    expect(q('wallet-panel-balance')!.hidden).toBe(true);
+  });
+
   it('touch targets are at least 44px', async () => {
     await render();
     for (const id of ['wallet-tab-balance', 'wallet-tab-earnings']) expect(parseInt(q(id)!.style.minHeight)).toBeGreaterThanOrEqual(44);

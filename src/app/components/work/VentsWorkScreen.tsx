@@ -185,7 +185,7 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
               {status.representative === 'active' && (
                 <Row testId="shortcut-representative" icon={<Ico tone="p">⇄</Ico>} title="Representative dashboard" sub="Funnel, monthly performance, rewards and team" right={<Chev />} onClick={() => onNavigate('representative-dashboard')} />
               )}
-              <Row testId="shortcut-wallet" icon={<Ico tone="g">₦</Ico>} title="Earnings wallet" sub="Withdraw to your bank · statement" right={<Chev />} onClick={() => onNavigate('wallet')} />
+              <Row testId="shortcut-wallet" icon={<Ico tone="g">₦</Ico>} title="Earnings wallet" sub="Withdraw to your bank · statement" right={<Chev />} onClick={() => onNavigate('earnings-wallet')} />
             </MCard>
           </>
         )}

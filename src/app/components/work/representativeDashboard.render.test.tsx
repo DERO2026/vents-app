@@ -157,7 +157,10 @@ describe('Representative dashboard', () => {
     expect(byTestId('rep-month-progress')?.textContent).toContain('2 qualifying organizers');
     expect(byTestId('rep-month-progress')?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('2');
     await click(byTestId('rep-withdraw')!);
-    expect(onNavigate).toHaveBeenCalledWith('wallet');
+    // The Earnings tab, whatever the representative's other roles (not 'wallet', which
+    // opens Wallet Balance for someone who is not an organizer, provider or admin).
+    expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
+    expect(onNavigate).not.toHaveBeenCalledWith('wallet');
     await click(byTestId('rep-invite')!);
     expect(onNavigate).toHaveBeenCalledWith('representatives');
   });
@@ -188,12 +191,15 @@ describe('Representative dashboard', () => {
     expect(document.body.textContent).not.toContain('7-day settlement');
   });
 
-  it('the rules note states the approved rules: one reward per organizer, event after acceptance, free events verified', async () => {
+  it('the rules note states the approved rules: one reward per organizer, event after acceptance, free events never qualify', async () => {
     await dash('rewards');
     const t = document.body.textContent!;
     expect(t).toContain('one reward per organizer you referred, ever');
     expect(t).toContain('created after they accepted your partnership');
-    expect(t).toContain('a free event counts only if VENTS confirms it was genuine');
+    expect(t).toContain('It must be a paid event that has ended');
+    expect(t).toContain('free events never qualify');
+    // The retired 0201 override must not be offered to representatives.
+    expect(t).not.toMatch(/free event counts|confirms it was genuine/);
     expect(t).toContain('two VENTS admins review it');
   });
 
@@ -228,7 +234,7 @@ describe('Representative dashboard', () => {
     await click(byTestId('stage-credited')!);
     expect(byTestId('claim-d')?.textContent).toContain('Paid');
     await click(byTestId('claim-wallet-d')!);
-    expect(onNavigate).toHaveBeenCalledWith('wallet');
+    expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
   });
 
   it('rewards: loads 20 at a time, "Show more" continues from the cursor without repeats, and disappears at the end', async () => {
@@ -462,7 +468,7 @@ describe('VENTS Work hub: entry points', () => {
     await click(byTestId('shortcut-bookings')!); expect(bookings).toHaveBeenCalled();
     await click(byTestId('shortcut-services')!); expect(onNavigate).toHaveBeenCalledWith('service-provider-setup');
     await click(byTestId('shortcut-representative')!); expect(onNavigate).toHaveBeenCalledWith('representative-dashboard');
-    await click(byTestId('shortcut-wallet')!); expect(onNavigate).toHaveBeenCalledWith('wallet');
+    await click(byTestId('shortcut-wallet')!); expect(onNavigate).toHaveBeenCalledWith('earnings-wallet');
   });
 
   it('a failed earnings-wallet read shows "—" on the hub, never ₦0', async () => {
