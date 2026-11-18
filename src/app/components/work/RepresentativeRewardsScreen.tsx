@@ -30,9 +30,8 @@ export function RepresentativeRewardsScreen({ currentUser, onBack, onNavigate }:
         {data?.representative && (
           <>
             <Tiles>
-              <Tile testId="rewards-tile-month" k="This month" v={data.qualifying_this_month}
-                s={`Qualifying organizers · ${data.rate_review_threshold}+ can earn a higher rate`} />
-              <Tile testId="rewards-tile-rate" k="Your rate" v={formatNaira(data.current_rate_kobo)} s="Per qualifying organizer" />
+              <Tile testId="rewards-tile-month" k="This month" v={data.qualifying_this_month} s="Qualifying organizers" />
+              <Tile testId="rewards-tile-rate" k="Reward per organizer" v={formatNaira(data.base_reward_kobo)} s="Fixed · no monthly bonus" />
             </Tiles>
             <RewardRulesNote programmeOpen={data.programme_open} payoutsEnabled={data.payouts_enabled}
               holdDays={rep.performance?.settlement_hold_days} />

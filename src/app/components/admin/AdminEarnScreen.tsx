@@ -44,7 +44,6 @@ export function AdminEarnScreen() {
   const [candidate, setCandidate] = useState<any>(null);
   const [cost, setCost] = useState('');
   const [costNote, setCostNote] = useState('');
-  const [rate, setRate] = useState({ repId: '', month: '', amount: '', reason: '' });
 
   const load = useCallback(async () => {
     setError(null);
@@ -70,11 +69,6 @@ export function AdminEarnScreen() {
   };
 
   const ask = (q: string) => (window.prompt(q) || '').trim();
-  // The approver sees target_label, not target_id, so name the representative.
-  const repLabel = (id: string) => {
-    const name = data?.claims.find((c) => c.representative_id === id)?.representative_name;
-    return name ? `${name} (${id})` : id;
-  };
 
   // Only the latest check may set the candidate, so a slow response for an
   // earlier Event ID can never become the one "Request: recognize" submits.
@@ -211,22 +205,12 @@ export function AdminEarnScreen() {
 
       <div style={card}>
         <h3 style={h}>Monthly qualifying organizers</h3>
-        <div style={muted}>At 9 or more in a month, management may approve a higher rate for the next month. Rates never rise automatically.</div>
+        <div style={muted} data-testid="earn-fixed-reward-note">The reward is fixed at ₦50,000 per qualifying organizer. There is no monthly rate, uplift or bonus; these counts are for reporting only.</div>
         {data.monthly_counts.map((m) => (
-          <div key={`${m.representative_id}-${m.month}`} style={{ fontSize: 13, color: m.count >= 9 ? adminTheme.green : adminTheme.text }}>
+          <div key={`${m.representative_id}-${m.month}`} style={{ fontSize: 13, color: adminTheme.text }}>
             {data.claims.find((c) => c.representative_id === m.representative_id)?.representative_name || m.representative_id.slice(0, 8)} · {m.month.slice(0, 7)} · {m.count}
           </div>
         ))}
-        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <input aria-label="Representative ID" placeholder="Representative ID" value={rate.repId} onChange={(e) => setRate({ ...rate, repId: e.target.value })} style={input} />
-          <input aria-label="Month" type="month" value={rate.month} onChange={(e) => setRate({ ...rate, month: e.target.value })} style={input} />
-          <input aria-label="New rate (₦)" placeholder="New rate (₦), above 50,000" inputMode="decimal" value={rate.amount} onChange={(e) => setRate({ ...rate, amount: e.target.value.replace(/[^0-9.]/g, '') })} style={input} />
-          <input aria-label="Reason" placeholder="Reason" value={rate.reason} onChange={(e) => setRate({ ...rate, reason: e.target.value })} style={input} />
-        </div>
-        <button style={btn()} disabled={!rate.repId || !rate.month || !rate.amount || !rate.reason.trim()}
-          onClick={() => request('earn_set_monthly_rate', `Rate ${formatNaira(Math.round(Number(rate.amount) * 100))} for ${rate.month} · representative ${repLabel(rate.repId.trim())}`, { month: `${rate.month}-01`, reward_kobo: Math.round(Number(rate.amount) * 100), reason: rate.reason.trim() }, rate.repId.trim())}>
-          Request higher rate
-        </button>
       </div>
 
       <div style={card}>

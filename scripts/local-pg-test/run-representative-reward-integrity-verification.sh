@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Real-execution verification of migration 0216 (Batch 1: representative
-# reward integrity) on top of the full 0201 -> 0210 stack.
+# Real-execution verification of migrations 0216 and 0217 (Batch 1:
+# representative reward integrity; the reward is FIXED at N50,000, no monthly
+# uplift) on top of the full 0201 -> 0210 stack.
 #
 # Approved rule: a fixed N50,000 per qualifying organizer, correctly
 # attributed through the referral system; the organizer and the event
@@ -63,14 +64,14 @@ ORG_LEGACY="00000000-0000-0000-0000-00000000b005"; ORG_AFTER="00000000-0000-0000
 ORG_RACE="00000000-0000-0000-0000-00000000b007"
 # Every organizer the harness refers, in order.
 ORG_PROMO="00000000-0000-0000-0000-00000000b008"; ORG_REFUND="00000000-0000-0000-0000-00000000b009"
-ORG_RATE="00000000-0000-0000-0000-00000000b00a"
-ORGS=("$ORG_PAID" "$ORG_FREE" "$ORG_DRAFT" "$ORG_DEL" "$ORG_LEGACY" "$ORG_AFTER" "$ORG_RACE" "$ORG_PROMO" "$ORG_REFUND" "$ORG_RATE")
+ORG_RATE="00000000-0000-0000-0000-00000000b00a"; ORG_FIX="00000000-0000-0000-0000-00000000b00b"
+ORGS=("$ORG_PAID" "$ORG_FREE" "$ORG_DRAFT" "$ORG_DEL" "$ORG_LEGACY" "$ORG_AFTER" "$ORG_RACE" "$ORG_PROMO" "$ORG_REFUND" "$ORG_RATE" "$ORG_FIX")
 EV_PAID="00000000-0000-0000-0000-00000000e001"; EV_PAID_2="00000000-0000-0000-0000-00000000e002"
 EV_FREE="00000000-0000-0000-0000-00000000e003"; EV_DRAFT="00000000-0000-0000-0000-00000000e004"
 EV_DEL="00000000-0000-0000-0000-00000000e005"; EV_LEGACY="00000000-0000-0000-0000-00000000e006"
 EV_AFTER="00000000-0000-0000-0000-00000000e007"; EV_RACE="00000000-0000-0000-0000-00000000e008"
 EV_PROMO="00000000-0000-0000-0000-00000000e009"; EV_REFUND="00000000-0000-0000-0000-00000000e00a"
-EV_RATE="00000000-0000-0000-0000-00000000e00b"
+EV_RATE="00000000-0000-0000-0000-00000000e00b"; EV_FIX="00000000-0000-0000-0000-00000000e00c"
 LEGACY_CLAIM="00000000-0000-0000-0000-00000000c001"
 ORG_LIST="$(printf "'%s'," "${ORGS[@]}" | sed 's/,$//')"   # SQL list of every referred organizer
 
@@ -183,12 +184,13 @@ INSERT INTO public.events (id, organizer_id, title, event_date, status, ticket_t
   ('$EV_RACE',   '$ORG_RACE',   'Race night',     now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
   ('$EV_PROMO',  '$ORG_PROMO',  'All on promo',   now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
   ('$EV_REFUND', '$ORG_REFUND', 'All refunded',   now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
-  ('$EV_RATE',   '$ORG_RATE',   'Rate night',     now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]');
+  ('$EV_RATE',   '$ORG_RATE',   'Rate night',     now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
+  ('$EV_FIX',    '$ORG_FIX',    'Fixed night',    now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]');
 SQL
-for e in "$EV_PAID" "$EV_PAID_2" "$EV_PAID_2" "$EV_DRAFT" "$EV_DEL" "$EV_AFTER" "$EV_RACE" "$EV_REFUND" "$EV_RATE"; do buy_one "$e"; done
-for e in "$EV_PAID" "$EV_PAID_2" "$EV_FREE" "$EV_DRAFT" "$EV_DEL" "$EV_LEGACY" "$EV_AFTER" "$EV_RACE" "$EV_PROMO" "$EV_REFUND" "$EV_RATE"; do end_event "$e"; done
+for e in "$EV_PAID" "$EV_PAID_2" "$EV_PAID_2" "$EV_DRAFT" "$EV_DEL" "$EV_AFTER" "$EV_RACE" "$EV_REFUND" "$EV_RATE" "$EV_RATE" "$EV_FIX"; do buy_one "$e"; done
+for e in "$EV_PAID" "$EV_PAID_2" "$EV_FREE" "$EV_DRAFT" "$EV_DEL" "$EV_LEGACY" "$EV_AFTER" "$EV_RACE" "$EV_PROMO" "$EV_REFUND" "$EV_RATE" "$EV_FIX"; do end_event "$e"; done
 # EV_RATE ends 8 days ago (past the 7-day hold) so its reward month differs from the 30-day-old events' only by date, never by rule.
-"${PSQL[@]}" -q -c "UPDATE public.events SET event_date = now() - interval '9 days', end_date = now() - interval '8 days' WHERE id = '$EV_RATE';"
+"${PSQL[@]}" -q -c "UPDATE public.events SET event_date = now() - interval '9 days', end_date = now() - interval '8 days' WHERE id IN ('$EV_RATE', '$EV_FIX');"
 # Tickets exactly as production writes them (purchase_ticket, 0124): a N0 RSVP
 # and a 100%-promo ticket are stored as payment_status 'paid'. A failed
 # purchase leaves a 'failed' ticket. Refunds flip one ticket row each.
@@ -412,8 +414,8 @@ unlock_constraint; "${PSQL[@]}" -q -c "UPDATE public.representative_reward_claim
 expect_value "the approved legacy free claim adds nothing to the qualifying count (0201's count would add 1)" \
   "$Q_WITH/$(( $(raw_0201_count "$LM") - Q_WITH ))" "$Q_WITHOUT/1"
 
-# The 9+ rule through the real dual-control path: nine more legacy free
-# approvals for last month cannot unlock a higher rate this month.
+# Nine more legacy free approvals for last month: none of them counts as a
+# qualifying organizer (the count no longer affects any amount after 0217).
 THIS=$(val "SELECT date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;")
 PREV=$(val "SELECT (date_trunc('month', now() AT TIME ZONE 'Africa/Lagos') - interval '1 month')::date;")
 for i in 1 2 3 4 5 6 7 8 9; do
@@ -436,12 +438,8 @@ SELECT a.id, '$REP', a.organizer_id, ('00000000-0000-0000-0000-0000000fe0' || ri
 SQL
 relock_constraint
 K=$(count_q "$PREV")
-expect_value "0201's count would see 9+ for last month; 0216's excludes all nine free claims" \
+expect_value "0201's monthly count would see 9+ free claims for last month; 0216's count excludes all nine" \
   "$( [ "$(raw_0201_count "$PREV")" -ge 9 ] && echo yes)/$( [ "$K" -lt 9 ] && echo below-9)" "yes/below-9"
-RR=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('earn_set_monthly_rate', 'vents_earn', '$REP', 'test', '{\"month\":\"$THIS\",\"reward_kobo\":7500000,\"reason\":\"strong month\"}'::jsonb)->>'id';")")
-expect_error "a higher-rate request on the strength of free claims is refused by the 9+ rule (only $K qualify)" \
-  "Only $K qualifying organizers in the previous month; 9 are required" "$(approve "$ADMIN_B" "$RR")"
-expect_value "no rate was set" "$(val "SELECT count(*) FROM public.representative_monthly_rates WHERE representative_id = '$REP' AND month = '$THIS';")" "0"
 
 # A legacy free claim that was FUNDED (profit reserved) before 0216.
 POOL_BEFORE=$(pool)
@@ -457,12 +455,12 @@ expect_value "reversed; the reservation is released back to available profit; no
   "$(status_of "$LEGACY_CLAIM")/$(pool)/$(val "SELECT string_agg(entry_type, ',' ORDER BY created_at) FROM public.earn_profit_ledger WHERE claim_id = '$LEGACY_CLAIM';")/$(earnings "$REP")/$(val "SELECT count(*) FROM public.organizer_transactions WHERE metadata->>'representative_reward_claim_id' = '$LEGACY_CLAIM';")" \
   "reversed/$POOL_BEFORE/reservation,release/10000000/10000000/0"
 
-echo "== Higher monthly rate after 0216, and concurrent approvals by two different admins =="
+echo "== Before 0217: a claim approved at a higher monthly rate (0201 behaviour), and concurrent approvals by two admins =="
 "${PSQL[@]}" -q -c "$(submit "$REP" "$ORG_RATE" "$EV_RATE")" >/dev/null
 C_RATE=$(claim_of "$ORG_RATE"); confirm_claim "$ORG_RATE" "$C_RATE"
 RM=$(val "SELECT reward_month FROM public.representative_reward_claims WHERE id = '$C_RATE';")
-# A rate approved earlier through the 9+ dual-control rule (owner write: the
-# path itself is exercised above and in run-representative-rewards-verification.sh).
+# A rate approved earlier through 0201's dual-control rule (owner write; the
+# discontinued path itself is covered historically by run-representative-rewards-verification.sh).
 "${PSQL[@]}" -q -c "INSERT INTO public.representative_monthly_rates (representative_id, month, reward_kobo, basis_month_count, reason, requested_by, approved_by) VALUES ('$REP', '$RM', 7500000, 9, 'approved rate', '$ADMIN_A', '$ADMIN_C');"
 expect_error "the table refuses a rate at or below the N50,000 base" "representative_monthly_rates_reward_kobo_check" \
   "INSERT INTO public.representative_monthly_rates (representative_id, month, reward_kobo, basis_month_count, reason, requested_by, approved_by) VALUES ('$REP2', '$RM', 5000000, 9, 'x', '$ADMIN_A', '$ADMIN_C');"
@@ -477,14 +475,81 @@ expect_value "two admins approving the same claim at the same time: exactly one 
 expect_value "the claim was approved once, recorded once in the audit trail, and one request stays pending" \
   "$(status_of "$C_RATE")/$(val "SELECT count(*) FROM public.earn_audit_log WHERE entity_id = '$C_RATE' AND action = 'admin_approved';")/$(val "SELECT string_agg(status, ',' ORDER BY status) FROM public.admin_action_requests WHERE id IN ('$R1', '$R2');")" \
   "approved/1/approved,pending"
-expect_value "the approved higher rate applies after 0216 (N75,000, not the N50,000 base)" "$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_RATE';")" "7500000"
-expect_value "a valid paid-event claim counts toward the 9+ rule (+1)" "$(( $(count_q "$RM") - Q_RM_BEFORE ))" "1"
+expect_value "before 0217, the approved higher rate still applied (N75,000)" "$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_RATE';")" "7500000"
+expect_value "a valid paid-event claim counts in the monthly qualifying count (+1)" "$(( $(count_q "$RM") - Q_RM_BEFORE ))" "1"
 expect_value "a claim for a month with no approved rate uses the N50,000 base" "$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_PAID';")" "5000000"
 
+# The higher-rate claim is funded (profit reserved) before 0217, with payouts
+# briefly off so funding stops at 'funded'. A monthly-rate request is left pending.
+expect_ok "payouts paused by two admins" "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_update_settings '{"payouts_enabled": false, "note": "test"}')")"
+recognize "$EV_RATE" "the rate event's profit is recognized"
+expect_value "before 0217, the N75,000 claim is funded (N75,000 reserved)" "$(fund "$REP" "$C_RATE" 33333333-3333-3333-3333-333333333333)/$(val "SELECT reserved_kobo FROM public.earn_profit_pool;")" "funded/7500000"
+expect_ok "payouts back on" "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_update_settings '{"payouts_enabled": true, "note": "test"}')")"
+R_PEND=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('earn_set_monthly_rate', 'vents_earn', '$REP', 'test', '{\"month\":\"$THIS\",\"reward_kobo\":9000000,\"reason\":\"filed before 0217\"}'::jsonb)->>'id';")")
+expect_value "before 0217, a monthly-rate request could still be filed" "$(val "SELECT status FROM public.admin_action_requests WHERE id = '$R_PEND';")" "pending"
+
+echo "== Applying 0217 (fixed N50,000, no monthly uplift) =="
+STATE17_SQL="SELECT md5(string_agg(p.proname || ':' || p.prosrc, '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT string_agg(conname || ':' || convalidated || ':' || md5(pg_get_constraintdef(oid)), ',' ORDER BY conname) FROM pg_constraint WHERE conrelid = 'public.representative_reward_claims'::regclass) || '/' || COALESCE((SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.representative_monthly_rates'::regclass AND NOT tgisinternal), '') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
+ROWS17_SQL="SELECT md5(COALESCE((SELECT string_agg(c::text, '|' ORDER BY c.id) FROM public.representative_reward_claims c), '')) || '/' || md5(COALESCE((SELECT string_agg(r::text, '|' ORDER BY r.id) FROM public.representative_monthly_rates r), '')) || '/' || md5(COALESCE((SELECT string_agg(t::text, '|' ORDER BY t.id) FROM public.organizer_transactions t), '')) || '/' || md5(COALESCE((SELECT string_agg(l::text, '|' ORDER BY l.id) FROM public.earn_profit_ledger l), '')) || '/' || md5(COALESCE((SELECT string_agg(a::text, '|' ORDER BY a.id) FROM public.earn_audit_log a), ''));"
+PRE_0217=$(val "$STATE17_SQL"); PRE_ROWS_0217=$(val "$ROWS17_SQL")
+if "${PSQL[@]}" -f "$MIG/0217_representative_reward_fixed_50000.sql" >"$OUT" 2>"$ERR"; then pass "0217 applies on top of 0216"; else fail "0217 applies"; cat "$ERR" >&2; fi
+expect_value "0217 reports the history it keeps: 1 rate row, 1 held claim above N50,000, 0 paid above N50,000, 1 pending rate request" \
+  "$(grep -c "1 monthly rate row(s) kept as history; 1 approved/funded claim(s) above N50,000 now on hold; 0 credited claim(s) above N50,000 left as paid history; 1 pending monthly-rate request(s)" "$ERR")" "1"
+expect_value "applying 0217 changed no claim, rate, ledger, profit-ledger or audit row" "$(val "$ROWS17_SQL")" "$PRE_ROWS_0217"
+expect_ok "undo_0217 runs" "SET vents.rollback_confirm = 'undo-0217'; $(cat "$REPO_ROOT/supabase/rollback/undo_0217.sql")"
+expect_value "undo_0217 restores every function, claim constraint and rate-table trigger exactly" "$(val "$STATE17_SQL")" "$PRE_0217"
+expect_value "... and changed no row" "$(val "$ROWS17_SQL")" "$PRE_ROWS_0217"
+expect_error "undo_0217 refuses without the confirmation" "undo-0217" "$(cat "$REPO_ROOT/supabase/rollback/undo_0217.sql")"
+expect_ok "0217 re-applies after the undo" "$(cat "$MIG/0217_representative_reward_fixed_50000.sql")"
+expect_ok "0217 is idempotent (second run)" "$(cat "$MIG/0217_representative_reward_fixed_50000.sql")"
+expect_value "0217 markers: rate function, executor and claim; request_admin_action no longer lists the type" \
+  "$(val "SELECT string_agg(proname, ',' ORDER BY proname) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prosrc LIKE '%[0217]%';")/$(val "SELECT position('earn_set_monthly_rate' IN pg_get_functiondef('public.request_admin_action(text,text,uuid,text,jsonb,jsonb,jsonb,text)'::regprocedure)) = 0;")" \
+  "claim_representative_reward,earn_execute_admin_action,representative_reward_rate_kobo/t"
+
+echo "== The reward is exactly N50,000 (0217) =="
+expect_value "the rate function returns N50,000 even for a month with a (historical) higher rate row" \
+  "$(val "SELECT public.representative_reward_rate_kobo('$REP', '$RM');")/$(val "SELECT reward_kobo FROM public.representative_monthly_rates WHERE representative_id = '$REP' AND month = '$RM';")" "5000000/7500000"
+expect_ok "a new paid-event claim in that same month is submitted" "$(submit "$REP" "$ORG_FIX" "$EV_FIX")"
+C_FIX=$(claim_of "$ORG_FIX"); confirm_claim "$ORG_FIX" "$C_FIX"
+expect_value "... at exactly N50,000" "$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_FIX';")" "5000000"
+expect_ok "two admins approve it, the request naming a higher amount (ignored)" \
+  "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C_FIX\",\"event_verified\":true,\"amount_kobo\":9000000,\"reward_kobo\":9000000}")")"
+expect_value "approved at exactly N50,000" "$(status_of "$C_FIX")/$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_FIX';")" "approved/5000000"
+expect_error "an admin can no longer file a monthly-rate request" "Unknown action_type" \
+  "$(as "$ADMIN_A" "SELECT public.request_admin_action('earn_set_monthly_rate', 'vents_earn', '$REP', 'test', '{\"month\":\"$THIS\",\"reward_kobo\":9000000,\"reason\":\"x\"}'::jsonb);")"
+expect_error "a monthly-rate request filed before 0217 cannot be approved" "monthly rates are discontinued" "$(approve "$ADMIN_B" "$R_PEND")"
+expect_value "... it stays pending and no rate was set" \
+  "$(val "SELECT status FROM public.admin_action_requests WHERE id = '$R_PEND';")/$(val "SELECT count(*) FROM public.representative_monthly_rates;")" "pending/1"
+expect_error "no direct write can add a monthly rate" "monthly rates are discontinued" \
+  "INSERT INTO public.representative_monthly_rates (representative_id, month, reward_kobo, basis_month_count, reason, requested_by, approved_by) VALUES ('$REP', '$THIS', 9000000, 9, 'x', '$ADMIN_A', '$ADMIN_C');"
+expect_error "... or change one" "monthly rates are discontinued" "UPDATE public.representative_monthly_rates SET reward_kobo = 9000000;"
+expect_error "... or delete the history" "monthly rates are discontinued" "DELETE FROM public.representative_monthly_rates;"
+expect_error "... or truncate it" "monthly rates are discontinued" "TRUNCATE public.representative_monthly_rates;"
+expect_error "the N50,000 base itself cannot be changed" "check constraint" "UPDATE public.earn_settings SET base_reward_kobo = 9000000;"
+expect_error "the table refuses an approved claim at any other amount" "representative_reward_claims_fixed_amount" \
+  "UPDATE public.representative_reward_claims SET amount_kobo = 9000000 WHERE id = '$C_FIX';"
+expect_value "the representative's dashboards show N50,000 (current rate and every month)" \
+  "$(val "$(as "$REP" "SELECT public.get_my_representative_rewards()->>'current_rate_kobo';")")/$(val "$(as "$REP" "SELECT string_agg(DISTINCT m->>'rate_kobo', ',') FROM jsonb_array_elements(public.get_my_representative_performance()->'months') m;")")" "5000000/5000000"
+
+echo "== A claim approved and funded at a higher rate before 0217: held, never rewritten, reversed with its reservation released =="
+expect_error "crediting it is refused" "not the fixed N50,000" "$(as "$REP" "SELECT public.claim_representative_reward('$C_RATE', gen_random_uuid());")"
+expect_value "its recorded amount is not rewritten" "$(status_of "$C_RATE")/$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_RATE';")" "funded/7500000"
+POOL_R=$(pool)
+expect_ok "admins reverse it through dual control (the fixed-amount CHECK allows leaving the funded state)" \
+  "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_reverse_reward "{\"claim_id\":\"$C_RATE\",\"reason\":\"reward is fixed at N50,000\"}")")"
+expect_value "reversed; the full N75,000 reservation is released, nothing stranded, nothing credited" \
+  "$(status_of "$C_RATE")/$(pool)/$(val "SELECT string_agg(entry_type, ',' ORDER BY created_at) FROM public.earn_profit_ledger WHERE claim_id = '$C_RATE';")/$(val "SELECT count(*) FROM public.organizer_transactions WHERE metadata->>'representative_reward_claim_id' = '$C_RATE';")" \
+  "reversed/$(echo "$POOL_R" | awk -F/ '{print $1+7500000 "/" $2-7500000 "/" $3}')/reservation,release/0"
+expect_value "the audit trail records the approval at N75,000 and the reversal (history kept)" \
+  "$(val "SELECT string_agg(action, ',' ORDER BY created_at) FROM public.earn_audit_log WHERE entity_id = '$C_RATE' AND action IN ('admin_approved', 'admin_reversed');")" "admin_approved,admin_reversed"
+expect_value "the fixed N50,000 reward is credited to the earnings wallet, exactly once" \
+  "$(fund "$REP" "$C_FIX" 44444444-4444-4444-4444-444444444444)/$(fund "$REP" "$C_FIX" 44444444-4444-4444-4444-444444444444)/$(val "SELECT count(*) || '/' || sum(amount_kobo) FROM public.organizer_transactions WHERE type = 'representative_reward' AND metadata->>'representative_reward_claim_id' = '$C_FIX';")" \
+  "credited/credited/1/5000000"
+
 echo "== Totals =="
-expect_value "the representative earned exactly two N50,000 rewards: two ledger rows, N100,000, VENTS Wallet untouched" \
-  "$(reward_rows "$REP")/$(earnings "$REP")/$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP';")" "2/10000000/10000000/10000"
+expect_value "the representative earned exactly three N50,000 rewards: three ledger rows of N50,000, N150,000, VENTS Wallet untouched" \
+  "$(reward_rows "$REP")/$(val "SELECT string_agg(DISTINCT amount_kobo::text, ',') FROM public.organizer_transactions WHERE type = 'representative_reward';")/$(earnings "$REP")/$(val "SELECT balance_kobo FROM public.user_wallets WHERE user_id = '$REP';")" "3/5000000/15000000/15000000/10000"
 expect_value "no reward ever reached any spend-only VENTS Wallet" "$(val "SELECT count(*) FROM public.user_wallet_transactions;")" "0"
 
 echo
-if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES REPRESENTATIVE REWARD INTEGRITY (0216) CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi
+if [ "$FAILS" -eq 0 ]; then echo "ALL $PASSES REPRESENTATIVE REWARD INTEGRITY (0216 + 0217) CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED ($PASSES passed)"; exit 1; fi

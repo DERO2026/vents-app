@@ -76,7 +76,8 @@ function describe(r: ActionRequest): string {
     earn_reject_reward: `${who} requested to reject a representative reward (${label})`,
     earn_reverse_reward: `${who} requested to REVERSE a representative reward (${label})`,
     earn_recognize_event_profit: `${who} requested to recognize realized profit (${label})`,
-    earn_set_monthly_rate: `${who} requested a higher representative rate (${label})`,
+    // Discontinued (0217): kept so requests filed before it still read correctly; they cannot be approved.
+    earn_set_monthly_rate: `${who} requested a higher representative rate (${label}) · discontinued, cannot be approved`,
     earn_decide_expense: `${who} requested to ${earnFlag(r.payload?.approve, 'APPROVE', 'REJECT')} an expense (${label})`,
     earn_update_settings: `${who} requested a VENTS Earn settings change: ${[
       r.payload?.payouts_enabled !== undefined ? `reward credit ${earnFlag(r.payload.payouts_enabled, 'ON', 'OFF')}` : null,

@@ -119,8 +119,6 @@ function Overview({ rep, perf, onNavigate, goTab }: {
   ] : [];
   const big = { fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums' as const };
   const thisMonth = perf?.months?.[0];
-  const threshold = perf?.rate_review_threshold ?? 0;
-  const progress = thisMonth && threshold > 0 ? Math.min(1, thisMonth.qualifying / threshold) : 0;
 
   return (
     <>
@@ -137,11 +135,7 @@ function Overview({ rep, perf, onNavigate, goTab }: {
           <MLabel>This month</MLabel>
           <MCard testId="rep-month-progress">
             <Row icon={<Ico tone="g">★</Ico>} title={`${thisMonth?.qualifying ?? 0} qualifying organizer${thisMonth?.qualifying === 1 ? '' : 's'}`}
-              sub={`${formatNaira(thisMonth?.rate_kobo)} each · ${threshold} in a month can earn a higher rate next month (reviewed by two admins)`} />
-            <div role="progressbar" aria-label="Progress toward the rate review" aria-valuemin={0} aria-valuemax={threshold} aria-valuenow={thisMonth?.qualifying ?? 0}
-              style={{ height: 8, borderRadius: 999, background: ventsColors.elevated, overflow: 'hidden' }}>
-              <div style={{ width: `${progress * 100}%`, height: '100%', background: ventsColors.accentStrong, borderRadius: 999 }} />
-            </div>
+              sub={`${formatNaira(perf.base_reward_kobo)} each · a fixed reward, no monthly bonus`} />
           </MCard>
         </>
       )}
@@ -194,7 +188,7 @@ function Overview({ rep, perf, onNavigate, goTab }: {
 }
 
 function Monthly({ perf }: { perf: Performance }) {
-  const max = Math.max(1, perf.rate_review_threshold, ...perf.months.map((m) => m.qualifying));
+  const max = Math.max(1, ...perf.months.map((m) => m.qualifying));
   return (
     <>
       <MLabel>Last six months</MLabel>
@@ -206,10 +200,10 @@ function Monthly({ perf }: { perf: Performance }) {
               <span style={{ fontSize: 11, color: ventsColors.ink3, whiteSpace: 'nowrap' }}>{m.qualifying} qualifying · {m.submitted} submitted</span>
             </div>
             <div aria-hidden style={{ height: 6, borderRadius: 999, background: ventsColors.elevated, overflow: 'hidden' }}>
-              <div style={{ width: `${(m.qualifying / max) * 100}%`, height: '100%', background: m.qualifying >= perf.rate_review_threshold ? '#34D399' : ventsColors.accentStrong }} />
+              <div style={{ width: `${(m.qualifying / max) * 100}%`, height: '100%', background: ventsColors.accentStrong }} />
             </div>
             <div style={{ fontSize: 10.5, color: ventsColors.ink3 }}>
-              Rate {formatNaira(m.rate_kobo)} · paid {formatNaira(m.paid_kobo)}
+              Paid {formatNaira(m.paid_kobo)}
             </div>
           </div>
         ))}
@@ -217,8 +211,7 @@ function Monthly({ perf }: { perf: Performance }) {
       <NoteBand>
         A month counts the rewards approved for organizers whose qualifying event ended that month (Lagos time), so a
         month&apos;s count can still rise after it ends while reviews finish.
-        {` ${perf.rate_review_threshold}`} or more in a month can earn a higher rate the next month, after two VENTS admins review it.
-        Nothing rises automatically.
+        Each qualifying organizer earns a fixed {formatNaira(perf.base_reward_kobo)}; there is no monthly rate, uplift or bonus.
       </NoteBand>
     </>
   );

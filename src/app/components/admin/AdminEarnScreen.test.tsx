@@ -67,6 +67,15 @@ describe('AdminEarnScreen: free events never qualify', () => {
     expect((window.confirm as any).mock.calls.some(([m]: [string]) => /free event/i.test(m))).toBe(false);
   });
 
+  it('the reward is fixed at ₦50,000: no higher-rate request anywhere, and the screen says so', async () => {
+    expect(container.textContent).not.toMatch(/Request higher rate|higher rate|9 or more/i);
+    expect(container.querySelector('[aria-label="New rate (₦)"]')).toBeNull();
+    expect(q('earn-fixed-reward-note')?.textContent).toMatch(/fixed at ₦50,000 per qualifying organizer\. There is no monthly rate, uplift or bonus/);
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    expect(readFileSync(join(__dirname, 'AdminEarnScreen.tsx'), 'utf8')).not.toContain('earn_set_monthly_rate');
+  });
+
   it('nothing in the screen can send the retired override', async () => {
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');

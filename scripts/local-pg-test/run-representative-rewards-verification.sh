@@ -470,7 +470,13 @@ expect_value "the free-event claim is still under review" "$(val "SELECT status 
 RF=$(request "$ADMIN_A" earn_approve_reward NULL "{\"claim_id\":\"$CF\",\"event_verified\":true,\"free_event_verified\":true}")
 expect_ok "0201 alone (superseded by 0209/0216): a verified free event was approvable" "$(approve "$ADMIN_B" "$RF")"
 
-echo "== Monthly rate review =="
+echo "== Monthly rate review (0201 ALONE: historical; discontinued) =="
+# 0201 shipped a dual-control higher next-month rate at 9+ qualifying
+# organizers. The confirmed policy is a FIXED N50,000 with no monthly uplift:
+# 0217 removes it (refused at request and approval, rates frozen, every amount
+# N50,000). This harness only applies 0201, so it still records 0201's original
+# behaviour; the current rule is verified by
+# run-representative-reward-integrity-verification.sh (0216 + 0217).
 NEXT=$(val "SELECT (date_trunc('month', now() AT TIME ZONE 'Africa/Lagos') + interval '1 month')::date;")
 THIS=$(val "SELECT date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;")
 RM=$(request "$ADMIN_A" earn_set_monthly_rate "'$REP'" "{\"month\":\"$NEXT\",\"reward_kobo\":7500000,\"reason\":\"strong month\"}")

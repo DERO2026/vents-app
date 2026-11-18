@@ -81,9 +81,14 @@ not in the UI.
 6. **Credit (confirmed decision, 2026-10-30): the withdrawable earnings wallet.** A funded reward is credited once to the representative's `organizer_wallets` row, the same wallet organizers and service providers withdraw from. It only happens while `earn_settings.payouts_enabled` is true, which ships **false**. See "Earnings wallet integration" below.
    Since 0216, funding and credit first re-check the claim: a claim recorded as a free event, or whose event is no longer found, live, undeleted and unhidden (or is now free), is refused with "on hold for admin review". Nothing is reserved or credited; admins reject or reverse it through dual control.
    Events have only `live` and `draft` statuses (`events_status_check`), so "cancelled" means taken off live, deleted or hidden, the same reasons eligibility already uses. An organizer who moves an ended event back to draft also puts an approved reward on hold until the event is live again.
-7. **Monthly count** is by calendar month (Africa/Lagos) of the qualifying event's end. At 9 or more, a dual-control request may set a higher rate (above ₦50,000) for the following month only. Nothing rises automatically.
-   - **How it meets the ₦50,000 base:** a claim's amount is fixed when it is approved, as the representative's rate for the claim's reward month. That is ₦50,000 unless two admins set a rate for that representative and month, which must be above ₦50,000 (table CHECK) and needs 9+ qualifying organizers in the previous month. The representative cannot request or approve their own rate, and no rate is set for a past month.
-   - **What counts (0216):** approved, funded and credited claims, excluding free-event claims. An approved claim held because its event was later cancelled, deleted, hidden or fully refunded still counts until admins reject or reverse it (see "Blocked or needing a decision").
+7. **Fixed reward, no monthly uplift (confirmed policy; 0217).** Every qualifying organizer earns exactly **₦50,000**. There is no monthly rate, 9+ uplift or bonus.
+   - 0201 shipped a dual-control "higher next-month rate" at 9+ qualifying organizers. 0217 removes it:
+     - every amount comes from the ₦50,000 base;
+     - `earn_set_monthly_rate` is refused at request and at approval;
+     - `representative_monthly_rates` is frozen as history;
+     - a claim recorded at any other amount is held at credit, never rewritten;
+     - an approved, funded or credited claim must be ₦50,000 (table CHECK).
+   - The **monthly qualifying count** (by the calendar month, Africa/Lagos, of the qualifying event's end; free-event claims excluded since 0216) is still shown on the dashboards for reporting only. An approved claim held because its event was later cancelled, deleted, hidden or fully refunded still appears in it until admins reject or reverse it.
 8. **Expenses** (transport/support) are submitted by the representative and approved or rejected through dual control. They are tracked separately and never touch rewards, the pool or a wallet.
 9. **Audit trail.** `earn_audit_log` and `earn_profit_ledger` are append-only. They record attribution, duplicate/self-referral blocks, eligibility snapshots, reviews, recognitions, reservations, credits, reversals, expenses, rate changes and settings changes.
 10. **Legacy 10% model.** Audit at migration time:
@@ -156,9 +161,9 @@ recognized event later takes that ticket's fee back out of the pool.
 5. **Expense reimbursement** is approval and tracking only. No payout path exists.
 6. **VENTS Unlock / Split / Circle:** definitions needed before anything can be built.
 7. **Profile layout.** Mockup A's surrounding profile (compact header, three-row menu) is a sketch. Only the VENTS Work card was changed; the existing profile header, stats and menu were kept.
-8. **Higher monthly rate vs. "fixed ₦50,000".** Rule 7 of "Representative reward (migration 0201)" above (a dual-control higher rate for the next month at 9+ qualifying organizers) is recorded as approved in `MONETIZATION_IMPLEMENTATION_MASTER_CHECKLIST.md` §10, while later briefs state the reward as a fixed ₦50,000 with no alternative amount or bonus. The mechanism is unchanged (0216 does not touch it, and nothing raises a rate automatically). The owner should confirm whether it stays.
+8. ~~**Higher monthly rate vs. "fixed ₦50,000".**~~ **Resolved: fixed ₦50,000, no uplift (0217).** Previously: Rule 7 of "Representative reward (migration 0201)" above (a dual-control higher rate for the next month at 9+ qualifying organizers) is recorded as approved in `MONETIZATION_IMPLEMENTATION_MASTER_CHECKLIST.md` §10, while later briefs state the reward as a fixed ₦50,000 with no alternative amount or bonus. The mechanism is unchanged (0216 does not touch it, and nothing raises a rate automatically). The owner should confirm whether it stays.
 9. **Fraud and duplicate-event screening** is the approving admins' judgement (`event_verified`). The database stops a second reward for the same organizer or event, and free events are refused, but nothing detects a cloned event, and one cheap paid ticket makes an event "paid". Any automated rule (minimum sales, distinct buyers) is a business-policy decision; none was added.
-10. **Held claims in the 9+ count.** An approved claim that 0216 holds at credit time (event cancelled, deleted, hidden or fully refunded after approval) still counts toward the rate review until admins reject or reverse it. Excluding it automatically would add a rule; none was added.
+10. **Held claims in the monthly count** (reporting only after 0217). An approved claim that 0216 holds at credit time (event cancelled, deleted, hidden or fully refunded after approval) still counts toward the rate review until admins reject or reverse it. Excluding it automatically would add a rule; none was added.
 
 ## Deploying (not done; needs approval)
 
@@ -179,13 +184,16 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
   - ordinary organizer withdrawals unchanged.
 
   It refuses to run, before connecting, if any database URL or `PG*` connection variable is set, or if any environment value names a hosted database host. It connects only over the local Unix socket, then confirms the server is local and not Supabase-managed (no server address, no `supabase_admin` role). It creates and always drops its own `vents_local_pg_payout_gate_audit` database.
-- **`scripts/local-pg-test/run-representative-reward-integrity-verification.sh`:** 0216 on the full 0201 → 0210 stack (123 checks). Beyond the list below, it reproduces the pre-0216 bugs (free event with an RSVP, 100%-promo and fully refunded events eligible) and checks:
+- **`scripts/local-pg-test/run-representative-reward-integrity-verification.sh`:** 0216 on the full 0201 → 0210 stack (158 checks, 0216 + 0217). Beyond the list below, it reproduces the pre-0216 bugs (free event with an RSVP, 100%-promo and fully refunded events eligible) and checks:
   - partial refunds still qualify;
   - a refund after approval holds the reward;
-  - legacy free claims add nothing to the 9+ count, and nine of them cannot unlock a higher rate through the real request;
+  - legacy free claims add nothing to the monthly qualifying count;
   - a funded legacy free claim is reversed with its reservation released;
   - two admins approving the same claim at once give one approval;
-  - an approved higher rate (₦75,000) still applies;
+  - 0217: a ₦75,000 claim approved and funded through 0201's real path is held at credit, never rewritten, and reversed with its whole reservation released;
+  - 0217: every new reward is exactly ₦50,000, even for a month with a historical rate row and with a higher amount in the approval request;
+  - 0217: monthly-rate requests are refused at request and approval; the rate table is frozen; the base and the fixed-amount CHECK hold;
+  - 0217: the dashboards report ₦50,000; order guard, idempotency and an exact undo with no row changed;
   - applying and undoing 0216 change no claim, ledger or wallet row, and the undo restores the constraint's validated state.
 
   It covers:
@@ -213,7 +221,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 | Tab | Shows | Source | Actions |
 |---|---|---|---|
 | Overview | earnings wallet (withdrawable, withdrawal pending, on hold); this month's qualifying organizers against the rate-review threshold; partnership invitations as plain counts (sent, awaiting a reply, **accepted all time**, **active now**, ended, declined, withdrawn); referred organizers as plain counts (referred, created an event since, reward approved, reward paid); reward lifecycle with counts and amounts | `get_my_representative_performance()` (0201, read-only); before 0201, invitation counts from `recruiter_partnerships` | Withdraw (earnings wallet), Invite |
-| Monthly | last six months: qualifying count, rate, submitted, paid | same | — |
+| Monthly | last six months: qualifying count, submitted, paid (no rate since 0217: the reward is fixed at ₦50,000) | same | — |
 | Rewards | claims a page at a time, filtered by stage **on the server**: Pending → Awaiting approval → Approved → Available → Paid → Reversed (Rejected separately); referred organizers, also paged. Stage counts are the server's totals | `get_my_representative_history('claims' / 'attributions')` + performance totals; summary from `get_my_representative_rewards()` | Submit for review, Claim / Add to earnings wallet (one idempotency key per attempt), Open earnings wallet, Show more |
 | Team | active partnerships, invitations awaiting a reply, history | `recruiter_partnerships` (RLS) | Find and invite, Withdraw invitation, End partnership (confirmed first) |
 | Expenses | totals by status (server), filter (server), decision reasons, submission | `get_my_representative_history('expenses')` + performance totals | Send for approval (two admins decide), Show more |
@@ -228,7 +236,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
 - free events never qualify (0209 eligibility; 0216 approval and credit);
 - the organizer is verified and confirms the referral, then two admins review;
 - an approved reward waits to be funded from VENTS profit; once funded and payouts are on, the representative adds it to the earnings wallet;
-- a month's count is by the qualifying event's end month (Lagos), so it can still rise after the month ends; 9 or more lets two admins set a higher rate for the next month, and nothing rises automatically;
+- the reward is a fixed ₦50,000 per qualifying organizer, with no monthly rate or bonus (0217); a month's qualifying count is by the qualifying event's end month (Lagos), so it can still rise after the month ends, and it affects no amount;
 - approving an expense records it; nothing in the app pays it out.
 
 **When the 0201 functions are missing or refused:** a missing function, or the read-only Preview refusing one, shows "Representative rewards are not switched on yet". No reward figures are shown in that state; the history function is not called; invitation counts and the team still work. If only the dashboard function is missing, the lists still work but show no totals (chips carry no number, expense totals show "—"). A real error (for example, a timeout or not authenticated) is shown as an error. A failed team read shows the error and a retry, never an empty team. A failed earnings read shows "—", never ₦0.

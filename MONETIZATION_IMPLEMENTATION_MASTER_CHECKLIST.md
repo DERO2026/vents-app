@@ -112,10 +112,10 @@ Legend:
     "verified free event" override from the approval executor and the admin screen, and makes crediting
     refuse a free-event claim or one whose event was taken off live, deleted or hidden after approval. It also
     defines "free" as no ticket genuinely paid for and still paid (0209 missed free events with RSVPs, 100%-promo
-    and fully refunded events), and stops free-event claims counting toward the 9+ rate review.
-    Runbook: `docs/deploy-runbook-0216.md`.
+    and fully refunded events), and stops free-event claims counting as qualifying organizers.
+    Runbook: `docs/deploy-runbook-0216-0217.md`.
 - [x] Funding from recognised VENTS ticket profit, with reservation so concurrent claims cannot overspend. Credited to the withdrawable earnings wallet; two-admin withdrawals.
-- [x] Monthly counts by calendar month (Lagos time). At 9+ qualifying organizers, management *may* approve a higher next-month rate through dual control; nothing increases automatically.
+- [x] **Fixed ₦50,000, no monthly uplift (confirmed policy).** 0201's 9+ "higher next-month rate" is discontinued by **0217** (in repo, NOT applied). Every amount is the ₦50,000 base, monthly-rate requests are refused, rates are frozen as history, and a claim at any other amount is held, never rewritten. Monthly counts by calendar month (Lagos) remain for reporting only.
 - [x] Transport and support expenses tracked separately with dual-control approval; never mixed into rewards.
 - [x] The retired 10% programme:
   - nothing was ever accrued or paid;

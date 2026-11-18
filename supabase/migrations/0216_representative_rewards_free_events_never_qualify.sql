@@ -45,11 +45,11 @@
 --      also treated an event whose every ticket was refunded as paid. Feeds
 --      is_free_event, the 'free_event' reason, submission, approval and the
 --      re-check before credit (2.); adds 'valid_paid_tickets' to the output.
---   5. representative_qualifying_count (the 9+ rate review basis): free-event
---      claims never count. The 9 threshold, the dual-control rate approval
---      and the N50,000 base are unchanged.
+--   5. representative_qualifying_count (the monthly qualifying count shown on
+--      the dashboards): free-event claims never count. The higher monthly rate
+--      it once fed is discontinued by 0217; the reward is a fixed N50,000.
 --
--- Unchanged: the N50,000 base reward and its CHECK, the monthly-rate review,
+-- Unchanged: the N50,000 base reward and its CHECK (0217 removes the monthly rate),
 -- attribution, one reward per organizer, dual control, the profit pool,
 -- idempotent crediting into organizer_wallets, reversals, withdrawals.
 --
@@ -157,7 +157,7 @@ END
 $patch$;
 
 -- 4. Eligibility: an event is free unless a ticket is genuinely paid for and
--- still paid. 5. The 9+ rate-review count excludes free-event claims.
+-- still paid. 5. The monthly qualifying count excludes free-event claims.
 DO $patch2$
 DECLARE
   v_def text;
@@ -191,7 +191,7 @@ $a$;
 
   q1_old constant text := $a$     AND status IN ('approved', 'funded', 'credited');$a$;
   q1_new constant text := $a$     AND status IN ('approved', 'funded', 'credited')
-     -- [0216] free-event claims never count toward the 9+ rate review
+     -- [0216] free-event claims never count as qualifying organizers
      AND NOT is_free_event AND NOT free_event_verified;$a$;
 BEGIN
   v_def := pg_get_functiondef('public.earn_event_eligibility(uuid)'::regprocedure);

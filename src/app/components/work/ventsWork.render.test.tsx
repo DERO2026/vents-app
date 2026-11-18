@@ -159,7 +159,7 @@ describe('VENTS Earn (earnings)', () => {
 describe('Representative rewards', () => {
   const rewards = (over: any = {}) => ({
     representative: { status: 'active' }, payouts_enabled: false, programme_open: true, funding_available: true,
-    current_rate_kobo: 5000000, rate_review_threshold: 9, qualifying_this_month: 1, qualifying_last_month: 0,
+    base_reward_kobo: 5000000, current_rate_kobo: 5000000, rate_review_threshold: 9, qualifying_this_month: 1, qualifying_last_month: 0,
     ...over,
   });
   // get_my_representative_history: one page per kind for these tests.
@@ -176,6 +176,8 @@ describe('Representative rewards', () => {
     rpcs.submit_representative_reward_claim = { data: { status: 'pending_organizer' }, error: null };
     await render(<RepresentativeRewardsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
     expect(byTestId('rewards-tile-rate')?.textContent).toContain('₦50,000');
+    expect(byTestId('rewards-tile-rate')?.textContent).toContain('Fixed · no monthly bonus');
+    expect(byTestId('rewards-tile-month')?.textContent).not.toMatch(/higher rate/i);
     await click(byTestId('submit-e1')!);
     expect(rpcCalls.find((c) => c.name === 'submit_representative_reward_claim')?.args).toEqual({ p_organizer_id: 'o1', p_event_id: 'e1' });
   });

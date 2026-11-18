@@ -95,7 +95,7 @@ $a$, '');
   v_def := pg_get_functiondef('public.representative_qualifying_count(uuid,date)'::regprocedure);
   IF position('[0216]' IN v_def) > 0 THEN
     v_def := replace(v_def, $a$     AND status IN ('approved', 'funded', 'credited')
-     -- [0216] free-event claims never count toward the 9+ rate review
+     -- [0216] free-event claims never count as qualifying organizers
      AND NOT is_free_event AND NOT free_event_verified;$a$, $a$     AND status IN ('approved', 'funded', 'credited');$a$);
     IF position('[0216]' IN v_def) > 0 THEN
       RAISE EXCEPTION 'undo_0216: representative_qualifying_count has unexpected [0216] text; refusing';
