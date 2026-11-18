@@ -477,6 +477,17 @@ describe('Send / Receive availability is explained, never silently hidden', () =
     expect(rpcCalls.find((c) => c.name === 'find_wallet_transfer_recipient')!.params).toEqual({ p_username: 'bola' });
   });
 
+  it('a payment link opened while the wallet is ALREADY on screen: App re-keys it, and the remount opens Send Money', async () => {
+    await render();                                            // wallet already open, no link yet
+    expect(q('send-money-sheet')).toBeNull();
+    sessionStorage.setItem('vents_pay_to', 'chi');             // App's openPayLink (native appUrlOpen)
+    // App renders <UnifiedWalletScreen key={`${screen}:${walletLinkNonce}`}>; the nonce bump remounts it.
+    await act(async () => { root!.render(<UnifiedWalletScreen key="customer-wallet:1" currentUser={user} onBack={() => {}} />); await flush(); });
+    await act(async () => { await flush(); });
+    expect(q('send-money-sheet')).toBeTruthy();
+    expect(rpcCalls.filter((c) => c.name === 'find_wallet_transfer_recipient').map((c) => c.params)).toEqual([{ p_username: 'chi' }]);
+  });
+
   it('a "Money received" notification opens that transfer\'s receipt', async () => {
     sessionStorage.setItem('vents_wallet_receipt', 'VTIN');
     await render();

@@ -263,8 +263,10 @@ describe('App.tsx web deep-link routing: friendly fallback, never a raw error or
 
   it('native appUrlOpen handling exists for getvents.com/vents:// links opened while the app is installed', () => {
     expect(appSrc).toMatch(/CapacitorApp\.addListener\('appUrlOpen'/);
-    expect(appSrc).toMatch(/const eventId = parsed\.searchParams\.get\('event'\);/);
-    expect(appSrc).toMatch(/const userId = parsed\.searchParams\.get\('user'\);/);
+    // Parsed by routeOpenedUrl() (src/lib/openedUrl.ts, tested in openedUrl.test.ts), then routed:
+    expect(appSrc).toMatch(/const route = routeOpenedUrl\(url\);/);
+    expect(appSrc).toMatch(/case 'event':\s*pushActionRef\.current\(\{ eventId: route\.eventId, screen: route\.screen \}\);/);
+    expect(appSrc).toMatch(/case 'user':\s*pushActionRef\.current\(\{ userId: route\.userId, screen: route\.screen \}\);/);
   });
 });
 
