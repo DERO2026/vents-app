@@ -62,3 +62,19 @@ describe('ticket refund screen fee', () => {
     expect(q('refund-total')).toBe('—');
   });
 });
+
+describe('ticket of a cancelled event (0218)', () => {
+  it('a still-paid ticket of a cancelled event says its refund is queued (no QR, no "not available")', async () => {
+    ticketRow = { ...base, payment_status: 'paid', amount: 10000, discount_percentage: 0, events: { title: 'Lagos Jazz Night', cancelled_at: '2026-11-18T10:00:00Z' } };
+    feeModelResult = { data: { fee_model: 'v3_15_35' }, error: null };
+    await render();
+    expect(q('ticket-refund-cancelled-pending')).toMatch(/Lagos Jazz Night was cancelled.*queued for a refund to the way you paid/);
+  });
+  it('a paid ticket of an event that is NOT cancelled still shows "not available" (unchanged)', async () => {
+    ticketRow = { ...base, payment_status: 'paid', amount: 10000, discount_percentage: 0, events: { title: 'Night', cancelled_at: null } };
+    feeModelResult = { data: { fee_model: 'v3_15_35' }, error: null };
+    await render();
+    expect(q('ticket-refund-cancelled-pending')).toBeNull();
+    expect(container.textContent).toContain("This refund record isn't available right now.");
+  });
+});

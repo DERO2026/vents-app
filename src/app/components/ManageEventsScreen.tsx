@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import {
   ArrowLeft, Users, Search, Calendar, MapPin, Edit2, Lock, Zap, MoreVertical,
   Trash2, EyeOff, Eye, Wifi, WifiOff, ArrowUpDown, RefreshCw, AlertCircle,
-  ScanLine, DoorOpen, BarChart3, Ticket, Clock, Flame, Megaphone, X, CheckCircle,
+  ScanLine, DoorOpen, BarChart3, Ticket, Clock, Flame, Megaphone, X, CheckCircle, Ban,
 } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEventOverview, OrganizerEventDisplayStatus } from './types';
 import { useOrganizerEvents, OrganizerEventSort } from '../../lib/useOrganizerEvents';
 import { supabase } from '../../lib/supabase';
+import { fetchMyEventCancellations, requestEventCancellation, CANCELLATION_STATUS_LABEL, type MyEventCancellation } from '../../lib/eventCancellation';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
@@ -69,6 +70,46 @@ export function ManageEventsScreen({
 }: ManageEventsScreenProps) {
   useDesktopWideShell();
   const { events, loading, error, sort, setSort, live, refresh } = useOrganizerEvents(currentUser?.id);
+
+  // Event cancellations (0218): the organizer's requests by event, with refund progress.
+  const [cancellations, setCancellations] = useState<Record<string, MyEventCancellation>>({});
+  const [cancelTarget, setCancelTarget] = useState<OrganizerEventOverview | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const loadCancellations = useCallback(async () => {
+    try {
+      const rows = await fetchMyEventCancellations();
+      const byEvent: Record<string, MyEventCancellation> = {};
+      // Newest first from the server: keep the latest request per event.
+      for (const r of rows) if (!byEvent[r.event_id]) byEvent[r.event_id] = r;
+      setCancellations(byEvent);
+    } catch {
+      setCancellations({});   // before 0218 is applied: no cancellation feature, nothing shown
+    }
+  }, []);
+  useEffect(() => { void loadCancellations(); }, [loadCancellations]);
+  const openCancellation = (eventId: string) => {
+    const c = cancellations[eventId];
+    return c && c.status !== 'rejected' ? c : null;
+  };
+  const hasTicketHolders = (e: OrganizerEventOverview) => e.soldCount > 0 || e.soldQuantity > 0;
+
+  async function submitCancellation() {
+    if (!cancelTarget) return;
+    if (cancelReason.trim().length < 10) { setCancelError('Please give a reason of at least 10 characters. Ticket holders will see it.'); return; }
+    setCancelBusy(true); setCancelError(null);
+    try {
+      await requestEventCancellation(cancelTarget.id, cancelReason);
+      setActionMsg({ id: cancelTarget.id, text: 'Cancellation requested. VENTS will review it.' });
+      setCancelTarget(null); setCancelReason('');
+      await loadCancellations();
+    } catch (e: any) {
+      setCancelError(e?.message || 'The cancellation request could not be sent.');
+    } finally {
+      setCancelBusy(false);
+    }
+  }
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [optionsEvent, setOptionsEvent] = useState<OrganizerEventOverview | null>(null);
@@ -356,6 +397,13 @@ export function ManageEventsScreen({
                     {/* Status + title */}
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
+                        {cancellations[event.id] && (
+                          <p data-testid={`cancellation-status-${event.id}`} style={{ color: cancellations[event.id].status === 'attention' || cancellations[event.id].status === 'rejected' ? ventsColors.pending : C.red, fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+                            {CANCELLATION_STATUS_LABEL[cancellations[event.id].status]}
+                            {cancellations[event.id].refunds.total > 0 ? ` · ${cancellations[event.id].refunds.refunded}/${cancellations[event.id].refunds.total} refunded` : ''}
+                            {cancellations[event.id].status === 'rejected' && cancellations[event.id].decision_note ? `: ${cancellations[event.id].decision_note}` : ''}
+                          </p>
+                        )}
                         <p style={{ color: C.text, fontSize: '15px', fontWeight: 700, marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {event.title || '(Untitled Event)'}
                         </p>
@@ -366,7 +414,7 @@ export function ManageEventsScreen({
                           </span>
                         </div>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); setOptionsEvent(event); }} className="vents-action-btn" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '8px', padding: '7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <button aria-label="Event options" onClick={(e) => { e.stopPropagation(); setOptionsEvent(event); }} className="vents-action-btn" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '8px', padding: '7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <MoreVertical size={16} color={C.purple} />
                       </button>
                     </div>
@@ -481,8 +529,13 @@ export function ManageEventsScreen({
               ...(optionsEvent.displayStatus === 'live' || optionsEvent.displayStatus === 'sold_out'
                 ? [{ icon: <Megaphone size={18} />, label: 'Send Announcement', color: C.purple, action: () => { openAnnounce(optionsEvent); setOptionsEvent(null); } }]
                 : []),
-              { icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: toggling === optionsEvent.id ? 'Working…' : (optionsEvent.status === 'draft' ? 'Make Live' : 'Hide as Draft'), color: C.sub, disabled: toggling === optionsEvent.id, action: () => toggleHide(optionsEvent) },
-              { icon: <Trash2 size={18} />, label: 'Delete Event', color: C.red, action: () => { setDeleteTarget(optionsEvent); setOptionsEvent(null); } },
+              ...(openCancellation(optionsEvent.id) ? [] : [{ icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: toggling === optionsEvent.id ? 'Working…' : (optionsEvent.status === 'draft' ? 'Make Live' : 'Hide as Draft'), color: C.sub, disabled: toggling === optionsEvent.id, action: () => toggleHide(optionsEvent) }]),
+              ...(openCancellation(optionsEvent.id)
+                ? [{ icon: <Ban size={18} />, label: CANCELLATION_STATUS_LABEL[openCancellation(optionsEvent.id)!.status], color: C.sub, disabled: true, action: () => {} }]
+                : optionsEvent.displayStatus !== 'ended'
+                  ? [{ icon: <Ban size={18} />, label: 'Cancel Event', color: C.red, action: () => { setCancelTarget(optionsEvent); setCancelReason(''); setCancelError(null); setOptionsEvent(null); } }]
+                  : []),
+              ...(openCancellation(optionsEvent.id) ? [] : [{ icon: <Trash2 size={18} />, label: 'Delete Event', color: C.red, action: () => { setDeleteTarget(optionsEvent); setOptionsEvent(null); } }]),
             ].map((item: any, i) => (
               <button key={i} onClick={item.action} disabled={item.disabled} className="vents-action-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: item.disabled ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: item.disabled ? 0.5 : 1 }}>
                 <span style={{ color: item.color }}>{item.icon}</span>
@@ -517,14 +570,49 @@ export function ManageEventsScreen({
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', animation: 'ventsFadeIn 0.15s ease-out' }}>
           <div style={{ background: C.card, border: '1px solid rgba(239,68,68,0.3)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '340px' }}>
             <Trash2 size={32} color={C.red} style={{ marginBottom: '12px' }} />
-            <p style={{ color: C.text, fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>Delete Event?</p>
-            <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
-              "{deleteTarget.title}" will be removed from your dashboard and the public feed. Ticket and payment history is preserved — an admin can restore it if needed.
+            <p style={{ color: C.text, fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>{hasTicketHolders(deleteTarget) ? 'This event has ticket holders' : 'Delete Event?'}</p>
+            <p data-testid="delete-event-explainer" style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
+              {hasTicketHolders(deleteTarget)
+                ? `"${deleteTarget.title}" has ${deleteTarget.soldQuantity || deleteTarget.soldCount} ticket(s) sold, so it can't be deleted. Request a cancellation instead: once VENTS approves it, every ticket holder is refunded and told.`
+                : `"${deleteTarget.title}" will be removed from your dashboard and the public feed. Ticket and payment history is preserved — an admin can restore it if needed.`}
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              {hasTicketHolders(deleteTarget) ? (
+                <button data-testid="delete-to-cancel" onClick={() => { setCancelTarget(deleteTarget); setCancelReason(''); setCancelError(null); setDeleteTarget(null); }}
+                  style={{ flex: 1, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: C.red, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+                  Request cancellation
+                </button>
+              ) : (
               <button onClick={confirmDelete} disabled={deleting} style={{ flex: 1, background: deleting ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: C.red, fontSize: '14px', fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer' }}>
                 {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request a cancellation (0218): reviewed by VENTS; refunds follow approval */}
+      {cancelTarget && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', animation: 'ventsFadeIn 0.15s ease-out' }}>
+          <div data-testid="cancel-event-dialog" style={{ background: C.card, border: '1px solid rgba(239,68,68,0.3)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '360px' }}>
+            <Ban size={32} color={C.red} style={{ marginBottom: '12px' }} />
+            <p style={{ color: C.text, fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>Cancel “{cancelTarget.title}”?</p>
+            <div data-testid="cancel-event-explainer" style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '12px', display: 'grid', gap: '6px' }}>
+              <span>VENTS reviews every cancellation. Ticket sales stay open until it is approved.</span>
+              <span>Once approved, the event is taken off sale and {hasTicketHolders(cancelTarget) ? `each of the ${cancelTarget.soldQuantity || cancelTarget.soldCount} ticket(s) sold` : 'any ticket sold'} is refunded the way it was paid (VENTS Wallet at once; card or bank through Paystack, which can take a few days). Ticket holders are told and can follow their refund in Tix.</span>
+              <span>Refunds are taken from this event's earnings. An approved cancellation can't be undone.</span>
+            </div>
+            <textarea aria-label="Cancellation reason" placeholder="Why is the event cancelled? Ticket holders will see this." value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)} maxLength={2000}
+              style={{ width: '100%', minHeight: '84px', background: C.bg, color: C.text, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '10px', fontSize: '14px', boxSizing: 'border-box', marginBottom: '8px' }} />
+            {cancelError && <p role="alert" data-testid="cancel-event-error" style={{ color: C.red, fontSize: '12.5px', marginBottom: '8px' }}>{cancelError}</p>}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setCancelTarget(null)} disabled={cancelBusy} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Keep event</button>
+              <button data-testid="cancel-event-submit" onClick={submitCancellation} disabled={cancelBusy}
+                style={{ flex: 1, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: C.red, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+                {cancelBusy ? 'Sending…' : 'Request cancellation'}
               </button>
             </div>
           </div>

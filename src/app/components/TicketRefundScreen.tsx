@@ -60,7 +60,7 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
       try {
         const { data, error } = await supabase
           .from('tickets')
-          .select('id, ticket_type, quantity, amount, discount_percentage, payment_status, payment_method, refund_reason, checked_in, events(title, event_date, location)')
+          .select('id, ticket_type, quantity, amount, discount_percentage, payment_status, payment_method, refund_reason, checked_in, events(*)')
           .eq('id', ticketId)
           .maybeSingle();
         if (cancelled) return;
@@ -90,6 +90,29 @@ export function TicketRefundScreen({ ticketId, onBack, onViewWallet }: TicketRef
     return (
       <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid rgba(142,92,247,0.2)', borderTopColor: ventsColors.accent, animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    );
+  }
+
+  // A ticket of a cancelled event (0218) whose refund has not started yet (it
+  // is queued, or a provider attempt failed and is being retried): no QR, and
+  // say what is happening rather than "not available".
+  if (!notFound && ticket && ticket.payment_status === 'paid' && (ticket as any).events?.cancelled_at) {
+    return (
+      <div data-testid="ticket-refund-cancelled-pending" style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+          <button onClick={onBack} aria-label="Back" style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <ArrowLeft size={16} color={ventsColors.ink2} />
+          </button>
+          <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>Event cancelled</span>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 30px', textAlign: 'center', gap: '10px' }}>
+          <AlertCircle size={32} color={ventsColors.pending} />
+          <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>{(ticket as any).events?.title || 'This event'} was cancelled</p>
+          <p style={{ color: ventsColors.ink2, fontSize: '13.5px', lineHeight: 1.6 }}>
+            Your {ticket.ticket_type} ticket is queued for a refund to the way you paid. You'll get a notification when it is refunded. You don't need to do anything.
+          </p>
+        </div>
       </div>
     );
   }

@@ -135,6 +135,9 @@ export interface PurchasedTicket {
   // (real refund_id/refund_reason data) instead of QRTicket.
   status?: 'active' | 'cancelled';
   paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded' | 'refund_pending';
+  // events.cancelled_at (0218): the event was cancelled through an approved
+  // cancellation; the ticket's refund status comes from get_my_cancellation_refunds.
+  eventCancelledAt?: string | null;
 }
 
 export type TicketTransferStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
