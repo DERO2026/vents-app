@@ -60,6 +60,12 @@ not in the UI.
    free events from eligibility (reason `free_event`) and 0216 removed the override itself: an approval request carrying
    `free_event_verified` is refused, the approval branch refuses a free event whatever the request says, and crediting
    refuses a claim recorded as a free event (one approved before 0209/0216 stays on hold for admin rejection or reversal).
+
+   **What "free" means (0216).** An event is free unless at least one ticket is genuinely paid for and still paid: `payment_status = 'paid'`
+   with an effective price above zero (`amount × (1 − discount_percentage/100)`, the basis every charge and refund is priced on).
+   0209's test (no `paid` ticket and no recorded fee) missed the common case: `purchase_ticket` stores a ₦0 RSVP and a 100%-promo
+   ticket as `paid`, so a free event with attendees counted as paid, and so did an event whose every ticket was refunded.
+   Refunds are whole tickets, one row per attendee, so a partially refunded event still qualifies while any paid ticket remains.
 3. **Flow.** The claim moves through these steps:
    - The representative submits.
    - The organizer confirms (or declines).
@@ -76,6 +82,8 @@ not in the UI.
    Since 0216, funding and credit first re-check the claim: a claim recorded as a free event, or whose event is no longer found, live, undeleted and unhidden (or is now free), is refused with "on hold for admin review". Nothing is reserved or credited; admins reject or reverse it through dual control.
    Events have only `live` and `draft` statuses (`events_status_check`), so "cancelled" means taken off live, deleted or hidden, the same reasons eligibility already uses. An organizer who moves an ended event back to draft also puts an approved reward on hold until the event is live again.
 7. **Monthly count** is by calendar month (Africa/Lagos) of the qualifying event's end. At 9 or more, a dual-control request may set a higher rate (above ₦50,000) for the following month only. Nothing rises automatically.
+   - **How it meets the ₦50,000 base:** a claim's amount is fixed when it is approved, as the representative's rate for the claim's reward month. That is ₦50,000 unless two admins set a rate for that representative and month, which must be above ₦50,000 (table CHECK) and needs 9+ qualifying organizers in the previous month. The representative cannot request or approve their own rate, and no rate is set for a past month.
+   - **What counts (0216):** approved, funded and credited claims, excluding free-event claims. An approved claim held because its event was later cancelled, deleted, hidden or fully refunded still counts until admins reject or reverse it (see "Blocked or needing a decision").
 8. **Expenses** (transport/support) are submitted by the representative and approved or rejected through dual control. They are tracked separately and never touch rewards, the pool or a wallet.
 9. **Audit trail.** `earn_audit_log` and `earn_profit_ledger` are append-only. They record attribution, duplicate/self-referral blocks, eligibility snapshots, reviews, recognitions, reservations, credits, reversals, expenses, rate changes and settings changes.
 10. **Legacy 10% model.** Audit at migration time:
@@ -150,6 +158,7 @@ recognized event later takes that ticket's fee back out of the pool.
 7. **Profile layout.** Mockup A's surrounding profile (compact header, three-row menu) is a sketch. Only the VENTS Work card was changed; the existing profile header, stats and menu were kept.
 8. **Higher monthly rate vs. "fixed ₦50,000".** Rule 7 of "Representative reward (migration 0201)" above (a dual-control higher rate for the next month at 9+ qualifying organizers) is recorded as approved in `MONETIZATION_IMPLEMENTATION_MASTER_CHECKLIST.md` §10, while later briefs state the reward as a fixed ₦50,000 with no alternative amount or bonus. The mechanism is unchanged (0216 does not touch it, and nothing raises a rate automatically). The owner should confirm whether it stays.
 9. **Fraud and duplicate-event screening** is the approving admins' judgement (`event_verified`). The database stops a second reward for the same organizer or event, and free events are refused, but nothing detects a cloned event, and one cheap paid ticket makes an event "paid". Any automated rule (minimum sales, distinct buyers) is a business-policy decision; none was added.
+10. **Held claims in the 9+ count.** An approved claim that 0216 holds at credit time (event cancelled, deleted, hidden or fully refunded after approval) still counts toward the rate review until admins reject or reverse it. Excluding it automatically would add a rule; none was added.
 
 ## Deploying (not done; needs approval)
 
@@ -170,7 +179,16 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
   - ordinary organizer withdrawals unchanged.
 
   It refuses to run, before connecting, if any database URL or `PG*` connection variable is set, or if any environment value names a hosted database host. It connects only over the local Unix socket, then confirms the server is local and not Supabase-managed (no server address, no `supabase_admin` role). It creates and always drops its own `vents_local_pg_payout_gate_audit` database.
-- **`scripts/local-pg-test/run-representative-reward-integrity-verification.sh`:** 0216 on the full 0201 → 0210 stack (94 checks). It covers:
+- **`scripts/local-pg-test/run-representative-reward-integrity-verification.sh`:** 0216 on the full 0201 → 0210 stack (123 checks). Beyond the list below, it reproduces the pre-0216 bugs (free event with an RSVP, 100%-promo and fully refunded events eligible) and checks:
+  - partial refunds still qualify;
+  - a refund after approval holds the reward;
+  - legacy free claims add nothing to the 9+ count, and nine of them cannot unlock a higher rate through the real request;
+  - a funded legacy free claim is reversed with its reservation released;
+  - two admins approving the same claim at once give one approval;
+  - an approved higher rate (₦75,000) still applies;
+  - applying and undoing 0216 change no claim, ledger or wallet row, and the undo restores the constraint's validated state.
+
+  It covers:
   - referral attribution through the real link;
   - a paid event's full path: claim, organizer confirmation, two distinct admins, realized-profit funding, and credit of exactly ₦50,000 to the earnings wallet with the VENTS Wallet untouched;
   - free events refused at submit, at approval (with or without the old `free_event_verified` flag, and even if eligibility misreported), by the table CHECK, and at credit for a pre-0216 approval;
@@ -182,6 +200,7 @@ Before step 3, the hub and Earnings degrade safely: representatives show "Not pa
   Same local-only safety guards as the referral harness.
 - **`src/lib/representativeRewards.security.test.ts`:** static invariants of 0201 (its free-event override checks pin 0201's original text; 0216 replaces that behaviour).
 - **`src/lib/representativeRewardsFreeEvents.security.test.ts`:** static invariants of 0216.
+- **`qa-harness/earnings-navigation.e2e.mjs`:** in a real browser against the real `App.tsx` (fixture backend, `qa-harness/full-app/`). A representative who is not an organizer reaches the Earnings tab from VENTS Earn's "Withdraw earnings", the VENTS Work "Earnings wallet" shortcut and the Representative dashboard. Profile → Wallet still opens Wallet Balance, and an organizer's Manage Events → Earnings still opens Earnings. Run with `node qa-harness/earnings-navigation.e2e.mjs`.
 - **`src/app/components/admin/AdminEarnScreen.test.tsx`:** no approval for a free-event claim, and approval requests never carry `free_event_verified`.
 - **`src/lib/workRoles.test.ts`:** role state machine.
 - **`src/app/components/work/ventsWork.render.test.tsx`:** the screens.

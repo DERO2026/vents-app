@@ -62,12 +62,17 @@ ORG_DRAFT="00000000-0000-0000-0000-00000000b003"; ORG_DEL="00000000-0000-0000-00
 ORG_LEGACY="00000000-0000-0000-0000-00000000b005"; ORG_AFTER="00000000-0000-0000-0000-00000000b006"
 ORG_RACE="00000000-0000-0000-0000-00000000b007"
 # Every organizer the harness refers, in order.
-ORGS=("$ORG_PAID" "$ORG_FREE" "$ORG_DRAFT" "$ORG_DEL" "$ORG_LEGACY" "$ORG_AFTER" "$ORG_RACE")
+ORG_PROMO="00000000-0000-0000-0000-00000000b008"; ORG_REFUND="00000000-0000-0000-0000-00000000b009"
+ORG_RATE="00000000-0000-0000-0000-00000000b00a"
+ORGS=("$ORG_PAID" "$ORG_FREE" "$ORG_DRAFT" "$ORG_DEL" "$ORG_LEGACY" "$ORG_AFTER" "$ORG_RACE" "$ORG_PROMO" "$ORG_REFUND" "$ORG_RATE")
 EV_PAID="00000000-0000-0000-0000-00000000e001"; EV_PAID_2="00000000-0000-0000-0000-00000000e002"
 EV_FREE="00000000-0000-0000-0000-00000000e003"; EV_DRAFT="00000000-0000-0000-0000-00000000e004"
 EV_DEL="00000000-0000-0000-0000-00000000e005"; EV_LEGACY="00000000-0000-0000-0000-00000000e006"
 EV_AFTER="00000000-0000-0000-0000-00000000e007"; EV_RACE="00000000-0000-0000-0000-00000000e008"
+EV_PROMO="00000000-0000-0000-0000-00000000e009"; EV_REFUND="00000000-0000-0000-0000-00000000e00a"
+EV_RATE="00000000-0000-0000-0000-00000000e00b"
 LEGACY_CLAIM="00000000-0000-0000-0000-00000000c001"
+ORG_LIST="$(printf "'%s'," "${ORGS[@]}" | sed 's/,$//')"   # SQL list of every referred organizer
 
 PASSES=0; FAILS=0
 pass() { echo "PASS: $1"; PASSES=$((PASSES+1)); }
@@ -142,7 +147,7 @@ INSERT INTO public.users (id, role, is_organizer, full_name, email, created_at) 
   ('$BUYER', 'user', false, 'Buyer', 'b@example.test', now() - interval '90 days');
 INSERT INTO public.users (id, role, is_organizer, full_name, email, created_at)
   SELECT u, 'user', false, 'Organizer ' || right(u::text, 2), right(u::text, 4) || '@example.test', now()
-    FROM unnest(ARRAY['${ORGS[0]}', '${ORGS[1]}', '${ORGS[2]}', '${ORGS[3]}', '${ORGS[4]}', '${ORGS[5]}', '${ORGS[6]}']::uuid[]) u;
+    FROM unnest(ARRAY[$ORG_LIST]::uuid[]) u;
 INSERT INTO public.recruiters (id, display_name, status) VALUES ('$REP', 'Rep One', 'active'), ('$REP2', 'Rep Two', 'active');
 -- The representative already holds spend-only VENTS Wallet money; it must never move.
 INSERT INTO public.user_wallets (user_id, balance_kobo) VALUES ('$REP', 10000);
@@ -164,10 +169,9 @@ expect_error "a client cannot reassign an attribution directly" "permission deni
 
 # The organizers become verified organizers, then create events after the referral.
 "${PSQL[@]}" -q <<SQL
-UPDATE public.users SET is_organizer = true, is_verified = true
- WHERE id IN ('${ORGS[0]}', '${ORGS[1]}', '${ORGS[2]}', '${ORGS[3]}', '${ORGS[4]}', '${ORGS[5]}', '${ORGS[6]}');
+UPDATE public.users SET is_organizer = true, is_verified = true WHERE id IN ($ORG_LIST);
 INSERT INTO public.organizer_verification_requests (user_id, status)
-  SELECT u, 'approved' FROM unnest(ARRAY['${ORGS[0]}', '${ORGS[1]}', '${ORGS[2]}', '${ORGS[3]}', '${ORGS[4]}', '${ORGS[5]}', '${ORGS[6]}']::uuid[]) u;
+  SELECT u, 'approved' FROM unnest(ARRAY[$ORG_LIST]::uuid[]) u;
 INSERT INTO public.events (id, organizer_id, title, event_date, status, ticket_types) VALUES
   ('$EV_PAID',   '$ORG_PAID',   'Paid concert',   now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
   ('$EV_PAID_2', '$ORG_PAID',   'Second concert', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
@@ -176,10 +180,30 @@ INSERT INTO public.events (id, organizer_id, title, event_date, status, ticket_t
   ('$EV_DEL',    '$ORG_DEL',    'Deleted',        now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
   ('$EV_LEGACY', '$ORG_LEGACY', 'Old free night', now() + interval '30 days', 'live', '[{"name": "Free", "price": 0}]'),
   ('$EV_AFTER',  '$ORG_AFTER',  'Later cancelled', now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
-  ('$EV_RACE',   '$ORG_RACE',   'Race night',     now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]');
+  ('$EV_RACE',   '$ORG_RACE',   'Race night',     now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
+  ('$EV_PROMO',  '$ORG_PROMO',  'All on promo',   now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
+  ('$EV_REFUND', '$ORG_REFUND', 'All refunded',   now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]'),
+  ('$EV_RATE',   '$ORG_RATE',   'Rate night',     now() + interval '30 days', 'live', '[{"name": "Regular", "price": 1000000}]');
 SQL
-for e in "$EV_PAID" "$EV_PAID_2" "$EV_DRAFT" "$EV_DEL" "$EV_AFTER" "$EV_RACE"; do buy_one "$e"; done
-for e in "$EV_PAID" "$EV_PAID_2" "$EV_FREE" "$EV_DRAFT" "$EV_DEL" "$EV_LEGACY" "$EV_AFTER" "$EV_RACE"; do end_event "$e"; done
+for e in "$EV_PAID" "$EV_PAID_2" "$EV_PAID_2" "$EV_DRAFT" "$EV_DEL" "$EV_AFTER" "$EV_RACE" "$EV_REFUND" "$EV_RATE"; do buy_one "$e"; done
+for e in "$EV_PAID" "$EV_PAID_2" "$EV_FREE" "$EV_DRAFT" "$EV_DEL" "$EV_LEGACY" "$EV_AFTER" "$EV_RACE" "$EV_PROMO" "$EV_REFUND" "$EV_RATE"; do end_event "$e"; done
+# EV_RATE ends 8 days ago (past the 7-day hold) so its reward month differs from the 30-day-old events' only by date, never by rule.
+"${PSQL[@]}" -q -c "UPDATE public.events SET event_date = now() - interval '9 days', end_date = now() - interval '8 days' WHERE id = '$EV_RATE';"
+# Tickets exactly as production writes them (purchase_ticket, 0124): a N0 RSVP
+# and a 100%-promo ticket are stored as payment_status 'paid'. A failed
+# purchase leaves a 'failed' ticket. Refunds flip one ticket row each.
+"${PSQL[@]}" -q <<SQL
+INSERT INTO public.tickets (event_id, user_id, quantity, ticket_type, amount, payment_ref, payment_status, status, holder_name, discount_percentage) VALUES
+  ('$EV_FREE',  '$BUYER', 1, 'Free',    0,       'VNT-FREE-T1',  'paid',   'active', 'RSVP', 0),
+  ('$EV_FREE',  '$BUYER', 1, 'Free',    0,       'VNT-FREE-T2',  'failed', 'active', 'RSVP', 0),
+  ('$EV_PROMO', '$BUYER', 1, 'Regular', 1000000, 'VNT-PROMO-T1', 'paid',   'active', 'Promo', 100);
+UPDATE public.tickets SET payment_status = 'refunded' WHERE event_id = '$EV_REFUND';
+UPDATE public.tickets SET payment_status = 'refunded' WHERE id = (SELECT id FROM public.tickets WHERE event_id = '$EV_PAID_2' ORDER BY id LIMIT 1);
+SQL
+echo "== The bug 0216 fixes, reproduced before it is applied =="
+expect_value "before 0216: a free event with an RSVP counts as paid and eligible" "$(val "SELECT public.earn_event_eligibility('$EV_FREE')->>'eligible';")" "true"
+expect_value "before 0216: an event whose only ticket was 100% promo counts as paid and eligible" "$(val "SELECT public.earn_event_eligibility('$EV_PROMO')->>'eligible';")" "true"
+expect_value "before 0216: an event whose every ticket was refunded counts as paid and eligible" "$(val "SELECT public.earn_event_eligibility('$EV_REFUND')->>'eligible';")" "true"
 "${PSQL[@]}" -q -c "UPDATE public.events SET status = 'draft' WHERE id = '$EV_DRAFT'; UPDATE public.events SET deleted_at = now() WHERE id = '$EV_DEL';"
 
 # A free-event reward approved under 0201's old override, before 0209/0216
@@ -195,18 +219,27 @@ SELECT '$LEGACY_CLAIM', a.id, '$REP', '$ORG_LEGACY', '$EV_LEGACY', date_trunc('m
 SQL
 
 echo "== Applying 0216 =="
-STATE_SQL="SELECT md5(string_agg(p.proname || ':' || p.prosrc, '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint WHERE conname LIKE 'representative_reward_claims_free%') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
+# Every function body, plus each reward-claim constraint's name, definition and VALIDATED state.
+STATE_SQL="SELECT md5(string_agg(p.proname || ':' || p.prosrc, '|' ORDER BY p.oid::regprocedure::text)) || '/' || (SELECT string_agg(conname || ':' || convalidated || ':' || md5(pg_get_constraintdef(oid)), ',' ORDER BY conname) FROM pg_constraint WHERE conrelid = 'public.representative_reward_claims'::regclass) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace;"
 PRE_0216=$(val "$STATE_SQL")
+PRE_ROWS_0216=$(val "SELECT md5(COALESCE((SELECT string_agg(c::text, '|' ORDER BY c.id) FROM public.representative_reward_claims c), '')) || '/' || md5(COALESCE((SELECT string_agg(t::text, '|' ORDER BY t.id) FROM public.organizer_transactions t), '')) || '/' || md5(COALESCE((SELECT string_agg(w::text, '|' ORDER BY w.organizer_id) FROM public.organizer_wallets w), ''));")
 if "${PSQL[@]}" -f "$MIG/0216_representative_rewards_free_events_never_qualify.sql" >"$OUT" 2>"$ERR"; then pass "0216 applies on top of 0201-0210"; else fail "0216 applies"; cat "$ERR" >&2; fi
 expect_value "0216 reports the pre-existing free-event approval for admin follow-up (and changes no row)" \
   "$(grep -c "1 free-event reward claim(s) are approved" "$ERR")/$(status_of "$LEGACY_CLAIM")" "1/approved"
+ROWS_SQL="SELECT md5(COALESCE((SELECT string_agg(c::text, '|' ORDER BY c.id) FROM public.representative_reward_claims c), '')) || '/' || md5(COALESCE((SELECT string_agg(t::text, '|' ORDER BY t.id) FROM public.organizer_transactions t), '')) || '/' || md5(COALESCE((SELECT string_agg(w::text, '|' ORDER BY w.organizer_id) FROM public.organizer_wallets w), ''));"
+PRE_ROWS=$(val "$ROWS_SQL")
+expect_value "applying 0216 changed no claim, ledger or wallet row" "$(val "$ROWS_SQL")" "$PRE_ROWS_0216"
 expect_ok "undo_0216 runs" "SET vents.rollback_confirm = 'undo-0216'; $(cat "$REPO_ROOT/supabase/rollback/undo_0216.sql")"
-expect_value "undo_0216 restores every function and the old CHECK exactly" "$(val "$STATE_SQL")" "$PRE_0216"
+expect_value "undo_0216 restores every function and every claim constraint exactly, including its validated state" "$(val "$STATE_SQL")" "$PRE_0216"
+expect_value "... the restored CHECK is validated, as 0201 created it" \
+  "$(val "SELECT convalidated FROM pg_constraint WHERE conname = 'representative_reward_claims_free_needs_verification';")" "t"
+expect_value "... and the undo changed no claim, ledger or wallet row" "$(val "$ROWS_SQL")" "$PRE_ROWS"
 expect_error "undo_0216 refuses without the confirmation" "undo-0216" "$(cat "$REPO_ROOT/supabase/rollback/undo_0216.sql")"
 expect_ok "0216 re-applies after the undo" "$(cat "$MIG/0216_representative_rewards_free_events_never_qualify.sql")"
 expect_ok "0216 is idempotent (second run)" "$(cat "$MIG/0216_representative_rewards_free_events_never_qualify.sql")"
-expect_value "two functions carry the 0216 patch; the old free-event override text is gone" \
-  "$(val "SELECT count(*) FILTER (WHERE prosrc LIKE '%[0216]%') || '/' || count(*) FILTER (WHERE prosrc LIKE '%must be explicitly verified as genuine%') FROM pg_proc WHERE pronamespace = 'public'::regnamespace;")" "2/0"
+expect_value "four functions carry the 0216 patch; the old free-event override text is gone" \
+  "$(val "SELECT string_agg(proname, ',' ORDER BY proname) FILTER (WHERE prosrc LIKE '%[0216]%') || '/' || count(*) FILTER (WHERE prosrc LIKE '%must be explicitly verified as genuine%') FROM pg_proc WHERE pronamespace = 'public'::regnamespace;")" \
+  "claim_representative_reward,earn_event_eligibility,earn_execute_admin_action,representative_qualifying_count/0"
 expect_value "the table CHECK now forbids an approved/funded/credited free-event claim" \
   "$(val "SELECT string_agg(conname, ',') FROM pg_constraint WHERE conname LIKE 'representative_reward_claims_free%';")" "representative_reward_claims_free_never_qualifies"
 
@@ -223,6 +256,16 @@ expect_value "a paid, ended, settled event qualifies" "$(elig "$EV_PAID")" "true
 expect_value "a free event never qualifies (reason free_event)" "$(elig "$EV_FREE")" 'false/["free_event"]'
 expect_value "an event taken off live does not qualify" "$(elig "$EV_DRAFT")" 'false/["event_not_live"]'
 expect_value "a deleted event does not qualify" "$(val "SELECT public.earn_event_eligibility('$EV_DEL')->'reasons' ? 'event_deleted';")" "t"
+
+echo "== Genuinely paid tickets (0216) =="
+expect_value "a free event with an RSVP (stored as paid at N0) and a failed ticket is free" "$(elig "$EV_FREE")" 'false/["free_event"]'
+expect_value "an event whose only ticket used a 100% promo is free" "$(elig "$EV_PROMO")" 'false/["free_event"]'
+expect_value "an event whose every ticket was refunded is free" "$(elig "$EV_REFUND")" 'false/["free_event"]'
+expect_value "a partially refunded event still qualifies (one paid ticket remains)" \
+  "$(val "SELECT (public.earn_event_eligibility('$EV_PAID_2')->>'eligible') || '/' || (public.earn_event_eligibility('$EV_PAID_2')->>'valid_paid_tickets') || '/' || (public.earn_event_eligibility('$EV_PAID_2')->>'paid_tickets');")" "true/1/1"
+expect_value "a normal paid event reports its genuinely paid tickets" "$(val "SELECT public.earn_event_eligibility('$EV_PAID')->>'valid_paid_tickets';")" "1"
+expect_error "a 100%-promo event cannot be submitted" "free_event" "$(submit "$REP" "$ORG_PROMO" "$EV_PROMO")"
+expect_error "a fully refunded event cannot be submitted" "free_event" "$(submit "$REP" "$ORG_REFUND" "$EV_REFUND")"
 
 echo "== Submission =="
 expect_error "a free event cannot be submitted" "free_event" "$(submit "$REP" "$ORG_FREE" "$EV_FREE")"
@@ -336,29 +379,107 @@ C_AFTER=$(claim_of "$ORG_AFTER"); confirm_claim "$ORG_AFTER" "$C_AFTER"
 expect_ok "approved while the event was valid" "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C_AFTER\",\"event_verified\":true}")")"
 recognize "$EV_AFTER" "its profit recognized"
 "${PSQL[@]}" -q -c "UPDATE public.events SET status = 'draft' WHERE id = '$EV_AFTER';"
-expect_error "the organizer takes the event off live: not credited" "was cancelled, deleted or hidden" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
+expect_error "the organizer takes the event off live: not credited" "no longer qualifies" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
 "${PSQL[@]}" -q -c "UPDATE public.events SET status = 'live', deleted_at = now() WHERE id = '$EV_AFTER';"
-expect_error "the event is deleted: not credited" "was cancelled, deleted or hidden" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
+expect_error "the event is deleted: not credited" "no longer qualifies" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
 "${PSQL[@]}" -q -c "UPDATE public.events SET deleted_at = NULL, hidden_by_admin = true WHERE id = '$EV_AFTER';"
-expect_error "an admin hides the event: not credited" "was cancelled, deleted or hidden" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
+expect_error "an admin hides the event: not credited" "no longer qualifies" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
+"${PSQL[@]}" -q -c "UPDATE public.events SET hidden_by_admin = false WHERE id = '$EV_AFTER'; UPDATE public.tickets SET payment_status = 'refunded' WHERE event_id = '$EV_AFTER';"
+expect_error "its only ticket is refunded after approval: not credited (reason free_event in the detail)" "eligibility reasons: \[\"free_event\"\]" "$(as "$REP" "SELECT public.claim_representative_reward('$C_AFTER', gen_random_uuid());")"
 expect_value "the claim stays approved for admin review; no money moved and nothing reserved" \
   "$(status_of "$C_AFTER")/$(earnings "$REP")/$(val "SELECT count(*) FROM public.earn_profit_ledger WHERE claim_id = '$C_AFTER';")" "approved/10000000/10000000/0"
 expect_ok "admins can still reject it through dual control" \
   "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_reject_reward "{\"claim_id\":\"$C_AFTER\",\"reason\":\"event cancelled\"}")")"
 expect_value "rejected" "$(status_of "$C_AFTER")" "rejected"
 
-echo "== A free-event reward approved before 0216 can no longer be credited =="
-"${PSQL[@]}" -q -c "ALTER TABLE public.representative_reward_claims DISABLE TRIGGER USER;
-  ALTER TABLE public.representative_reward_claims DROP CONSTRAINT representative_reward_claims_free_never_qualifies;
-  UPDATE public.representative_reward_claims SET status = 'approved', rejected_at = NULL, decision_reason = NULL WHERE id = '$LEGACY_CLAIM';
-  ALTER TABLE public.representative_reward_claims ADD CONSTRAINT representative_reward_claims_free_never_qualifies
-    CHECK (status NOT IN ('approved', 'funded', 'credited') OR NOT is_free_event) NOT VALID;
-  ALTER TABLE public.representative_reward_claims ENABLE TRIGGER USER;"
+echo "== A free-event reward approved before 0216: not credited, not counted, reversed with its reservation released =="
+unlock_constraint() { "${PSQL[@]}" -q -c "ALTER TABLE public.representative_reward_claims DROP CONSTRAINT representative_reward_claims_free_never_qualifies;"; }
+relock_constraint() { "${PSQL[@]}" -q -c "ALTER TABLE public.representative_reward_claims ADD CONSTRAINT representative_reward_claims_free_never_qualifies CHECK (status NOT IN ('approved', 'funded', 'credited') OR NOT is_free_event) NOT VALID;"; }
+# Test-only owner writes recreate the state production could hold from before 0209/0216.
+unlock_constraint
+"${PSQL[@]}" -q -c "UPDATE public.representative_reward_claims SET status = 'approved', rejected_at = NULL, decision_reason = NULL WHERE id = '$LEGACY_CLAIM';"
+relock_constraint
 expect_error "claiming the legacy free-event reward is refused" "Free events never qualify" "$(as "$REP" "SELECT public.claim_representative_reward('$LEGACY_CLAIM', gen_random_uuid());")"
 expect_value "nothing credited, nothing reserved for it" "$(earnings "$REP")/$(val "SELECT count(*) FROM public.earn_profit_ledger WHERE claim_id = '$LEGACY_CLAIM';")" "10000000/10000000/0"
-expect_ok "admins can reverse or reject it through dual control (the CHECK allows leaving the approved state)" \
-  "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_reject_reward "{\"claim_id\":\"$LEGACY_CLAIM\",\"reason\":\"free events never qualify\"}")")"
-expect_value "rejected" "$(status_of "$LEGACY_CLAIM")" "rejected"
+
+LM=$(val "SELECT reward_month FROM public.representative_reward_claims WHERE id = '$LEGACY_CLAIM';")
+count_q() { val "SELECT public.representative_qualifying_count('$REP', '$1');"; }
+raw_0201_count() { val "SELECT count(*) FROM public.representative_reward_claims WHERE representative_id = '$REP' AND reward_month = '$1' AND status IN ('approved', 'funded', 'credited');"; }
+Q_WITH=$(count_q "$LM")
+"${PSQL[@]}" -q -c "UPDATE public.representative_reward_claims SET status = 'rejected' WHERE id = '$LEGACY_CLAIM';"
+Q_WITHOUT=$(count_q "$LM")
+unlock_constraint; "${PSQL[@]}" -q -c "UPDATE public.representative_reward_claims SET status = 'approved' WHERE id = '$LEGACY_CLAIM';"; relock_constraint
+expect_value "the approved legacy free claim adds nothing to the qualifying count (0201's count would add 1)" \
+  "$Q_WITH/$(( $(raw_0201_count "$LM") - Q_WITH ))" "$Q_WITHOUT/1"
+
+# The 9+ rule through the real dual-control path: nine more legacy free
+# approvals for last month cannot unlock a higher rate this month.
+THIS=$(val "SELECT date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;")
+PREV=$(val "SELECT (date_trunc('month', now() AT TIME ZONE 'Africa/Lagos') - interval '1 month')::date;")
+for i in 1 2 3 4 5 6 7 8 9; do
+  u="00000000-0000-0000-0000-0000000f00$(printf '%02d' $i)"
+  "${PSQL[@]}" -q -c "INSERT INTO public.users (id, role, is_organizer, full_name, email, created_at) VALUES ('$u', 'user', true, 'Free Org $i', 'free$i@example.test', now());"
+  val "$(as "$u" "SELECT public.claim_representative_referral('$CODE')->>'status';")" >/dev/null
+done
+unlock_constraint
+"${PSQL[@]}" -q <<SQL
+INSERT INTO public.events (id, organizer_id, title, event_date, end_date, status, ticket_types, created_at)
+  SELECT ('00000000-0000-0000-0000-0000000fe0' || lpad(i::text, 2, '0'))::uuid, ('00000000-0000-0000-0000-0000000f00' || lpad(i::text, 2, '0'))::uuid,
+         'Free ' || i, now() - interval '40 days', now() - interval '39 days', 'live', '[{"name": "Free", "price": 0}]', now()
+    FROM generate_series(1, 9) i;
+INSERT INTO public.representative_reward_claims
+  (attribution_id, representative_id, organizer_id, event_id, reward_month, amount_kobo, status, is_free_event, free_event_verified,
+   event_verified, organizer_verified, organizer_confirmed_at, approved_at, approved_by, approval_requested_by)
+SELECT a.id, '$REP', a.organizer_id, ('00000000-0000-0000-0000-0000000fe0' || right(a.organizer_id::text, 2))::uuid, '$PREV', 5000000, 'approved',
+       true, true, true, true, now(), now(), '$ADMIN_B', '$ADMIN_A'
+  FROM public.representative_attributions a WHERE a.organizer_id::text LIKE '00000000-0000-0000-0000-0000000f00%';
+SQL
+relock_constraint
+K=$(count_q "$PREV")
+expect_value "0201's count would see 9+ for last month; 0216's excludes all nine free claims" \
+  "$( [ "$(raw_0201_count "$PREV")" -ge 9 ] && echo yes)/$( [ "$K" -lt 9 ] && echo below-9)" "yes/below-9"
+RR=$(val "$(as "$ADMIN_A" "SELECT public.request_admin_action('earn_set_monthly_rate', 'vents_earn', '$REP', 'test', '{\"month\":\"$THIS\",\"reward_kobo\":7500000,\"reason\":\"strong month\"}'::jsonb)->>'id';")")
+expect_error "a higher-rate request on the strength of free claims is refused by the 9+ rule (only $K qualify)" \
+  "Only $K qualifying organizers in the previous month; 9 are required" "$(approve "$ADMIN_B" "$RR")"
+expect_value "no rate was set" "$(val "SELECT count(*) FROM public.representative_monthly_rates WHERE representative_id = '$REP' AND month = '$THIS';")" "0"
+
+# A legacy free claim that was FUNDED (profit reserved) before 0216.
+POOL_BEFORE=$(pool)
+unlock_constraint
+"${PSQL[@]}" -q -c "SELECT public.earn_pool_move('reservation', 5000000, NULL, '$LEGACY_CLAIM', NULL);
+  UPDATE public.representative_reward_claims SET status = 'funded', funded_at = now(), funding_idempotency_key = gen_random_uuid() WHERE id = '$LEGACY_CLAIM';"
+relock_constraint
+expect_value "the legacy funded free claim holds N50,000 of reserved profit" "$(pool)" "$(echo "$POOL_BEFORE" | awk -F/ '{print $1-5000000 "/" $2+5000000 "/" $3}')"
+expect_error "crediting the funded legacy free claim is refused" "Free events never qualify" "$(as "$REP" "SELECT public.claim_representative_reward('$LEGACY_CLAIM', gen_random_uuid());")"
+expect_ok "admins reverse it through dual control" \
+  "$(approve "$ADMIN_B" "$(request "$ADMIN_A" earn_reverse_reward "{\"claim_id\":\"$LEGACY_CLAIM\",\"reason\":\"free events never qualify\"}")")"
+expect_value "reversed; the reservation is released back to available profit; no wallet or ledger credit" \
+  "$(status_of "$LEGACY_CLAIM")/$(pool)/$(val "SELECT string_agg(entry_type, ',' ORDER BY created_at) FROM public.earn_profit_ledger WHERE claim_id = '$LEGACY_CLAIM';")/$(earnings "$REP")/$(val "SELECT count(*) FROM public.organizer_transactions WHERE metadata->>'representative_reward_claim_id' = '$LEGACY_CLAIM';")" \
+  "reversed/$POOL_BEFORE/reservation,release/10000000/10000000/0"
+
+echo "== Higher monthly rate after 0216, and concurrent approvals by two different admins =="
+"${PSQL[@]}" -q -c "$(submit "$REP" "$ORG_RATE" "$EV_RATE")" >/dev/null
+C_RATE=$(claim_of "$ORG_RATE"); confirm_claim "$ORG_RATE" "$C_RATE"
+RM=$(val "SELECT reward_month FROM public.representative_reward_claims WHERE id = '$C_RATE';")
+# A rate approved earlier through the 9+ dual-control rule (owner write: the
+# path itself is exercised above and in run-representative-rewards-verification.sh).
+"${PSQL[@]}" -q -c "INSERT INTO public.representative_monthly_rates (representative_id, month, reward_kobo, basis_month_count, reason, requested_by, approved_by) VALUES ('$REP', '$RM', 7500000, 9, 'approved rate', '$ADMIN_A', '$ADMIN_C');"
+expect_error "the table refuses a rate at or below the N50,000 base" "representative_monthly_rates_reward_kobo_check" \
+  "INSERT INTO public.representative_monthly_rates (representative_id, month, reward_kobo, basis_month_count, reason, requested_by, approved_by) VALUES ('$REP2', '$RM', 5000000, 9, 'x', '$ADMIN_A', '$ADMIN_C');"
+Q_RM_BEFORE=$(count_q "$RM")
+R1=$(request "$ADMIN_A" earn_approve_reward "{\"claim_id\":\"$C_RATE\",\"event_verified\":true}")
+R2=$(request "$ADMIN_C" earn_approve_reward "{\"claim_id\":\"$C_RATE\",\"event_verified\":true}")
+( "${PSQL[@]}" -tA -c "$(approve "$ADMIN_B" "$R1")" >"$TMP/appr1" 2>&1; echo "rc=$?" >>"$TMP/appr1" ) &
+( "${PSQL[@]}" -tA -c "$(approve "$ADMIN_A" "$R2")" >"$TMP/appr2" 2>&1; echo "rc=$?" >>"$TMP/appr2" ) &
+wait
+expect_value "two admins approving the same claim at the same time: exactly one succeeds, the other is refused" \
+  "$(cat "$TMP/appr1" "$TMP/appr2" | grep -c '^rc=0$')/$(cat "$TMP/appr1" "$TMP/appr2" | grep -c 'Only a claim the organizer confirmed')" "1/1"
+expect_value "the claim was approved once, recorded once in the audit trail, and one request stays pending" \
+  "$(status_of "$C_RATE")/$(val "SELECT count(*) FROM public.earn_audit_log WHERE entity_id = '$C_RATE' AND action = 'admin_approved';")/$(val "SELECT string_agg(status, ',' ORDER BY status) FROM public.admin_action_requests WHERE id IN ('$R1', '$R2');")" \
+  "approved/1/approved,pending"
+expect_value "the approved higher rate applies after 0216 (N75,000, not the N50,000 base)" "$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_RATE';")" "7500000"
+expect_value "a valid paid-event claim counts toward the 9+ rule (+1)" "$(( $(count_q "$RM") - Q_RM_BEFORE ))" "1"
+expect_value "a claim for a month with no approved rate uses the N50,000 base" "$(val "SELECT amount_kobo FROM public.representative_reward_claims WHERE id = '$C_PAID';")" "5000000"
 
 echo "== Totals =="
 expect_value "the representative earned exactly two N50,000 rewards: two ledger rows, N100,000, VENTS Wallet untouched" \

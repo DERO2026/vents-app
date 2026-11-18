@@ -110,7 +110,10 @@ Legend:
   - organizer confirmation, then two-admin approval recording that the event took place;
   - free events never qualify (0209 eligibility). **0216 (in repo, NOT applied):** removes 0201's leftover
     "verified free event" override from the approval executor and the admin screen, and makes crediting
-    refuse a free-event claim or one whose event was taken off live, deleted or hidden after approval.
+    refuse a free-event claim or one whose event was taken off live, deleted or hidden after approval. It also
+    defines "free" as no ticket genuinely paid for and still paid (0209 missed free events with RSVPs, 100%-promo
+    and fully refunded events), and stops free-event claims counting toward the 9+ rate review.
+    Runbook: `docs/deploy-runbook-0216.md`.
 - [x] Funding from recognised VENTS ticket profit, with reservation so concurrent claims cannot overspend. Credited to the withdrawable earnings wallet; two-admin withdrawals.
 - [x] Monthly counts by calendar month (Lagos time). At 9+ qualifying organizers, management *may* approve a higher next-month rate through dual control; nothing increases automatically.
 - [x] Transport and support expenses tracked separately with dual-control approval; never mixed into rewards.

@@ -29,12 +29,25 @@
 --      always records free_event_verified = false.
 --   2. claim_representative_reward: before reserving or crediting, refuses a
 --      claim recorded as a free event, and a claim whose event is no longer
---      found, live, undeleted and unhidden (or is now free). These are the
+--      found, live, undeleted and unhidden, or no longer has a genuinely paid
+--      ticket (4.). These are the
 --      existing eligibility reasons; no new rule or threshold. The claim
 --      stays where it is ("on hold for admin review"); admins reject or
 --      reverse it through the existing dual control. No money moves.
 --   3. Replaces the CHECK with representative_reward_claims_free_never_
 --      qualifies (NOT VALID: existing rows are reported below, not changed).
+--   4. earn_event_eligibility: an event is FREE unless at least one ticket is
+--      genuinely paid for and still paid -- payment_status 'paid' with an
+--      effective price (amount less promo discount, the basis every charge
+--      and refund is priced on) above zero. 0209's test (no 'paid' ticket and
+--      no recorded fee) missed free events with attendees: purchase_ticket
+--      stores a N0 RSVP and a 100%-promo ticket as payment_status 'paid'. It
+--      also treated an event whose every ticket was refunded as paid. Feeds
+--      is_free_event, the 'free_event' reason, submission, approval and the
+--      re-check before credit (2.); adds 'valid_paid_tickets' to the output.
+--   5. representative_qualifying_count (the 9+ rate review basis): free-event
+--      claims never count. The 9 threshold, the dual-control rate approval
+--      and the N50,000 base are unchanged.
 --
 -- Unchanged: the N50,000 base reward and its CHECK, the monthly-rate review,
 -- attribution, one reward per organizer, dual control, the profit pool,
@@ -111,7 +124,7 @@ BEGIN$a$;
   END IF;
   v_elig := public.earn_event_eligibility(c.event_id);
   IF (v_elig->'reasons') ?| ARRAY['event_not_found', 'event_deleted', 'event_hidden_by_admin', 'event_not_live', 'free_event'] THEN
-    RAISE EXCEPTION 'The qualifying event was cancelled, deleted or hidden; this reward is on hold for admin review'
+    RAISE EXCEPTION 'The qualifying event no longer qualifies (cancelled, deleted, hidden, or no paid ticket remains); this reward is on hold for admin review'
       USING DETAIL = 'eligibility reasons: ' || (v_elig->'reasons')::text;
   END IF;$a$;
 BEGIN
@@ -143,6 +156,66 @@ BEGIN
 END
 $patch$;
 
+-- 4. Eligibility: an event is free unless a ticket is genuinely paid for and
+-- still paid. 5. The 9+ rate-review count excludes free-event claims.
+DO $patch2$
+DECLARE
+  v_def text;
+  v_pairs text[][];
+  i int;
+
+  e1_old constant text := $a$  v_candidate bigint;
+BEGIN$a$;
+  e1_new constant text := $a$  v_candidate bigint;
+  v_valid_paid integer;  -- [0216]
+BEGIN$a$;
+  e2_old constant text := $a$    FROM public.tickets WHERE event_id = p_event_id;
+$a$;
+  e2_new constant text := $a$    FROM public.tickets WHERE event_id = p_event_id;
+  -- [0216] Tickets genuinely paid for and still paid: payment_status 'paid'
+  -- with an effective price (amount less promo discount, the basis every
+  -- charge and refund is priced on) above zero. Free RSVPs and 100%-promo
+  -- tickets are stored as 'paid' at N0 and do not count; neither do
+  -- refunded, failed or pending tickets.
+  SELECT count(*) INTO v_valid_paid FROM public.tickets
+   WHERE event_id = p_event_id AND payment_status = 'paid'
+     AND COALESCE(amount, 0) * (1 - COALESCE(discount_percentage, 0) / 100) > 0;
+$a$;
+  e3_old constant text := $a$  IF v_paid = 0 AND v_fees = 0 THEN
+    v_reasons := array_append(v_reasons, 'free_event');$a$;
+  e3_new constant text := $a$  IF v_valid_paid = 0 THEN  -- [0216] free, 100% promo or fully refunded
+    v_reasons := array_append(v_reasons, 'free_event');$a$;
+  e4_old constant text := $a$    'is_free_event',        (v_paid = 0 AND v_fees = 0),$a$;
+  e4_new constant text := $a$    'is_free_event',        (v_valid_paid = 0),  -- [0216]
+    'valid_paid_tickets',   v_valid_paid,$a$;
+
+  q1_old constant text := $a$     AND status IN ('approved', 'funded', 'credited');$a$;
+  q1_new constant text := $a$     AND status IN ('approved', 'funded', 'credited')
+     -- [0216] free-event claims never count toward the 9+ rate review
+     AND NOT is_free_event AND NOT free_event_verified;$a$;
+BEGIN
+  v_def := pg_get_functiondef('public.earn_event_eligibility(uuid)'::regprocedure);
+  IF position('[0216]' IN v_def) = 0 THEN
+    v_pairs := ARRAY[[e1_old, e1_new], [e2_old, e2_new], [e3_old, e3_new], [e4_old, e4_new]];
+    FOR i IN 1 .. array_length(v_pairs, 1) LOOP
+      IF (length(v_def) - length(replace(v_def, v_pairs[i][1], ''))) / length(v_pairs[i][1]) <> 1 THEN
+        RAISE EXCEPTION '0216: earn_event_eligibility is not the expected 0201/0203/0209 version (anchor % not found exactly once)', i;
+      END IF;
+      v_def := replace(v_def, v_pairs[i][1], v_pairs[i][2]);
+    END LOOP;
+    EXECUTE v_def;
+  END IF;
+
+  v_def := pg_get_functiondef('public.representative_qualifying_count(uuid,date)'::regprocedure);
+  IF position('[0216]' IN v_def) = 0 THEN
+    IF (length(v_def) - length(replace(v_def, q1_old, ''))) / length(q1_old) <> 1 THEN
+      RAISE EXCEPTION '0216: representative_qualifying_count is not the expected 0201 version';
+    END IF;
+    EXECUTE replace(v_def, q1_old, q1_new);
+  END IF;
+END
+$patch2$;
+
 -- 3. The table rule: an approved, funded or credited claim is never a free
 -- event. NOT VALID so existing rows are not rewritten or refused here; every
 -- new or updated row is checked. Existing rows are reported below.
@@ -164,6 +237,14 @@ BEGIN
    WHERE (is_free_event OR free_event_verified) AND status IN ('approved', 'funded', 'credited');
   IF v_n > 0 THEN
     RAISE WARNING '0216: % free-event reward claim(s) are approved, funded or credited; they can no longer be credited and need an admin rejection or reversal', v_n;
+  END IF;
+  -- Claims approved under 0209's narrower test whose event has no genuinely
+  -- paid ticket (free with attendees, 100% promo, fully refunded).
+  SELECT count(*) INTO v_n FROM public.representative_reward_claims c
+   WHERE c.status IN ('approved', 'funded', 'credited') AND NOT c.is_free_event
+     AND (public.earn_event_eligibility(c.event_id)->>'is_free_event')::boolean;
+  IF v_n > 0 THEN
+    RAISE WARNING '0216: % approved, funded or credited reward claim(s) are for an event with no genuinely paid ticket; approved/funded ones are now on hold, credited ones need an admin decision', v_n;
   END IF;
 END
 $report$;

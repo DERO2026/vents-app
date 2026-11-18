@@ -36,9 +36,22 @@ describe('0216: free events never qualify', () => {
     expect(b2).not.toMatch(/earn_pool_move|organizer_wallets|organizer_transactions/);
   });
 
-  it('patches only the expected 0201 text, exactly once, idempotently', () => {
-    expect(m16.match(/not found exactly once/g)).toHaveLength(2);
-    expect(m16.match(/IF position\('\[0216\]' IN v_def\) = 0 THEN/g)).toHaveLength(2);
+  it('patches only the expected text, exactly once, idempotently', () => {
+    expect(m16.match(/not found exactly once/g)).toHaveLength(3);
+    expect(m16.match(/IF position\('\[0216\]' IN v_def\) = 0 THEN/g)).toHaveLength(4);
+  });
+
+  it('an event is free unless a ticket is genuinely paid for and still paid (free RSVP, 100% promo, fully refunded are free)', () => {
+    expect(m16).toContain(`SELECT count(*) INTO v_valid_paid FROM public.tickets
+   WHERE event_id = p_event_id AND payment_status = 'paid'
+     AND COALESCE(amount, 0) * (1 - COALESCE(discount_percentage, 0) / 100) > 0;`);
+    expect(m16).toContain(`IF v_valid_paid = 0 THEN  -- [0216] free, 100% promo or fully refunded`);
+    expect(m16).toContain(`'is_free_event',        (v_valid_paid = 0),  -- [0216]`);
+  });
+
+  it('free-event claims never count toward the 9+ rate review; the 9 threshold and rate rules are untouched', () => {
+    expect(m16).toContain(`AND NOT is_free_event AND NOT free_event_verified;`);
+    expect(m16).not.toMatch(/rate_review_threshold|representative_monthly_rates/);
   });
 
   it('the table CHECK forbids an approved, funded or credited free-event claim (NOT VALID: no row rewritten)', () => {
@@ -56,6 +69,9 @@ describe('0216: free events never qualify', () => {
     expect(undo).toContain(`IS DISTINCT FROM 'undo-0216' THEN`);
     expect(undo).toContain(`RAISE EXCEPTION 'payload.free_event_verified must be true or false';`);
     expect(undo).toContain(`ADD CONSTRAINT representative_reward_claims_free_needs_verification`);
+    // 0201 created it validated; the undo restores that state.
+    expect(undo).toContain(`VALIDATE CONSTRAINT representative_reward_claims_free_needs_verification;`);
+    expect(undo).toContain(`$a$  IF v_paid = 0 AND v_fees = 0 THEN$a$`);
   });
 });
 
