@@ -105,33 +105,6 @@ END;
 $function$;
 
 -- ---------------------------------------------------------------------------
--- 4. A failed attempt on a ticket checked in meanwhile is 'blocked'.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.admin_record_event_cancellation_refund_error(p_request_id uuid, p_ticket_id uuid, p_error text)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
-DECLARE
-  v_status text;
-BEGIN
-  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
-  UPDATE public.event_cancellation_refunds x
-     SET status = CASE WHEN t.checked_in THEN 'blocked' ELSE 'failed' END,
-         last_error = CASE WHEN t.checked_in THEN 'The ticket was checked in; refund it manually if appropriate'
-                           ELSE left(COALESCE(NULLIF(btrim(p_error), ''), 'Refund attempt failed'), 500) END,
-         updated_at = now()
-    FROM public.tickets t
-   WHERE x.request_id = p_request_id AND x.ticket_id = p_ticket_id AND t.id = x.ticket_id
-     AND t.payment_status = 'paid' AND x.status IN ('processing', 'queued', 'failed')
-  RETURNING x.status INTO v_status;
-  PERFORM public.event_cancellation_refresh(p_request_id);
-  RETURN COALESCE(v_status, 'unchanged');
-END;
-$function$;
-
--- ---------------------------------------------------------------------------
 -- 3. Re-queue a failed refund (Super Admin, audited). Only while the ticket
 --    is still 'paid': no refund is in flight for it, and refund_ticket keeps
 --    refusing a second refund in any case.
@@ -173,6 +146,33 @@ BEGIN
                              'previous_error', x.last_error, 'note', btrim(p_note)), public.actor_role());
   PERFORM public.event_cancellation_refresh(p_request_id);
   RETURN jsonb_build_object('ticket_id', p_ticket_id, 'status', 'queued', 'previous_attempts', x.attempts);
+END;
+$function$;
+
+-- ---------------------------------------------------------------------------
+-- 4. A failed attempt on a ticket checked in meanwhile is 'blocked'.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_record_event_cancellation_refund_error(p_request_id uuid, p_ticket_id uuid, p_error text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_status text;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
+  UPDATE public.event_cancellation_refunds x
+     SET status = CASE WHEN t.checked_in THEN 'blocked' ELSE 'failed' END,
+         last_error = CASE WHEN t.checked_in THEN 'The ticket was checked in; refund it manually if appropriate'
+                           ELSE left(COALESCE(NULLIF(btrim(p_error), ''), 'Refund attempt failed'), 500) END,
+         updated_at = now()
+    FROM public.tickets t
+   WHERE x.request_id = p_request_id AND x.ticket_id = p_ticket_id AND t.id = x.ticket_id
+     AND t.payment_status = 'paid' AND x.status IN ('processing', 'queued', 'failed')
+  RETURNING x.status INTO v_status;
+  PERFORM public.event_cancellation_refresh(p_request_id);
+  RETURN COALESCE(v_status, 'unchanged');
 END;
 $function$;
 
