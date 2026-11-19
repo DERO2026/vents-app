@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode, Suspense, lazy } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
+import { rowShowsAttendanceCount } from '../lib/attendanceVisibility';
 import { onUserRealtime, closeAllUserRealtime } from '../lib/userRealtime';
 import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
@@ -1486,6 +1487,7 @@ export default function App() {
             isFeatured: false,
             isTrending: false,
             attendees: statsByEventId[dbEvent.id] ?? 0,
+            showAttendanceCount: rowShowsAttendanceCount(dbEvent),
             capacity: dbEvent.ticket_goal ?? 0,
             rating: 0,
             reviewCount: 0,

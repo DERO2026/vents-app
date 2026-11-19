@@ -36,6 +36,7 @@ import { formatPrice, formatPriceRange } from './data';
 import { hasEventEnded, isEventDiscoverable } from '../../lib/eventLifecycle';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
+import { canViewAttendanceCount, rowShowsAttendanceCount } from '../../lib/attendanceVisibility';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
 import { downloadBlob } from '../../lib/ticketImage';
@@ -346,6 +347,10 @@ export function EventDetailsScreen({
   const moreRef = useRef<HTMLDivElement>(null);
   const [activeSection, setActiveSection] = useState<'About' | 'Tickets' | 'Organizer' | 'More'>('About');
   const [realAttendeeCount, setRealAttendeeCount] = useState(event.attendees);
+  // The organizer's attendance-visibility choice (events.show_attendance_count,
+  // 0221). The database already withholds a hidden count from everyone but the
+  // organizer and admins; this only decides whether to render one.
+  const [showAttendanceCount, setShowAttendanceCount] = useState(event.showAttendanceCount !== false);
   const [organizerProfile, setOrganizerProfile] = useState<any>(null);
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
@@ -436,9 +441,19 @@ export function EventDetailsScreen({
     let cancelled = false;
     const fetchAttendeeCount = async () => {
       try {
-        const { data, error } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
+        const [{ data, error }, setting] = await Promise.all([
+          supabase.rpc('get_event_ticket_stats', { p_event_ids: [event.id] }),
+          // Read the setting itself rather than trust whichever feed/search
+          // row this event came from (some do not carry the column). Before
+          // 0221 the column does not exist: that error leaves the count shown.
+          Promise.resolve(supabase.from('events').select('show_attendance_count').eq('id', event.id).maybeSingle())
+            .catch(() => ({ data: null, error: true })),
+        ]);
         if (error) throw error;
-        if (!cancelled) setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
+        if (!cancelled) {
+          setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
+          if (!(setting as any)?.error && (setting as any)?.data) setShowAttendanceCount(rowShowsAttendanceCount((setting as any).data));
+        }
       } catch (err) {
         console.error('Failed to fetch attendee count:', err);
         Sentry.captureException(err);
@@ -542,6 +557,12 @@ export function EventDetailsScreen({
     setShowMapDialog(false);
   };
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);
+  // Public viewers never see a hidden count; the organizer and admins do, labelled.
+  const attendanceVisible = canViewAttendanceCount(showAttendanceCount, {
+    isEventOwner,
+    isAdmin: isPlatformAdmin || isSubAdmin || isRootAdmin,
+  });
+  const attendanceHiddenNote = !showAttendanceCount ? ' · hidden from the public' : '';
 
   // "Add to Calendar" ICS content — memoized so it's computed once per
   // event, not on every render (this screen re-renders often).
@@ -895,14 +916,16 @@ export function EventDetailsScreen({
               <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: ventsColors.error, fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
             )}
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Users size={13} color={ventsColors.ink2} />
-              <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
-                {realAttendeeCount.toLocaleString()} attending
-              </span>
+          {attendanceVisible && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Users size={13} color={ventsColors.ink2} />
+                <span data-testid="event-attendance-header" style={{ color: ventsColors.ink2, fontSize: '13px' }}>
+                  {realAttendeeCount.toLocaleString()} attending{attendanceHiddenNote}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Section navigation -- moved here, directly under the title/
@@ -1301,12 +1324,20 @@ export function EventDetailsScreen({
             marginBottom: '16px',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: attendanceVisible ? '8px' : 0 }}>
             <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>Capacity</span>
-            <span style={{ color: capacityPct > 80 ? ventsColors.error : ventsColors.success, fontSize: '13px', fontWeight: 600 }}>
-              {capacityPct}% filled
-            </span>
+            {attendanceVisible ? (
+              <span style={{ color: capacityPct > 80 ? ventsColors.error : ventsColors.success, fontSize: '13px', fontWeight: 600 }}>
+                {capacityPct}% filled
+              </span>
+            ) : (
+              // Hidden count: capacity only -- a fill bar or % would reveal the count.
+              <span data-testid="event-capacity-only" style={{ color: ventsColors.ink2, fontSize: '13px' }}>
+                {(event.capacity ?? 0).toLocaleString()} total capacity
+              </span>
+            )}
           </div>
+          {attendanceVisible && (<>
           <div
             style={{
               height: '6px',
@@ -1329,13 +1360,14 @@ export function EventDetailsScreen({
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-            <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
-              {realAttendeeCount.toLocaleString()} attending
+            <span data-testid="event-attendance-capacity" style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+              {realAttendeeCount.toLocaleString()} attending{attendanceHiddenNote}
             </span>
             <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
               {(event.capacity ?? 0).toLocaleString()} total capacity
             </span>
           </div>
+          </>)}
         </div>
 
         {/* Contact number (if organizer chose to show it). Nigerian numbers show in
