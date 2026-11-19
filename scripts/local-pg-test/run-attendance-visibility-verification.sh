@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Event attendance visibility (migration 0221): an organizer can hide the
 # public attendance count of their event. Builds the same local money stack
-# as run-ticket-integrity-verification.sh (0201 -> 0217, 0218, 0219, 0220,
-# and the production ticket purchase / QR / check-in / refund functions,
-# verbatim), loads the three public count RPCs exactly as the repository
+# as the other money harnesses (0201 -> 0217, 0218, 0219, and the production
+# ticket purchase / QR / check-in / refund functions, verbatim, from
+# schema-attendance-visibility-base.sql), loads the three public count RPCs exactly as the repository
 # defines them before 0221 (schema-attendance-visibility.sql, re-checked
 # against the migrations on every run), REPRODUCES that every count is public,
 # then applies 0221 and proves, through the real functions and RLS:
@@ -192,7 +192,7 @@ SQL
 echo "== Migrations 0218 + 0219, and the ticket purchase / QR / check-in / transfer functions (verbatim repo copies) =="
 expect_ok "0218 applies" "$(cat "$MIG/0218_event_cancellation_workflow.sql")"
 expect_ok "0219 applies" "$(cat "$MIG/0219_event_cancellation_safety_fixes.sql")"
-"${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-ticket-integrity.sql" >/dev/null
+"${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-attendance-visibility-base.sql" >/dev/null
 "${PSQL[@]}" -q <<SQL
 DO \$r\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'project_admin') THEN CREATE ROLE project_admin; END IF; END \$r\$;
 GRANT USAGE ON SCHEMA public TO project_admin;
@@ -240,14 +240,13 @@ direct_buy() {  # direct_buy <user> <event> <tier> <ref> [promo] -> ticket ids, 
   if [[ "$out" =~ ^[0-9a-f-]{36}( [0-9a-f-]{36})*$ ]]; then echo "$out"; else echo "error:$(grep -m1 'ERROR' "$ERR")"; fi
 }
 
-echo "== 0220 (branch order), then the pre-0221 count RPCs (verbatim repo copies) =="
-expect_ok "0220 applies" "$(cat "$MIG/0220_ticket_payment_integrity.sql")"
+echo "== The pre-0221 count RPCs (verbatim repo copies) =="
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-attendance-visibility.sql" >/dev/null
 if python3 -I "$SCRIPT_DIR/check-verbatim-functions.py" --before 0221 "$REPO_ROOT" "$SCRIPT_DIR/schema-attendance-visibility.sql" \
      get_event_ticket_stats get_event_ticket_type_availability get_event_trending_scores >"$OUT" 2>&1; then
   pass "the three count RPCs are byte-identical to their latest pre-0221 definition (0004)"
 else fail "a count RPC copy differs from its migration"; cat "$OUT" >&2; fi
-for pair in "schema-ticket-integrity.sql:purchase_ticket generate_ticket_token verify_entry_pass manual_check_in" \
+for pair in "schema-attendance-visibility-base.sql:purchase_ticket generate_ticket_token verify_entry_pass manual_check_in" \
             "live-money-functions.sql:create_pending_purchase finalize_pending_purchase confirm_ticket_payment confirm_ticket_payment_via_wallet refund_ticket"; do
   # shellcheck disable=SC2086
   if python3 -I "$SCRIPT_DIR/check-verbatim-functions.py" "$REPO_ROOT" "$SCRIPT_DIR/${pair%%:*}" ${pair#*:} >"$OUT" 2>&1; then
