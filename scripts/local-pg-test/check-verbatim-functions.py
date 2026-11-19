@@ -6,7 +6,9 @@ with the LATEST definition of that function in supabase/migrations (the last
 migration, in file order, that contains `CREATE OR REPLACE FUNCTION
 public.<name>(`). Trailing whitespace is ignored; nothing else is.
 
-Usage: check-verbatim-functions.py <repo_root> <schema_file> <name> [<name> ...]
+Usage: check-verbatim-functions.py [--before NNNN] <repo_root> <schema_file> <name> [<name> ...]
+--before NNNN only considers migrations numbered below NNNN (a copy of a
+function as it was BEFORE that migration replaced it).
 Prints one line per function ("same <name> <- <migration>" or "DIFFERS ...")
 and exits 1 if any copy differs from, or is missing in, either side.
 Reads files only; never touches a database.
@@ -31,9 +33,15 @@ def last_definition(text, name):
 
 
 def main():
-    root, schema_file, names = sys.argv[1], sys.argv[2], sys.argv[3:]
+    args = sys.argv[1:]
+    before = None
+    if args[:1] == ['--before']:
+        before, args = args[1], args[2:]
+    root, schema_file, names = args[0], args[1], args[2:]
     copy_text = open(schema_file, encoding='utf-8').read()
     migrations = sorted(glob.glob(os.path.join(root, 'supabase', 'migrations', '*.sql')))
+    if before is not None:
+        migrations = [m for m in migrations if os.path.basename(m)[:4] < before]
     bad = 0
     for name in names:
         source = None

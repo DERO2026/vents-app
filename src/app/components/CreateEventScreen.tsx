@@ -3,6 +3,10 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, X } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { supabase } from '../../lib/supabase';
+import {
+  ATTENDANCE_SETTING_UNAVAILABLE, DEFAULT_SHOW_ATTENDANCE_COUNT, isMissingAttendanceColumnError, rowShowsAttendanceCount,
+} from '../../lib/attendanceVisibility';
+import { AttendanceVisibilityToggle } from './AttendanceVisibilityToggle';
 import { sanitize } from '../../lib/sanitize';
 import { eventCreateSchema, firstValidationError } from '../../lib/schemas';
 import confetti from 'canvas-confetti';
@@ -127,6 +131,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   // The organizer platform deduction shown before publishing comes from the database's quote (0208).
   const deductionRateText = useOrganizerDeductionRateText();
   const [showPhone, setShowPhone] = useState(false);
+  // events.show_attendance_count (0221). Shown by default, as for every existing event.
+  const [showAttendanceCount, setShowAttendanceCount] = useState(DEFAULT_SHOW_ATTENDANCE_COUNT);
   const [is18Plus, setIs18Plus] = useState(false);
   
   // Image states
@@ -301,6 +307,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setTicketTypes(tts);
         setIs18Plus(!!row.is_18_plus);
         setShowPhone(!!row.show_phone);
+        // Load the saved choice so saving other edits never resets it.
+        setShowAttendanceCount(rowShowsAttendanceCount(row));
         {
           // Stored values may be E.164 (current saves) or the bare digits older
           // saves kept; split back into the picker's dial code + national digits.
@@ -627,48 +635,53 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       // Failsafe: a hung insert (flaky connection) must never leave the
       // user stuck on the publish button forever.
-      const { data: insertedData, error } = await withTimeoutFallback(
-        Promise.resolve(
-          supabase
-            .from('events')
-            .insert([{
-              title: sanitize(title),
-              description: sanitize(description),
-              image_url: imageUrl,
-              gallery_urls: galleryUrls,
-              location: locationString,
-              location_type: locationType,
-              country: eventCountry,
-              latitude: locationType === 'online' ? null : latitude,
-              longitude: locationType === 'online' ? null : longitude,
-              place_id: placeId,
-              event_date: eventTimestamp,
-              end_date: endTimestamp,
-              start_time: startTime || null,
-              end_time: endTime || null,
-              price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
-              category: selectedCategories[0] || '',
-              categories: selectedCategories,
-              organizer_id: currentUser.id,
-              // Explicit payout destination; when null the DB trigger fills in
-              // the organizer's default account.
-              payout_account_id: payoutAccountId || null,
-              status: eventStatus,
-              is_18_plus: is18Plus,
-              contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
-              show_phone: showPhone,
-              ticket_types: ticketTypes.map((t, idx) => ({
-                id: `t_${idx}`,
-                name: t.name.trim(),
-                price: Number(t.price),
-                quantity: Number(t.quantity),
-                description: t.description.trim()
-              }))
-            }])
-            .select('id')
-        ),
+      const insertRow: Record<string, any> = {
+        title: sanitize(title),
+        description: sanitize(description),
+        image_url: imageUrl,
+        gallery_urls: galleryUrls,
+        location: locationString,
+        location_type: locationType,
+        country: eventCountry,
+        latitude: locationType === 'online' ? null : latitude,
+        longitude: locationType === 'online' ? null : longitude,
+        place_id: placeId,
+        event_date: eventTimestamp,
+        end_date: endTimestamp,
+        start_time: startTime || null,
+        end_time: endTime || null,
+        price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
+        category: selectedCategories[0] || '',
+        categories: selectedCategories,
+        organizer_id: currentUser.id,
+        // Explicit payout destination; when null the DB trigger fills in
+        // the organizer's default account.
+        payout_account_id: payoutAccountId || null,
+        status: eventStatus,
+        is_18_plus: is18Plus,
+        contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
+        show_phone: showPhone,
+        show_attendance_count: showAttendanceCount,
+        ticket_types: ticketTypes.map((t, idx) => ({
+          id: `t_${idx}`,
+          name: t.name.trim(),
+          price: Number(t.price),
+          quantity: Number(t.quantity),
+          description: t.description.trim()
+        }))
+      };
+      const runInsert = (row: Record<string, any>) => withTimeoutFallback(
+        Promise.resolve(supabase.from('events').insert([row]).select('id')),
         { timeoutMs: 8000, timeoutMessage: 'Publishing is taking too long. Please check your connection and try again.' }
       );
+      let { data: insertedData, error } = await runInsert(insertRow);
+      // Database without 0221 yet: publish without the setting when it is the
+      // default (shown); never silently drop a request to hide the count.
+      if (error && isMissingAttendanceColumnError(error)) {
+        if (!showAttendanceCount) throw new Error(ATTENDANCE_SETTING_UNAVAILABLE);
+        const { show_attendance_count: _unsupported, ...rowWithoutSetting } = insertRow;
+        ({ data: insertedData, error } = await runInsert(rowWithoutSetting));
+      }
 
       // events_organizer_dedup_idx (organizer_id, title, location, event_date)
       // is the server-side backstop for the recentDupe check above -- it
@@ -814,45 +827,48 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       // Failsafe: a hung update must never leave the user stuck on "Save
       // Changes" forever.
-      const { error } = await withTimeoutFallback(
-        Promise.resolve(
-          supabase
-            .from('events')
-            .update({
-              title: sanitize(title),
-              description: sanitize(description),
-              image_url: imageUrl,
-              gallery_urls: galleryUrls,
-              location: locationString,
-              location_type: locationType,
-              country: eventCountry,
-              latitude: locationType === 'online' ? null : latitude,
-              longitude: locationType === 'online' ? null : longitude,
-              place_id: placeId,
-              event_date: eventTimestamp,
-              end_date: endTimestamp,
-              start_time: startTime || null,
-              end_time: endTime || null,
-              price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
-              category: selectedCategories[0] || '',
-              categories: selectedCategories,
-              ...(payoutAccountId ? { payout_account_id: payoutAccountId } : {}),
-              is_18_plus: is18Plus,
-              contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
-              show_phone: showPhone,
-              ticket_types: ticketTypes.map((t, idx) => ({
-                id: `t_${idx}`,
-                name: t.name.trim(),
-                price: Number(t.price),
-                quantity: Number(t.quantity),
-                description: t.description.trim()
-              })),
-              ticket_goal: Number(capacity) || 0,
-            })
-            .eq('id', editEventId)
-        ),
+      const updateRow: Record<string, any> = {
+        title: sanitize(title),
+        description: sanitize(description),
+        image_url: imageUrl,
+        gallery_urls: galleryUrls,
+        location: locationString,
+        location_type: locationType,
+        country: eventCountry,
+        latitude: locationType === 'online' ? null : latitude,
+        longitude: locationType === 'online' ? null : longitude,
+        place_id: placeId,
+        event_date: eventTimestamp,
+        end_date: endTimestamp,
+        start_time: startTime || null,
+        end_time: endTime || null,
+        price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
+        category: selectedCategories[0] || '',
+        categories: selectedCategories,
+        ...(payoutAccountId ? { payout_account_id: payoutAccountId } : {}),
+        is_18_plus: is18Plus,
+        contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
+        show_phone: showPhone,
+        show_attendance_count: showAttendanceCount,
+        ticket_types: ticketTypes.map((t, idx) => ({
+          id: `t_${idx}`,
+          name: t.name.trim(),
+          price: Number(t.price),
+          quantity: Number(t.quantity),
+          description: t.description.trim()
+        })),
+        ticket_goal: Number(capacity) || 0,
+      };
+      const runUpdate = (row: Record<string, any>) => withTimeoutFallback(
+        Promise.resolve(supabase.from('events').update(row).eq('id', editEventId)),
         { timeoutMs: 8000, timeoutMessage: 'Saving is taking too long. Please check your connection and try again.' }
       );
+      let { error } = await runUpdate(updateRow);
+      if (error && isMissingAttendanceColumnError(error)) {
+        if (!showAttendanceCount) throw new Error(ATTENDANCE_SETTING_UNAVAILABLE);
+        const { show_attendance_count: _unsupported, ...rowWithoutSetting } = updateRow;
+        ({ error } = await runUpdate(rowWithoutSetting));
+      }
 
       if (error) throw error;
 
@@ -1900,6 +1916,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 </p>
               )}
             </div>
+
+            {/* Attendance count visibility (0221) */}
+            <AttendanceVisibilityToggle checked={showAttendanceCount} onChange={setShowAttendanceCount} />
           </div>
         )}
 
@@ -1960,6 +1979,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               },
               { label: 'Organizer platform deduction', value: deductionRateText ? `${deductionRateText} of every ticket sold, deducted automatically` : 'Loading…' },
               { label: 'Contact Number', value: showPhone && contactPhone ? `${contactPhoneCountryCode} ${contactPhone}` : 'Not shown' },
+              { label: 'Attendance Count', value: showAttendanceCount ? 'Shown publicly' : 'Hidden from the public' },
             ].map(({ label, value }) => (
               <div
                 key={label}
