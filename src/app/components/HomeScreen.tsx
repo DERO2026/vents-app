@@ -1,5 +1,6 @@
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { flyerScrim } from '../../lib/flyerScrim';
+import { rowShowsAttendanceCount } from '../../lib/attendanceVisibility';
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
@@ -241,6 +242,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     event_date: dbEvent.event_date,
     endDate: dbEvent.end_date || null,
     is_18_plus: dbEvent.is_18_plus === true,
+    showAttendanceCount: rowShowsAttendanceCount(dbEvent),
     latitude: dbEvent.latitude != null ? Number(dbEvent.latitude) : null,
     longitude: dbEvent.longitude != null ? Number(dbEvent.longitude) : null,
     placeId: dbEvent.place_id || null,
@@ -249,13 +251,14 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
   };
 }
 
-const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave }: {
+export const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave }: {
   event: Event;
   onPress: (e: Event) => void;
   isSaved: boolean;
   onToggleSave: (id: string) => void;
 }) {
-  const isSelling = (event.bookingsCount ?? 0) > 50;
+  // A sales-based badge: never for an event whose organizer hides its count.
+  const isSelling = event.showAttendanceCount !== false && (event.bookingsCount ?? 0) > 50;
   const countdown = useCardCountdown(event.event_date);
 
   const cardImages = event.images && event.images.length > 0 ? event.images : (event.image ? [event.image] : []);

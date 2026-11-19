@@ -25,6 +25,11 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
   // purchase_ticket enforces server-side (active tickets, any payment
   // status) — see migrations/20260731212751_get-event-ticket-type-availability.sql.
   const [liveSoldByType, setLiveSoldByType] = useState<Record<string, number> | null>(null);
+  // 0221: sold_out per tier, and whether the organizer hides counts (the RPC
+  // then returns sold_count NULL to the public; before 0221 there is no
+  // sold_out column and counts are always numbers).
+  const [liveSoldOut, setLiveSoldOut] = useState<Record<string, boolean>>({});
+  const [countsHidden, setCountsHidden] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,8 +39,16 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           .rpc('get_event_ticket_type_availability', { p_event_id: event.id });
         if (cancelled || error || !Array.isArray(data)) return;
         const map: Record<string, number> = {};
-        (data as any[]).forEach((row: any) => { map[row.ticket_type] = Number(row.sold_count) || 0; });
+        const soldOut: Record<string, boolean> = {};
+        let hidden = false;
+        (data as any[]).forEach((row: any) => {
+          if (row.sold_count === null || row.sold_count === undefined) hidden = true;
+          else map[row.ticket_type] = Number(row.sold_count) || 0;
+          if (row.sold_out === true) soldOut[row.ticket_type] = true;
+        });
         setLiveSoldByType(map);
+        setLiveSoldOut(soldOut);
+        setCountsHidden(hidden);
       } catch {
         /* fall back to the static available count below */
       }
@@ -46,7 +59,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
   const ticketTypes = liveSoldByType
     ? baseTicketTypes.map((t) => ({
         ...t,
-        available: Math.max(0, t.available - (liveSoldByType[t.name] ?? 0)),
+        available: liveSoldOut[t.name] ? 0 : Math.max(0, t.available - (liveSoldByType[t.name] ?? 0)),
       }))
     : baseTicketTypes;
 
@@ -279,7 +292,8 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                     </p>
                     {!soldOut && (
                       <p style={{ color: '#8B8FA8', fontSize: '11px', marginLeft: '26px', marginTop: '2px' }}>
-                        {ticket.available} available
+                        {/* A hidden attendance count also hides the "N available" figure (capacity minus it). */}
+                        {countsHidden ? 'Available' : `${ticket.available} available`}
                       </p>
                     )}
                   </div>

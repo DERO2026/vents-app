@@ -57,6 +57,11 @@ export interface Event {
   // means the event ends the same calendar day it starts).
   endDate?: string | null;
   is_18_plus?: boolean;
+  // events.show_attendance_count (0221): the organizer's choice of whether the
+  // public sees how many people are attending. Undefined = shown. The database
+  // withholds hidden counts itself; this only stops the app rendering a
+  // placeholder for one. See src/lib/attendanceVisibility.ts.
+  showAttendanceCount?: boolean;
   // Geocoded venue coordinates (events.latitude/longitude) and the Google
   // Places ID captured at creation (events.place_id, may be null for
   // events created before Prompt 3's LocationPicker upgrade, or ones with
