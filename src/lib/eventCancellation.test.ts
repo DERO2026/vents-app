@@ -8,7 +8,7 @@ const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('./supabase', () => ({ supabase: { rpc }, getAuthToken: async () => 'admin-jwt' }));
 vi.mock('./apiBase', () => ({ apiUrl: (p: string) => `https://api.test${p}` }));
 
-import { processCancellationRefunds, attendeeRefundLabel, CANCELLATION_STATUS_LABEL } from './eventCancellation';
+import { processCancellationRefunds, attendeeRefundLabel, CANCELLATION_STATUS_LABEL, requestEventCancellation, adminRequeueCancellationRefund, CANCELLATION_UNAVAILABLE_MESSAGE } from './eventCancellation';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -16,6 +16,48 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
 });
 const res = (status: number, body: any) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+describe('processCancellationRefunds: rate limits (review)', () => {
+  it('after a rate-limit refusal the rest of the run makes no more refund calls; each is recorded for the next run', async () => {
+    rpc.mockImplementation(async (name: string) => name === 'admin_claim_event_cancellation_refunds'
+      ? { data: { reason: 'Event cancelled: x', tickets: [{ ticket_id: 't1' }, { ticket_id: 't2' }, { ticket_id: 't3' }] }, error: null }
+      : { data: 'failed', error: null });
+    fetchMock.mockResolvedValueOnce(res(400, { error: 'rate_limited' }));
+    const out = await processCancellationRefunds('req-1');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ claimed: 3, failed: 3 });
+    const recorded = rpc.mock.calls.filter(([n]) => n === 'admin_record_event_cancellation_refund_error').map(([, a]) => a.p_ticket_id);
+    expect(recorded).toEqual(['t1', 't2', 't3']);
+  });
+  it("the API's own 429 (global Paystack ceiling) stops the run the same way", async () => {
+    rpc.mockImplementation(async (name: string) => name === 'admin_claim_event_cancellation_refunds'
+      ? { data: { reason: 'r', tickets: [{ ticket_id: 't1' }, { ticket_id: 't2' }] }, error: null } : { data: 'failed', error: null });
+    fetchMock.mockResolvedValueOnce(res(429, { error: 'Too many requests. Please try again in a bit.' }));
+    await processCancellationRefunds('req-1');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('an unconfirmed Paystack outcome does not stop the run (it is per ticket)', async () => {
+    rpc.mockImplementation(async (name: string) => name === 'admin_claim_event_cancellation_refunds'
+      ? { data: { reason: 'r', tickets: [{ ticket_id: 't1' }, { ticket_id: 't2' }] }, error: null } : { data: 'unchanged', error: null });
+    fetchMock.mockResolvedValueOnce(res(502, { error: 'Paystack did not confirm this refund (no answer from Paystack in time).', unconfirmed: true }))
+             .mockResolvedValueOnce(res(200, { status: 'refunded' }));
+    const out = await processCancellationRefunds('req-1');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(out).toMatchObject({ refunded: 1, failed: 1 });
+  });
+});
+
+describe('before 0218/0219 are applied (function missing)', () => {
+  it('the organizer sees a plain message, never the raw PostgREST error', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.request_event_cancellation(p_event_id, p_reason) in the schema cache' } });
+    await expect(requestEventCancellation('e1', 'The venue flooded badly')).rejects.toThrow(CANCELLATION_UNAVAILABLE_MESSAGE);
+  });
+  it('re-queue sends only the request, the ticket and the note', async () => {
+    rpc.mockResolvedValue({ data: { status: 'queued' }, error: null });
+    await adminRequeueCancellationRefund('rq1', 't1', '  Paystack balance topped up ');
+    expect(rpc).toHaveBeenCalledWith('admin_requeue_event_cancellation_refund', { p_request_id: 'rq1', p_ticket_id: 't1', p_note: 'Paystack balance topped up' });
+  });
+});
 
 describe('processCancellationRefunds', () => {
   it('sends each claimed ticket through /api/wallet/refund-ticket with only its id and the server reason', async () => {

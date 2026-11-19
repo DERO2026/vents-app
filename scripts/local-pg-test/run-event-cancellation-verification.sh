@@ -15,6 +15,7 @@
 # at any hosted database. Never reads .env files. No network, no Paystack.
 #
 # Usage: scripts/local-pg-test/run-event-cancellation-verification.sh
+#        WITH_0219=1 scripts/local-pg-test/run-event-cancellation-verification.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -174,6 +175,11 @@ expect_error "undo_0218 refuses without the confirmation" "undo-0218" "$(cat "$R
 expect_ok "undo_0218 runs while no cancellation exists" "SET vents.rollback_confirm = 'undo-0218'; $(cat "$REPO_ROOT/supabase/rollback/undo_0218.sql")"
 expect_value "undo_0218 restores every function and column exactly" "$(val "$STATE")" "$PRE"
 expect_ok "0218 re-applies after the undo" "$(cat "$MIG/0218_event_cancellation_workflow.sql")"
+# WITH_0219=1: run every check below with 0219's safety fixes applied too
+# (scripts/local-pg-test/run-event-cancellation-review-verification.sh does).
+if [ "${WITH_0219:-}" = "1" ]; then
+  expect_ok "0219 applies on top of 0218" "$(cat "$MIG/0219_event_cancellation_safety_fixes.sql")"
+fi
 "${PSQL[@]}" -q -c "GRANT EXECUTE ON FUNCTION public.event_ticket_obligations(uuid) TO postgres;"
 
 echo "== Purchases (production money functions) =="

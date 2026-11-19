@@ -41,7 +41,16 @@ export function attendeeRefundLabel(status: RefundRowStatus | undefined, payment
   return 'Refund pending';
 }
 
-function rpcError(e: { message?: string } | null, fallback: string): never {
+/** True when the database does not have the cancellation functions yet (0218 not applied). */
+export function isCancellationUnavailable(e: { code?: string; message?: string } | null | undefined): boolean {
+  return e?.code === 'PGRST202' || /could not find the function/i.test(e?.message || '');
+}
+export const CANCELLATION_UNAVAILABLE_MESSAGE =
+  "Event cancellation isn't available in the app yet. Contact VENTS support to cancel this event; its ticket holders must be refunded.";
+
+function rpcError(e: { code?: string; message?: string } | null, fallback: string): never {
+  // Never show a raw PostgREST "function not found" message to a user.
+  if (isCancellationUnavailable(e)) throw Object.assign(new Error(CANCELLATION_UNAVAILABLE_MESSAGE), { unavailable: true });
   throw new Error(e?.message || fallback);
 }
 
@@ -93,9 +102,16 @@ export async function processCancellationRefunds(id: string, limit = 10): Promis
   if (error) rpcError(error, 'Refunds could not be started.');
   const claim = data as { reason: string; tickets: { ticket_id: string }[] };
   const result: RefundRunResult = { claimed: claim.tickets.length, refunded: 0, pending: 0, failed: 0, errors: [] };
+  let limited: string | null = null;
   for (const { ticket_id } of claim.tickets) {
     let message: string | null = null;
-    try {
+    if (limited) {
+      // A rate limit was hit earlier in this run: skip calls that would be
+      // refused too. Recorded as failed (so they don't sit claimed for 15
+      // minutes) and retried on the next run; a row that ran out of attempts
+      // this way can be re-queued (adminRequeueCancellationRefund).
+      message = limited;
+    } else try {
       const token = await getAuthToken();
       const res = await fetch(apiUrl('/api/wallet/refund-ticket'), {
         method: 'POST',
@@ -103,7 +119,12 @@ export async function processCancellationRefunds(id: string, limit = 10): Promis
         body: JSON.stringify({ ticket_id, reason: claim.reason }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) message = json?.error || `Refund failed (HTTP ${res.status})`;
+      if (!res.ok) {
+        message = json?.error || `Refund failed (HTTP ${res.status})`;
+        if (res.status === 429 || /rate.?limit|too many/i.test(String(json?.error || ''))) {
+          limited = 'Refund rate limit reached; this ticket is retried on the next run';
+        }
+      }
       else if (json?.status === 'refunded' || json?.status === 'already_refunded') result.refunded++;
       else result.pending++;
     } catch (e: any) {
@@ -117,4 +138,13 @@ export async function processCancellationRefunds(id: string, limit = 10): Promis
     }
   }
   return result;
+}
+
+/**
+ * Re-queue a failed cancellation refund (Super Admin; 0219). The server
+ * refuses unless the ticket is still paid, i.e. no refund is in flight.
+ */
+export async function adminRequeueCancellationRefund(id: string, ticketId: string, note: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_requeue_event_cancellation_refund' as any, { p_request_id: id, p_ticket_id: ticketId, p_note: note.trim() });
+  if (error) rpcError(error, 'The refund could not be re-queued.');
 }

@@ -7,7 +7,7 @@ import { createRoot, Root } from 'react-dom/client';
 // rejection needs a note; "Process refunds" appears only once approved.
 const api = vi.hoisted(() => ({
   adminListEventCancellations: vi.fn(), adminGetEventCancellation: vi.fn(),
-  adminDecideEventCancellation: vi.fn(), processCancellationRefunds: vi.fn(),
+  adminDecideEventCancellation: vi.fn(), processCancellationRefunds: vi.fn(), adminRequeueCancellationRefund: vi.fn(),
 }));
 vi.mock('../../../lib/supabase', () => ({ supabase: { rpc: vi.fn() }, getAuthToken: async () => '' }));
 vi.mock('../../../lib/eventCancellation', async (orig) => ({ ...(await orig() as any), ...api }));
@@ -82,12 +82,32 @@ describe('AdminCancellationsScreen', () => {
     expect(container.textContent).toContain('Only a Super Admin can approve or reject a cancellation.');
   });
 
-  it('refund processing appears once approved and reports the run', async () => {
-    await open(false, 'attention');
+  it('refund processing appears once approved and reports the run (Super Admin, 0219)', async () => {
+    await open(true, 'attention');
     expect(q('cancellation-approve')).toBeNull();
     api.processCancellationRefunds.mockResolvedValue({ claimed: 3, refunded: 1, pending: 1, failed: 1, errors: ['x'] });
     await click(q('cancellation-process'));
     expect(api.processCancellationRefunds).toHaveBeenCalledWith('rq1', 10);
     expect(q('cancellation-msg')?.textContent).toBe('Processed 3: 1 refunded, 1 awaiting Paystack, 1 failed.');
+  });
+
+  it('a sub-admin cannot process refunds (0219: the release path needs a Super Admin)', async () => {
+    await open(false, 'attention');
+    expect(q('cancellation-process')).toBeNull();
+    expect(q('cancellation-process-super-only')?.textContent).toBe('Only a Super Admin can process refunds.');
+    expect(q('cancellation-requeue-t1')).toBeNull();
+  });
+
+  it('a failed refund of a still-paid ticket can be re-queued with a note; one in flight cannot', async () => {
+    await open(true, 'attention');
+    expect(q('cancellation-requeue-t2')).toBeNull();            // refund_pending: may be in flight at Paystack
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValueOnce(null).mockReturnValueOnce('Paystack balance topped up');
+    await click(q('cancellation-requeue-t1'));
+    expect(api.adminRequeueCancellationRefund).not.toHaveBeenCalled();   // cancelled: nothing sent
+    api.adminRequeueCancellationRefund.mockResolvedValue(undefined);
+    await click(q('cancellation-requeue-t1'));
+    expect(api.adminRequeueCancellationRefund).toHaveBeenCalledWith('rq1', 't1', 'Paystack balance topped up');
+    expect(q('cancellation-msg')?.textContent).toContain('Refund re-queued');
+    prompt.mockRestore();
   });
 });

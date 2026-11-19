@@ -17,6 +17,11 @@ import { refuseInPreview } from '../_lib/previewGuard.js';
 // Handles both ticket_id and booking_id in one file (not two) because
 // Vercel's Hobby plan caps this project at 12 serverless functions -- see
 // api/webhook/paystack.ts's ?action= dispatch for the same constraint.
+// Kept below the shortest Vercel function limit (10 s), so an unanswered
+// Paystack call is reported as unconfirmed instead of the function being
+// killed mid-request.
+const PAYSTACK_REFUND_TIMEOUT_MS = 8000;
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
 
@@ -126,42 +131,84 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // amount_kobo is already in kobo -- do NOT multiply by 100 again, that
     // would refund 100x the intended amount.
-    const refundRes = await fetch('https://api.paystack.co/refund', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${paystackSecret}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        transaction: state.payment_ref,
-        amount: state.amount_kobo,
-        merchant_note: reason.trim(),
-      }),
-    });
-    const refundJson = await refundRes.json().catch(() => null);
+    //
+    // Only a DEFINITIVE rejection may release the claim. A released ticket is
+    // 'paid' again and can be refunded again (event cancellations retry it
+    // automatically), so treating an uncertain outcome as a rejection risks a
+    // second refund for one ticket -- for a multi-ticket payment, a second
+    // partial refund Paystack would accept. Uncertain = no answer in time,
+    // a network error, a 5xx, or a success-shaped answer without a refund id:
+    // the refund may exist at Paystack. Those stay 'refund_pending' with no
+    // refund id (shown as unconfirmed) until someone checks Paystack.
+    let refundRes: Response | null = null;
+    let refundJson: any = null;
+    let uncertain: string | null = null;
+    try {
+      refundRes = await fetch('https://api.paystack.co/refund', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${paystackSecret}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transaction: state.payment_ref,
+          amount: state.amount_kobo,
+          merchant_note: reason.trim(),
+        }),
+        signal: AbortSignal.timeout(PAYSTACK_REFUND_TIMEOUT_MS),
+      });
+      refundJson = await refundRes.json().catch(() => null);
+    } catch (e: any) {
+      uncertain = e?.name === 'TimeoutError' ? 'no answer from Paystack in time' : `network error (${e?.message || 'unknown'})`;
+    }
     const refundId = refundJson?.data?.id != null ? String(refundJson.data.id) : null;
 
-    if (!refundRes.ok || !refundJson?.status || !refundId) {
-      // Paystack rejected the refund outright (invalid/unknown transaction,
-      // insufficient balance, already fully refunded on their side, etc) --
-      // release the ticket back to 'paid' rather than leaving it stuck
-      // showing cancelled with no refund actually in flight.
+    if (!uncertain && refundRes && !(refundRes.ok && refundJson?.status && refundId)) {
+      const definitive = refundRes.status >= 400 && refundRes.status < 500 && refundJson?.status === false;
+      if (!definitive) uncertain = `unclear Paystack answer (HTTP ${refundRes.status})`;
+    }
+    if (uncertain) {
+      console.error('[refund-ticket] REFUND UNCONFIRMED: check Paystack before reverting.', rpcNames.start, entityId,
+        'transaction', state.payment_ref, 'amount_kobo', state.amount_kobo, '-', uncertain);
+      return res.status(502).json({
+        error: `Paystack did not confirm this refund (${uncertain}). It is held as unconfirmed: check Paystack before retrying or reverting it.`,
+        unconfirmed: true,
+      });
+    }
+
+    if (!refundRes!.ok || !refundJson?.status || !refundId) {
+      // Paystack rejected the refund outright (4xx with status:false --
+      // invalid/unknown transaction, insufficient balance, already fully
+      // refunded on their side, etc) -- release the ticket back to 'paid'
+      // rather than leaving it stuck showing cancelled with no refund in flight.
       await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.revert}`, {
         method: 'POST',
         headers: supabaseHeaders,
         body: JSON.stringify({
           [idParam]: entityId,
-          p_reason: 'Paystack refund creation failed: ' + (refundJson?.message || `HTTP ${refundRes.status}`),
+          p_reason: 'Paystack refund creation failed: ' + (refundJson?.message || `HTTP ${refundRes!.status}`),
         }),
       }).catch(() => {});
       return res.status(502).json({ error: refundJson?.message || 'Paystack refund initiation failed' });
     }
 
-    await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.attach}`, {
-      method: 'POST',
-      headers: supabaseHeaders,
-      body: JSON.stringify({ [idParam]: entityId, p_refund_id: refundId }),
-    });
+    // The webhook finds the ticket/booking only by this refund id, so a lost
+    // attach leaves an accepted refund unmatched. Retry once, then say so
+    // loudly with the id needed to reconcile it by hand.
+    let attached = false;
+    for (let i = 0; i < 2 && !attached; i++) {
+      const attachRes = await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.attach}`, {
+        method: 'POST',
+        headers: supabaseHeaders,
+        body: JSON.stringify({ [idParam]: entityId, p_refund_id: refundId }),
+      }).catch(() => null);
+      attached = !!attachRes?.ok;
+    }
+    if (!attached) {
+      console.error('[refund-ticket] REFUND ID NOT RECORDED: Paystack accepted refund', refundId, 'for', rpcNames.start, entityId,
+        '- attach it by hand or the refund webhook cannot match it.');
+      return res.status(202).json({ status: 'refund_pending', refund_id: refundId, refund_id_recorded: false });
+    }
 
     // Paystack has accepted the refund for processing -- refund.processed /
     // refund.failed webhooks are the authoritative "money actually moved"
