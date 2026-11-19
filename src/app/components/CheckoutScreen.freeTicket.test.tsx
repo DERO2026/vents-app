@@ -83,14 +83,28 @@ describe('CheckoutScreen: free-ticket claim requires the same validated confirma
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it('does not issue a ticket if the required phone number is missing', async () => {
+  // Phone is optional (checkout UI cleanup): only name and email are required.
+  it('issues the ticket with no phone number, and sends no phone for the holder', async () => {
     const onSuccess = await mount();
     await act(async () => {
       getPayButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(onSuccess.mock.calls[0][0].attendees[0]).toEqual({ name: 'Buyer Person', email: 'buyer@example.com', phone: undefined });
+  });
+
+  it('still rejects a phone number that is entered but invalid', async () => {
+    const onSuccess = await mount();
+    const phoneInput = container!.querySelector('input[inputmode="tel"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+    act(() => { setter.call(phoneInput, '12'); phoneInput.dispatchEvent(new Event('input', { bubbles: true })); });
+    await act(async () => {
+      getPayButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
     expect(onSuccess).not.toHaveBeenCalled();
-    expect(container!.textContent).toContain('phone number');
+    expect(container!.textContent).toContain('Enter a valid phone number, or leave it empty.');
   });
 
   it('issues exactly one ticket after valid details are submitted', async () => {
