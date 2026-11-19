@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { adminTheme, accentStrongFill } from './adminConsoleTheme';
 import {
   adminListEventCancellations, adminGetEventCancellation, adminDecideEventCancellation,
-  processCancellationRefunds, CANCELLATION_STATUS_LABEL, type CancellationStatus,
+  processCancellationRefunds, adminRequeueCancellationRefund, CANCELLATION_STATUS_LABEL, type CancellationStatus,
 } from '../../../lib/eventCancellation';
 
 const naira = (kobo: number | null | undefined) =>
@@ -166,10 +166,12 @@ function CancellationDetail({ id, isSuperAdmin, onBack }: { id: string; isSuperA
         <div style={card}>
           <h3 style={h}>Refunds</h3>
           <div style={muted}>Each run sends up to 10 queued tickets through the normal refund path (existing per-admin and Paystack rate limits apply). Card refunds complete when Paystack confirms them.</div>
+          {!isSuperAdmin ? <div style={muted} data-testid="cancellation-process-super-only">Only a Super Admin can process refunds.</div> : (
           <div><button style={btn()} disabled={busy} data-testid="cancellation-process" onClick={() => run(async () => {
             const x = await processCancellationRefunds(id, 10);
             return x.claimed === 0 ? 'Nothing to process right now.' : `Processed ${x.claimed}: ${x.refunded} refunded, ${x.pending} awaiting Paystack, ${x.failed} failed.`;
           })}>{busy ? 'Working…' : 'Process refunds'}</button></div>
+          )}
         </div>
       )}
 
@@ -188,6 +190,14 @@ function CancellationDetail({ id, isSuperAdmin, onBack }: { id: string; isSuperA
               {a.last_error ? ` · ${a.last_error}` : ''}
               {a.attempts ? ` · attempt ${a.attempts}` : ''}
             </div>
+            {isSuperAdmin && canProcess && a.refund_status === 'failed' && a.payment_status === 'paid' && (
+              <div><button style={btn(true)} disabled={busy} data-testid={`cancellation-requeue-${a.ticket_id}`}
+                onClick={() => {
+                  const why = window.prompt('Re-queue this refund. Note for the audit log (why it is safe to retry):');
+                  if (!why) return;
+                  void run(async () => { await adminRequeueCancellationRefund(id, a.ticket_id, why); return 'Refund re-queued; it runs on the next "Process refunds".'; });
+                }}>Re-queue refund</button></div>
+            )}
           </div>
         ))}
       </div>

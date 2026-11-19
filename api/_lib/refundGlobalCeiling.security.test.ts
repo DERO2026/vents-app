@@ -53,7 +53,8 @@ function makeFetchMock(opts: { startStatus?: any; refundOk?: boolean } = {}) {
       return { ok: true, json: async () => ({}) } as any;
     }
     if (url.includes('api.paystack.co/refund')) {
-      if (opts.refundOk === false) return { ok: false, json: async () => ({ status: false, message: 'Paystack error' }) } as any;
+      // A definitive Paystack rejection: 4xx with status:false (only this releases the claim).
+      if (opts.refundOk === false) return { ok: false, status: 400, json: async () => ({ status: false, message: 'Paystack error' }) } as any;
       return { ok: true, json: async () => ({ status: true, data: { id: 123 } }) } as any;
     }
     return { ok: true, json: async () => ({}) } as any;
