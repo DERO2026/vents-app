@@ -3,9 +3,35 @@
 - `supabase/migrations/0218_event_cancellation_workflow.sql`: the workflow.
 - `supabase/migrations/0219_event_cancellation_safety_fixes.sql`: fixes from the pre-release review (`docs/event-cancellation-review.md`).
 
-**Status:**
-- **Neither migration has been applied by this work.** Applying them needs owner approval and an authorized operator; nothing here has been run against production.
-- **The frontend half of 0218 is already live.** PR #112 was merged and deployed to production on 2026-11-18, before 0218 was applied. What that means is under *Runbook*.
+**Status: both migrations are applied to VENTS production** (Supabase project `slrtjxtzhowhwhebjprv`), with owner approval.
+
+| Migration | Applied (UTC) | Recorded in migration history as |
+|---|---|---|
+| 0218 | 2026-11-19 00:46:10 | `20261119004610_0218_event_cancellation_workflow` |
+| 0219 | 2026-11-19 00:48:58 | `20261119004858_0219_event_cancellation_safety_fixes` |
+
+**What is now live:**
+- the event deletion guard (`events_cancellation_guard`);
+- the cancellation workflow and refund tracking tables;
+- cancelled-event check-in protection (`tickets_cancelled_event_checkin_guard`);
+- Super Admin-only refund processing;
+- manual refund re-queue.
+
+**How it was applied and verified:**
+- **Method:** the Supabase migration tool, with the unmodified file text.
+- **Transaction and lock timeout:** each file ran as one transaction with a 5-second lock timeout. A guard aborted the run unless it was a single transaction.
+- **Verification against the live database:**
+  - every function body is byte-identical to the reviewed files (hashes compared);
+  - all three triggers are enabled;
+  - both tables have RLS on, read-only policies and no client writes;
+  - internal functions can't be called by any client;
+  - client RPCs run for logged-in users only.
+- **No data touched:** no business or financial record was read or changed.
+- **Not yet done:** the app smoke test (`docs/event-cancellation-smoke-test.md`) and the two pre-checks under *Runbook*, which read financial records and need separate approval.
+
+**History: the deployment gap.**
+- The app for 0218 (PR #112) and 0219 (PR #113) was merged and deployed to production on 2026-11-18/19, **before** either migration was applied. Until 2026-11-19 00:46 UTC, the deletion defect described below remained open server-side; the app only hid the Delete button.
+- A read-only check on 2026-11-19, before applying, found no 0218/0219 object in production. *Runbook* has the details.
 
 ## What was wrong
 - An organizer could soft-delete an event with paid tickets, through `soft_delete_event` or a direct `UPDATE events SET deleted_at`. The events RLS policy lets the owner update any column. Nothing refunded the ticket holders or told them anything.
@@ -63,7 +89,7 @@
 9. **Withdrawing a request.** An organizer can't withdraw a pending request (an admin rejects it). Add withdrawal if wanted.
 10. **Events already soft-deleted with paid tickets (history).** 0218 changes none of them. The pre-check below lists them. An admin can restore one (`admin_restore_deleted_event`) and then cancel it.
 
-## Runbook (for an authorized operator; not run)
+## Runbook (executed on 2026-11-19; kept as the record)
 **Prerequisites:** 0208 (`ticket_fee_buyer_charge_kobo`) and `refund_ticket` for 0218; 0218 for 0219. 0218 is independent of 0211–0217.
 
 **Order:**
@@ -71,14 +97,12 @@
 2. Apply 0219 in the same window, before anyone processes refunds.
 3. Deploy the frontend that contains the 0219 changes: refund API, runner and admin screen.
 
-The 0218 frontend is already live (see *Status*). Until 0218 is applied in production:
-- **Organizers aren't protected.** The deletion defect still exists server-side: `soft_delete_event`, or a direct UPDATE of `events.deleted_at`, still deletes an event with paid tickets. The app only hides the Delete button for events with sold tickets, so the gap is reachable outside the app.
-- **Manage Events** shows *Cancel Event*. Before the fix in this branch, submitting it showed the raw PostgREST error. With this branch it says cancellation isn't available yet and to contact VENTS support.
-- **My Tickets** and the ticket refund view behave as before (tested). The admin *Cancellations* view shows an error.
+**The order actually followed on 2026-11-19:** the app was already live (see *Status*), then 0218, then 0219, in the same window. Before 0218 was applied:
+- **Organizers weren't protected.** The deletion defect still existed server-side: `soft_delete_event`, or a direct UPDATE of `events.deleted_at`, deleted an event with paid tickets. The app only hid the Delete button for events with sold tickets.
+- **Manage Events** showed *Cancel Event*. With PR #113, submitting it said cancellation wasn't available yet and to contact VENTS support (`src/lib/eventCancellation.ts` keeps that fallback). The admin *Cancellations* view showed the same message.
+- **My Tickets** and the ticket refund view behaved as before.
 
-Applying 0218 promptly closes the server-side gap; that is the owner's call.
-
-**Before applying (read-only):**
+**Before applying (read-only).** **Not run on 2026-11-19:** these read financial records, and running them needs separate owner approval.
 ```sql
 -- Events already deleted while holding paid tickets (handled by hand; 0218 changes none)
 SELECT e.id, e.title, e.deleted_at, count(t.*) AS paid_tickets
@@ -89,7 +113,7 @@ SELECT e.id, e.title, e.deleted_at, count(t.*) AS paid_tickets
 SELECT id, event_id, created_at FROM public.tickets WHERE payment_status = 'refund_pending' AND refund_id IS NULL;
 ```
 
-**Apply** in one transaction with a lock timeout. Never use `supabase db push`.
+**Apply** in one transaction with a lock timeout. Never use `supabase db push`. On 2026-11-19 the files were applied through the Supabase migration tool instead of `psql`, with the same single-transaction and 5-second lock-timeout protections; see *Status*.
 ```sh
 psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -c "SET lock_timeout = '5s';" -f supabase/migrations/0218_event_cancellation_workflow.sql
 ```
@@ -103,7 +127,11 @@ SELECT to_regclass('public.event_cancellation_requests') IS NOT NULL,
 
 **Apply 0219** the same way, with `supabase/migrations/0219_event_cancellation_safety_fixes.sql`. It moves no money and changes no row.
 
-**Rollback:** `supabase/rollback/undo_0219.sql` (`SET vents.rollback_confirm = 'undo-0219';`) restores 0218's exact bodies; undo 0219 before 0218. `supabase/rollback/undo_0218.sql`, with `SET vents.rollback_confirm = 'undo-0218';` in one transaction. It refuses once any cancellation request exists, so their history is kept. It changes no ticket, wallet, ledger or event row.
+## Rollback (limitations; no rollback is authorized or planned)
+- **Order:** reverse only. Run `supabase/rollback/undo_0219.sql` first (`SET vents.rollback_confirm = 'undo-0219';`, one transaction); it restores 0218's exact function bodies. Then, and only then, `supabase/rollback/undo_0218.sql` (`SET vents.rollback_confirm = 'undo-0218';`, one transaction).
+- **`undo_0218` refuses to run once any cancellation request exists**, of any status, including rejected. The requests, refund rows and the events' cancellation stamps are the record attendees' refunds rest on, so they are never dropped.
+- **So the first real cancellation request makes rolling back 0218 unavailable.** After that, a defect in 0218 has to be fixed forward with a new migration. `undo_0219` stays possible, but it removes the check-in guard, Super Admin-only processing and re-queue.
+- **Neither script changes data.** They change no ticket, wallet, ledger or event row. Each needs separate owner approval; **none is authorized or planned.**
 
 ## Tests
 - **`scripts/local-pg-test/run-event-cancellation-verification.sh`:** 85 checks on the full local money stack (0201 → 0217 plus the production refund functions), with Paystack mocked as accept, reject or timeout and the webhook as processed or failed. It covers:
