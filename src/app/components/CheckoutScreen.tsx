@@ -17,10 +17,6 @@ import { useTicketQuote, serviceFeeLabel, amountMatchesQuote, QUOTE_UNAVAILABLE_
 import { friendlyOperationalError } from '../../lib/operationalStatus';
 import { UserAutocomplete } from './shared/UserAutocomplete';
 
-function fmtNgn(kobo: number) {
-  return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 interface CheckoutScreenProps {
   event: Event;
   ticketType: TicketType;
@@ -112,6 +108,7 @@ function Field({
 
 export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess, onPaymentRequestSent }: CheckoutScreenProps) {
   const [name, setName] = useState(currentUser?.full_name || '');
+  const [nameTouched, setNameTouched] = useState(false);
   const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
   // Raw national-number digits only — the country dial code is tracked
@@ -246,6 +243,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
     ? 'Enter a valid email (e.g. name@gmail.com)'
     : undefined;
+  // Full name and email are required; phone is optional (validated only when given).
+  const nameError = nameTouched && name.trim().length === 0 ? 'Full name is required' : undefined;
 
   // A phone number is required so organizers can actually reach the buyer
   // about their booking — previously only validated (and required) for
@@ -257,12 +256,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // check that doesn't actually mean anything once the buyer isn't Nigerian.
   const phoneDigits = phone.replace(/\D/g, '');
   const selectedPhoneCountry = COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY;
-  const phoneError = phoneTouched && !isPlausibleNationalNumber(phoneDigits, selectedPhoneCountry)
+  const phoneError = phoneTouched && phoneDigits.length > 0 && !isPlausibleNationalNumber(phoneDigits, selectedPhoneCountry)
     ? `Enter a valid ${selectedPhoneCountry.name} phone number`
     : undefined;
 
   const additionalAttendeesValid = additionalAttendees.every(
-    (a) => a.name.trim().length > 0 && isValidEmail(a.email) && (a.phone ?? '').replace(/\D/g, '').length >= 7
+    (a) => {
+      const digits = (a.phone ?? '').replace(/\D/g, '');
+      return a.name.trim().length > 0 && isValidEmail(a.email) && (digits.length === 0 || digits.length >= 7);
+    }
   );
 
   // A code the user typed but never successfully applied (or applied, then
@@ -340,6 +342,13 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     setPayerNotFound(false);
     setAttendeesTouched(true);
     setPhoneTouched(true);
+    setNameTouched(true);
+    setEmailTouched(true);
+
+    if (!name.trim()) {
+      setPayError('Enter your full name.');
+      return;
+    }
 
     const payerIdentifierTrimmed = payerIdentifier.trim();
     if (payMode === 'someone-else' && !payerIdentifierTrimmed) {
@@ -354,8 +363,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    if (!isPlausibleNationalNumber(phoneDigits, selectedPhoneCountry)) {
-      setPayError('A valid phone number is required so the organizer can reach you about your booking.');
+    // Phone is optional; a number that is entered must still be valid.
+    if (phoneDigits.length > 0 && !isPlausibleNationalNumber(phoneDigits, selectedPhoneCountry)) {
+      setPayError('Enter a valid phone number, or leave it empty.');
       return;
     }
 
@@ -370,7 +380,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     }
 
     if (!additionalAttendeesValid) {
-      setPayError(`Enter full name, email and phone number for all ${quantity} attendees.`);
+      setPayError(`Enter a full name and email for all ${quantity} attendees (a phone number, if given, must be valid).`);
       return;
     }
 
@@ -746,7 +756,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 permanently non-interactive for virtually everyone, reading
                 as a frozen/broken screen. Editable also legitimately
                 matters: buying a ticket for someone else with their name. */}
-            <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} />
+            <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} error={nameError} onBlur={() => setNameTouched(true)} />
             <Field
               label="Email Address"
               placeholder="name@gmail.com"
@@ -762,7 +772,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 (AuthScreen.tsx), so an international visitor buying a
                 Nigerian event ticket isn't forced into a +234 number. */}
             <div>
-              <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
+              <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number (Optional)</p>
               <PhoneInput
                 countryCode={phoneCountryCode}
                 onCountryCodeChange={(code) => { setPhoneCountryCode(code); setPhone(''); }}
@@ -926,12 +936,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                       error={attendeeEmailError}
                     />
                     <Field
-                      label="Phone Number"
+                      label="Phone Number (Optional)"
                       placeholder="080 0000 0000"
                       value={attendee.phone ?? ''}
                       onChange={(v) => updateAttendee(i, 'phone', v)}
                       type="tel"
-                      error={attendeesTouched && (attendee.phone ?? '').replace(/\D/g, '').length < 7 ? 'Valid phone required' : undefined}
+                      error={attendeesTouched && (() => { const d = (attendee.phone ?? '').replace(/\D/g, ''); return d.length > 0 && d.length < 7; })() ? 'Enter a valid phone number' : undefined}
                     />
                   </div>
                 );
@@ -1030,33 +1040,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           <style> block above; keeping this element's own positioning out of
           inline style means the desktop media query can actually win. */}
       <div className="checkout-summary-panel">
-
-        {total > 0 && currentUser && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <button
-              onClick={() => { setPaymentMethod('paystack'); setPayError(null); }}
-              style={{
-                flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                border: paymentMethod === 'paystack' ? '1px solid rgba(123,47,190,0.6)' : '1px solid rgba(255,255,255,0.1)',
-                background: paymentMethod === 'paystack' ? 'rgba(123,47,190,0.15)' : 'transparent',
-                color: paymentMethod === 'paystack' ? '#C4B5FD' : '#8B8FA8',
-              }}
-            >
-              Card / Bank (Paystack)
-            </button>
-            <button
-              onClick={() => { setPaymentMethod('wallet'); setPayError(null); }}
-              style={{
-                flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                border: paymentMethod === 'wallet' ? '1px solid rgba(168,85,247,0.6)' : '1px solid rgba(255,255,255,0.1)',
-                background: paymentMethod === 'wallet' ? 'rgba(168,85,247,0.15)' : 'transparent',
-                color: paymentMethod === 'wallet' ? '#D8B4FE' : '#8B8FA8',
-              }}
-            >
-              VENTS Wallet {walletBalanceKobo != null ? `(${fmtNgn(walletBalanceKobo)})` : ''}
-            </button>
-          </div>
-        )}
 
         {!isFreeOrder && quoteState.status === 'unavailable' && (
           <div data-testid="checkout-quote-unavailable" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
