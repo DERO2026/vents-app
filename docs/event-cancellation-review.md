@@ -3,12 +3,19 @@
 Review of PR #112 (0218) for financial correctness, security, concurrency and open policy decisions.
 
 - **Local only.** No production SQL, no migrations applied, no Paystack calls, no money moved.
-- **Production state is known only from repo and deploy metadata.** AGENTS.md warns that migration headers are unreliable, so whether 0218 is live in the database is **unverified**.
+- **At the time of the review, the production state was known only from repo and deploy metadata.** AGENTS.md warns that migration headers are unreliable, so whether 0218 was live was unverified.
+
+> **Update, 2026-11-19 (post-migration).**
+> - **Before applying:** a read-only production check found neither 0218 nor 0219 installed.
+> - **Applied:** both were then applied to VENTS production with owner approval: 0218 at 00:46:10 UTC, 0219 at 00:48:58 UTC.
+> - **Verified against the live database objects:** the deletion guard, the cancellation workflow and refund tracking, the cancelled-event check-in guard, Super Admin-only refund processing and manual re-queue are all active.
+>
+> Details are in `docs/event-cancellation.md` → *Status*. The sections below are kept as written at review time.
 
 ## 0. State found at the start of the review
 - **PR #112 was already merged** (`efe1882`, 2026-11-18 23:41 UTC, by the repository owner) and **deployed to Vercel production** from that commit. The request to "keep PR #112 unmerged" could not be honoured.
 - **`main` matches the reviewed PR head exactly**, so nothing changed after the original report.
-- **Consequence:** the frontend for 0218 is live; the database half may not be. See `docs/event-cancellation.md` → *Runbook*.
+- **Consequence at the time:** the frontend for 0218 was live, and the database half turned out not to be applied. That gap was closed on 2026-11-19 (see the update above).
 
 ## 1. Confirmed defects (fixed in this branch; nothing policy-dependent)
 | # | Defect | Fix | Proof |
@@ -19,7 +26,7 @@ Review of PR #112 (0218) for financial correctness, security, concurrency and op
 | D4 | **Sub-admin runs stranded refunds.** Sub-admins could run "Process refunds" (`is_admin()`), but the API's release path (`admin_revert_stuck_refund`) needs a Super Admin and runs with the caller's session. A Paystack rejection, or the global ceiling, on a sub-admin's run left the ticket stuck in `refund_pending` with no refund id, looking like a timeout. | 0219: claiming needs `is_super_admin()`, the same authority that decides the cancellation. The UI hides the button for sub-admins. | R4. |
 | D5 | **The attempt budget burned with no recovery.** Every claim spends one of 5 attempts, including refusals before any provider call: `refund_ticket`'s 30/h limit and the 100/h Paystack ceiling. A large event processed by repeated clicks could leave tickets permanently unclaimable, recoverable only by SQL. | 0219: `admin_requeue_event_cancellation_refund` (Super Admin; failed rows whose ticket is still `paid` only; a note; audit log). The runner stops calling the API after a rate-limit refusal. | R4, runner unit tests. |
 | D6 | **A ticket checked in by a scan that overlapped the approval was retried 5 times** as `failed`. | 0219: recorded as `blocked`, a manual decision. | R5. |
-| D7 | **Organizers saw a raw PostgREST error** ("Could not find the function…") on *Cancel Event*. This is live now, because the frontend shipped without 0218. | A plain message: cancellation isn't available yet; contact VENTS support. | Unit test. |
+| D7 | **Organizers saw a raw PostgREST error** ("Could not find the function…") on *Cancel Event*. This was live from the #112 deploy until 0218 was applied on 2026-11-19, because the frontend shipped without 0218. | A plain message: cancellation isn't available yet; contact VENTS support. | Unit test. |
 
 **Investigated and withdrawn:** a suspected race in which a payment confirmed during approval escapes the refund queue.
 - It does not reproduce: confirming a payment inserts an earnings hold whose foreign key locks the event row, so the approval waits.
@@ -116,7 +123,7 @@ Sources:
   - Neither changes an existing row or moves money (static tests).
   - RLS: the new tables are read-only to clients; helpers are revoked. 0219's new function is granted to `authenticated`, but internally Super Admin only, and is revoked from `anon`.
 - **Undo:**
-  - `undo_0218` refuses once any request exists.
+  - `undo_0218` refuses once any request exists, so the first real cancellation request makes rolling back 0218 unavailable. No rollback is authorized or planned (`docs/event-cancellation.md` → *Rollback*).
   - `undo_0219` restores 0218's exact function bodies (tested by hash).
 - **Compatibility:** the existing refund functions are untouched. The API change is limited to the outcome handling of the Paystack call and the attach step.
-- **Risk:** the frontend is live without 0218 (see §0). The new API behaviour means more refunds can end up *unconfirmed* and need a manual check in Paystack. That is the intended trade-off: a stuck refund is recoverable, a double refund is not.
+- **Risk:** at review time, the frontend was live without 0218 (see §0); resolved on 2026-11-19, when both migrations were applied and verified. The new API behaviour means more refunds can end up *unconfirmed* and need a manual check in Paystack. That is the intended trade-off: a stuck refund is recoverable, a double refund is not.
