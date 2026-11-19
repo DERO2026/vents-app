@@ -50,3 +50,41 @@ describe('0220: safe to apply and to roll back', () => {
     expect(undo).toContain("still carries [0220] text after restoring; refusing");
   });
 });
+
+// The database harness must keep exercising the REAL functions. These pin the
+// fidelity fixes of the I-1R review so a later edit cannot quietly fall back
+// to simulating a transfer, pre-finalizing a wallet purchase, or dropping the
+// mutation mode. (The harness itself proves the behaviour; this only pins its shape.)
+describe('0220 harness fidelity (scripts/local-pg-test)', () => {
+  const h = read('scripts/local-pg-test/run-ticket-integrity-verification.sh');
+  const mut = read('scripts/local-pg-test/run-ticket-integrity-mutation-test.sh');
+  it('transfers go through initiate_ticket_transfer / accept_ticket_transfer / confirm_transfer_fee_payment, never a direct ownership UPDATE', () => {
+    for (const f of ['initiate_ticket_transfer(', 'accept_ticket_transfer(', 'initiate_transfer_fee_payment(', 'confirm_transfer_fee_payment(']) {
+      expect(h).toContain(`public.${f}`);
+    }
+    expect(h).not.toMatch(/UPDATE public\.tickets SET user_id/);
+  });
+  it('the only direct ticket writes are the three labelled test-state setups', () => {
+    expect(h.match(/UPDATE public\.tickets SET/g)?.length).toBe(3);
+  });
+  it('a wallet purchase is never pre-finalized by the harness', () => {
+    const walletHelpers = h.slice(h.indexOf('wallet_start() {'), h.indexOf('buy_wallet() {'));
+    expect(walletHelpers).toContain('confirm_ticket_payment_via_wallet');
+    expect(walletHelpers).not.toContain('finalize_pending_purchase');
+  });
+  it('the drift test drifts generate_ticket_token, applies 0220 in one transaction, and asserts nothing was patched', () => {
+    expect(h).toContain("pg_get_functiondef('public.generate_ticket_token(uuid)'::regprocedure)");
+    expect(h).toContain('-1 -f "$MIG/0220_ticket_payment_integrity.sql"');
+    expect(h).toContain('public.generate_ticket_token(uuid) is not the expected version (anchor 1 not found exactly once)');
+  });
+  it('function attributes and grants are read from pg_proc and compared before and after', () => {
+    expect(h).toContain('aclexplode(p.proacl)');
+    expect(h).toContain('"$(attrs)" "$ATTRS_BEFORE"');
+  });
+  it('the mutation test requires exactly the [0220]-tagged checks to fail without 0220', () => {
+    expect(h).toContain('WITHOUT_0220');
+    expect(mut).toContain('WITHOUT_0220=1 bash "$HARNESS"');
+    expect(mut).toContain('comm -23 "$TMP/tagged" "$TMP/failed"');
+    expect(mut).toContain('comm -13 "$TMP/tagged" "$TMP/failed"');
+  });
+});

@@ -33,13 +33,45 @@ Each function is patched **in place** from `pg_get_functiondef`. Each anchor mus
 **Rollback:** `supabase/rollback/undo_0220.sql`, gated by `SET vents.rollback_confirm = 'undo-0220'`. It restores the exact prior bodies (verified locally by hash).
 
 ## Verification
-`scripts/local-pg-test/run-ticket-integrity-verification.sh`: 60 checks.
-- **Before 0220:** reproduces the defect. An unpaid ticket is minted, signed, and checked in by QR and manually.
-- **After 0220:** free, 100%-promo, Paystack and wallet tickets work; transfers work; cancelled and refunded tickets are refused; duplicates are refused; the capacity race holds; the 0218/0219 guards hold; undo and re-apply work; drift is refused.
+Both commands run against a local PostgreSQL over its Unix socket (start it with `sudo pg_ctlcluster 16 main start`). They create and always drop the throwaway database `vents_local_pg_ticket_integrity`.
 
-With 0220 removed, 17 checks fail.
+```bash
+scripts/local-pg-test/run-ticket-integrity-verification.sh      # 141 checks, with 0220
+scripts/local-pg-test/run-ticket-integrity-mutation-test.sh     # with and without 0220
+```
 
-The static pin is `src/lib/ticketPaymentIntegrity.security.test.ts`.
+**Mutation test.** It runs the harness twice:
+- **With 0220:** all 141 checks must pass.
+- **Without 0220** (`WITHOUT_0220=1`): 0220 is not applied, and the 23 migration-mechanics checks are skipped. The run must reproduce the hole. Exactly the 18 checks tagged `[0220]` must fail: no fewer, so each one detects the missing fix; and no more, so every other check covers behaviour that doesn't depend on 0220.
+
+**What the harness covers.** Every scenario calls the real database functions:
+- **Fidelity:** each function the harness loads is re-checked, byte for byte, against its latest migration (`check-verbatim-functions.py`).
+- **Reproduction** of the defect before 0220.
+- **Direct purchases:** a paid tier is refused; free and 100%-promo tickets are still issued.
+- **Paystack and Someone Else Pays:** `create_pending_purchase` → `finalize_pending_purchase` → `confirm_ticket_payment`.
+- **VENTS Wallet:** the wallet function's first call (no pre-finalize); retry; a refused purchase that rolls back completely; insufficient balance then top-up; two simultaneous first calls.
+- **Transfers:** `initiate_ticket_transfer` → `accept_ticket_transfer` (refuses until the fee is paid) → `initiate_transfer_fee_payment` → `confirm_transfer_fee_payment`, plus refusals for unpaid, checked-in, refunded, refund-pending and cancelled tickets.
+- **Refunds and reversal:** wallet refund; Paystack refund in flight; `admin_revert_stuck_refund`; the `fail_ticket_refund` and `finalize_ticket_refund` webhooks.
+- **QR passes:** tampered signature, wrong secret, expiry.
+- **Duplicates and concurrent check-in:** one session holds the row lock while a second one waits; also five simultaneous double scans.
+- **Capacity and cancellation:** the capacity race; the 0218/0219 guards.
+- **Function attributes:** owner, SECURITY DEFINER, `search_path` and the full ACL, read from `pg_proc` before and after 0220, after undo, and after a refused apply. Anon is refused at call time.
+- **Undo and drift:** undo; then drift of `generate_ticket_token`, where 0220 refuses, names that function, and leaves every function exactly as it was.
+
+**Set directly, as labelled test setup, not through a product function:**
+- users, events and promo codes;
+- one wallet top-up;
+- the reset of the reproduction check-ins;
+- one `failed` payment;
+- one deliberately inconsistent cancelled-but-paid ticket. No product path produces it.
+
+**Not under test:** rate limits (`check_rate_limit` is a local no-op stub) and VENTS Cents accounting (`award_vc_reward` is a stub).
+
+**Static checks.** `src/lib/ticketPaymentIntegrity.security.test.ts` pins the 0220 text and the harness's fidelity rules: no simulated transfers, no wallet pre-finalize, the drift test, and the mutation comparison.
+
+**Apply 0220 in one transaction.** Applied in one transaction, a drift refusal rolls back every patch; the harness proves this. Applied statement by statement (`psql -f` without `-1`), the same refusal leaves the earlier functions patched. `undo_0220` cleans that partial state up, as the harness shows.
+
+**Existing behaviour, not changed by 0220.** A wallet payment refused for insufficient balance leaves its ticket created and `pending`. 0220 makes that ticket unusable until the same checkout is paid; paying it then confirms the same ticket, with no duplicate.
 
 ## Open decisions (owner)
 1. **Existing pending tickets.** Any unpaid tickets already minted through the hole still exist and still count toward capacity. After 0220 they no longer admit anyone. Whether to count, cancel or keep them is a business decision. Counting them in production needs explicit authorization (an aggregate read only).
