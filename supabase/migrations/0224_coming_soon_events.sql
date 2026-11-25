@@ -35,7 +35,8 @@
 --     transaction delivers one 'event_update' notification to every
 --     subscriber not yet notified (push follows from the existing
 --     notifications trigger). Called by:
---       - pg_cron every minute (open_due_event_sales), when pg_cron exists;
+--       - pg_cron every minute (open_due_event_sales); 0224 enables pg_cron
+--         and refuses to apply if it cannot (see the end of this file);
 --       - the Vercel daily cron (api/cron/run.ts) as a backstop;
 --       - the app, lazily, when someone views a Coming Soon event whose time
 --         has passed -- so a missed or delayed job heals itself.
@@ -45,7 +46,9 @@
 --     notified_at makes delivery exactly-once: a row is marked and its
 --     notification written in one statement, inside the transaction that
 --     opens sales.
---   * events_sales_schedule_guard (trigger, client writes only):
+--   * events_sales_schedule_guard (trigger). Privileged writes that set a
+--     scheduled event live without going through open_event_sales (e.g.
+--     admin_restore_deleted_event) keep it Coming Soon. Client writes:
 --       - a scheduled event cannot be set 'live' directly (so sales cannot
 --         open early and subscribers are never skipped); use open_event_sales;
 --       - a sales time can only be moved to another future time, never
@@ -174,9 +177,21 @@ CREATE OR REPLACE FUNCTION public.events_sales_schedule_guard()
  SET search_path TO ''
 AS $function$
 BEGIN
-  -- Only client (PostgREST) writes are restricted. open_event_sales and the
-  -- other SECURITY DEFINER functions run as their owner and pass through.
-  IF current_user <> 'authenticated' THEN RETURN NEW; END IF;
+  -- Privileged paths (SECURITY DEFINER functions, project_admin, maintenance
+  -- SQL) are not refused, but a scheduled event still never goes on sale
+  -- except through event_open_sales_core, which marks the one event it is
+  -- opening (transaction-local). Anything else that sets it live -- e.g.
+  -- admin_restore_deleted_event (0004), which always restores as 'live' --
+  -- keeps it Coming Soon instead; the scheduler then opens it at its time
+  -- and notifies its subscribers.
+  IF current_user <> 'authenticated' THEN
+    IF TG_OP = 'UPDATE' AND NEW.status = 'live' AND OLD.status IS DISTINCT FROM 'live'
+       AND NEW.sales_open_at IS NOT NULL
+       AND current_setting('vents.event_sales_opening', true) IS DISTINCT FROM NEW.id::text THEN
+      NEW.status := 'coming_soon';
+    END IF;
+    RETURN NEW;
+  END IF;
 
   IF TG_OP = 'INSERT' THEN
     IF NEW.sales_open_at IS NOT NULL AND NEW.sales_open_at <= now() THEN
@@ -261,7 +276,12 @@ BEGIN
     RETURN jsonb_build_object('opened', false, 'reason', 'ended');
   END IF;
 
+  -- The marker lets events_sales_schedule_guard tell this sanctioned
+  -- opening apart from any other privileged write (transaction-local,
+  -- cleared right after).
+  PERFORM set_config('vents.event_sales_opening', e.id::text, true);
   UPDATE public.events SET status = 'live' WHERE id = e.id;
+  PERFORM set_config('vents.event_sales_opening', '', true);
 
   -- Exactly once per subscriber: the marking and the notification are one
   -- statement in the transaction that opened sales. A retry finds nothing
@@ -372,7 +392,11 @@ DECLARE
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'Sign in to get notified when tickets go on sale'; END IF;
   PERFORM public.check_rate_limit('event_sale_alert:' || v_uid::text, 30, 60);
-  SELECT status, deleted_at, hidden_by_admin, cancelled_at INTO e FROM public.events WHERE id = p_event_id;
+  -- FOR SHARE serializes with event_open_sales_core's FOR UPDATE: a
+  -- subscription racing the opening either commits first (and is notified
+  -- by it) or waits and then sees the event on sale -- never a row the
+  -- fan-out missed.
+  SELECT status, deleted_at, hidden_by_admin, cancelled_at INTO e FROM public.events WHERE id = p_event_id FOR SHARE;
   IF NOT FOUND OR e.deleted_at IS NOT NULL OR e.hidden_by_admin OR e.cancelled_at IS NOT NULL THEN
     RAISE EXCEPTION 'Event not found';
   END IF;
@@ -423,16 +447,44 @@ REVOKE ALL ON FUNCTION public.get_my_event_sale_alert_counts() FROM PUBLIC, anon
 GRANT EXECUTE ON FUNCTION public.get_my_event_sale_alert_counts() TO authenticated, project_admin;
 
 -- ---------------------------------------------------------------------------
--- Scheduler: every minute inside the database when pg_cron is installed
--- (not installed by this migration). The Vercel daily cron and the app's
--- lazy open_event_sales call are the backstops either way.
+-- Scheduler: pg_cron, every minute, inside the database.
+--
+-- Production does not have pg_cron enabled today (LAUNCH_CHECKLIST.md,
+-- "Extensions": no pg_cron; 0198 header: no cron schema), and Vercel is on
+-- the Hobby plan (daily crons only). Without this, a Coming Soon event could
+-- open up to ~24 hours late. So this migration ENABLES pg_cron -- the
+-- documented Supabase method (supabase.com/docs/guides/cron/install) -- and
+-- REFUSES TO APPLY if it cannot register the job: a Coming Soon feature
+-- that opens a day late is not shipped silently.
+--
+-- Result: sales open within about a minute of sales_open_at. Backstops: the
+-- Vercel daily cron (api/cron/run.ts) and the app's lazy open_event_sales
+-- call when someone views a due event. A late job only ever opens LATE,
+-- never early. pg_cron never runs two instances of the same job at once,
+-- and event_open_sales_core's row lock makes overlap harmless anyway.
+--
+-- Approving 0224 therefore also approves enabling the pg_cron extension.
 -- ---------------------------------------------------------------------------
 DO $cron$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    EXECUTE $q$SELECT cron.schedule('vents_open_due_event_sales', '* * * * *', 'SELECT public.open_due_event_sales(200)')$q$;
-  ELSE
-    RAISE NOTICE '0224: pg_cron is not installed; due Coming Soon events open via the Vercel cron and when viewed in the app';
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+      RAISE EXCEPTION '0224 refused: pg_cron is not available on this database, so Coming Soon events could not open on time';
+    END IF;
+    CREATE EXTENSION pg_cron WITH SCHEMA pg_catalog;
+  END IF;
+  EXECUTE 'GRANT USAGE ON SCHEMA cron TO postgres';
+  EXECUTE 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA cron TO postgres';
+
+  -- cron.schedule(name, ...) creates or updates the named job (idempotent).
+  EXECUTE $q$SELECT cron.schedule('vents_open_due_event_sales', '* * * * *', 'SELECT public.open_due_event_sales(200)')$q$;
+  -- Keep the job's own run log small (one row a minute): 7 days, this job only.
+  EXECUTE $q$SELECT cron.schedule('vents_open_due_event_sales_log_cleanup', '17 3 * * *',
+    $j$DELETE FROM cron.job_run_details WHERE jobid IN (SELECT jobid FROM cron.job WHERE jobname = 'vents_open_due_event_sales') AND end_time < now() - interval '7 days'$j$)$q$;
+
+  IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'vents_open_due_event_sales'
+                  AND schedule = '* * * * *' AND command = 'SELECT public.open_due_event_sales(200)' AND active) THEN
+    RAISE EXCEPTION '0224 refused: the per-minute Coming Soon job was not registered';
   END IF;
 END
 $cron$;

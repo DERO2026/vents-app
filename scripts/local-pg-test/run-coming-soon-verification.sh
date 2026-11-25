@@ -40,12 +40,12 @@ server_check="$(pg -d postgres -tA -c "SELECT (inet_server_addr() IS NULL)::text
 [ "$server_check" = "true/true" ] || die "connection is not a local, non-Supabase PostgreSQL server ($server_check)."
 
 TMP=$(mktemp -d); OUT="$TMP/out"; ERR="$TMP/err"; PAYSTACK_LOG="$TMP/paystack_refund_calls"; : >"$PAYSTACK_LOG"
-cleanup() { rm -rf "$TMP"; pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1 || true; }
+cleanup() { rm -rf "$TMP"; pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME WITH (FORCE);" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 
 TMP=$(mktemp -d); OUT="$TMP/out"; ERR="$TMP/err"
-cleanup() { rm -rf "$TMP"; pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1 || true; }
+cleanup() { rm -rf "$TMP"; pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME WITH (FORCE);" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 ORG="00000000-0000-0000-0000-0000000d0a01"; ORG2="00000000-0000-0000-0000-0000000d0a02"
@@ -85,7 +85,7 @@ pending() {  # pending <buyer> <event> <ticket type> -> payment_ref (or error te
 }
 
 echo "== Building throwaway database $DB_NAME (0201 -> 0219 + production purchase functions) =="
-pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" -c "CREATE DATABASE $DB_NAME;"
+pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME WITH (FORCE);" -c "CREATE DATABASE $DB_NAME;"
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-vents-earn.sql" >/dev/null
 for m in 0193_vents_earn_foundation 0196_recruiter_invite_target_uses_organizer_capability 0197_vents_earn_notifications_use_valid_type; do
   "${PSQL[@]}" -q -f "$MIG/$m.sql" >/dev/null
@@ -172,7 +172,6 @@ expect_error "precheck refuses if a purchase function stops refusing non-live ev
   "BEGIN; CREATE OR REPLACE FUNCTION public.purchase_ticket(p_event_id uuid) RETURNS void LANGUAGE sql AS 'SELECT NULL'; $(cat "$MIG/0224_coming_soon_events.sql") ROLLBACK;"
 expect_value "the refused attempt changed nothing" "$(val "SELECT count(*) FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'sales_open_at';")" "0"
 expect_ok "0224 applies in one transaction on top of 0201-0219" "BEGIN; $(cat "$MIG/0224_coming_soon_events.sql") COMMIT;"
-"${PSQL[@]}" -q -c "GRANT EXECUTE ON FUNCTION public.open_due_event_sales(integer) TO postgres;"
 
 echo "== Lifecycle: create Coming Soon (same id through every transition) =="
 EV1=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '2 days'" "Afrobeats Live")
@@ -333,6 +332,24 @@ R2=$(val "SELECT public.open_due_event_sales(50)::text;")
 expect_value "the racing anon call waited on the row lock and found it already open" "$(j "$R" '.reason')" "already_open"
 expect_value "exactly one notification per subscriber after the race" "$(notes "$C")" "3"
 
+echo "== Notify me racing the opening: nobody is missed =="
+RA=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '1 day'" "Race subscribe A")
+make_due "$RA"
+# The opening holds the event row; a subscription arriving meanwhile waits, then sees it on sale.
+( "${PSQL[@]}" -q -c "BEGIN; SELECT public.event_open_sales_core('$RA', false); SELECT pg_sleep(1.5); COMMIT;" >/dev/null 2>&1 & )
+sleep 0.4
+"${PSQL[@]}" -c "$(as "$U3" "SELECT public.subscribe_event_sale_alert('$RA');")" >/dev/null 2>"$ERR" || true
+sleep 1.5
+if grep -q "already on sale" "$ERR"; then pass "a subscription during the opening waited, then was told tickets are on sale"; else fail "subscription during opening not serialized"; cat "$ERR" >&2; fi
+expect_value "no orphan (never-notified) subscription was left behind" "$(val "SELECT count(*) FROM public.event_sale_alerts WHERE event_id = '$RA' AND notified_at IS NULL;")" "0"
+RB=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '1 day'" "Race subscribe B")
+make_due "$RB"
+# A subscription in flight holds a share lock; the opening waits for it, then notifies it.
+( "${PSQL[@]}" -q -c "$(as "$U3" "BEGIN; SELECT public.subscribe_event_sale_alert('$RB'); SELECT pg_sleep(1.5); COMMIT;")" >/dev/null 2>&1 & )
+sleep 0.4
+R=$(open_anon "$RB"); sleep 0.3
+expect_value "an opening during a subscription waited for it and notified that subscriber" "$(j "$R" '.opened,.notified' | tr '\n' /)" "true/1/"
+
 echo "== Opening: a hidden-as-draft scheduled event =="
 DH=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '1 day'" "Draft hidden G")
 "${PSQL[@]}" -q -c "$(as "$ORG" "UPDATE public.events SET status = 'draft' WHERE id = '$DH';")"
@@ -342,11 +359,166 @@ R=$(open_anon "$DH"); expect_value "a stranger cannot open a draft" "$(j "$R" '.
 R=$(open_as "$ORG2" "$DH"); expect_value "another organizer cannot open it" "$(j "$R" '.reason')" "not_scheduled"
 R=$(open_as "$ORG" "$DH"); expect_value "its organizer can open it once due" "$(j "$R" '.opened')/$(status "$DH")" "true/live"
 
+echo "== Privileged paths can't open sales either (only open_event_sales can) =="
+python3 - "$MIG/0004_functions.sql" > "$TMP/restore.sql" <<'PY'
+import re,sys
+t=open(sys.argv[1]).read()
+for n in ['is_admin_or_root','admin_restore_deleted_event']:
+    m=list(re.finditer(r'CREATE OR REPLACE FUNCTION public\.'+n+r'\([\s\S]*?AS \$function\$[\s\S]*?\$function\$',t))
+    if m: print(m[-1].group(0)+';')
+PY
+"${PSQL[@]}" -q < "$TMP/restore.sql"
+RS=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '2 days'" "Restore me")
+"${PSQL[@]}" -q -c "$(as "$U1" "SELECT public.subscribe_event_sale_alert('$RS');")" >/dev/null
+"${PSQL[@]}" -q -c "$(as "$ORG" "SELECT public.soft_delete_event('$RS', 'oops');")" >/dev/null 2>&1 || "${PSQL[@]}" -q -c "UPDATE public.events SET deleted_at = now(), status = 'draft' WHERE id = '$RS';"
+expect_value "deleted Coming Soon event is a deleted draft" "$(val "SELECT status || '/' || (deleted_at IS NOT NULL) FROM public.events WHERE id = '$RS';")" "draft/true"
+expect_ok "admin restores it (verbatim 0004 admin_restore_deleted_event, which sets status 'live')" "$(as "$ADMIN" "SELECT public.admin_restore_deleted_event('$RS');")"
+expect_value "it comes back as Coming Soon, NOT on sale before its time" "$(status "$RS")" "coming_soon"
+expect_value "... and nobody was notified" "$(notes "$RS")" "0"
+expect_error "... so it still can't be bought" "not currently open for ticket purchases" "$(as "$U2" "SELECT public.create_pending_purchase('$RS', 'Regular', '[{\"name\": \"A\"}]'::jsonb, NULL, NULL);")"
+PLAIN_DEL=$(create "$ORG" draft "now() + interval '30 days'" NULL "Plain deleted")
+"${PSQL[@]}" -q -c "UPDATE public.events SET deleted_at = now() WHERE id = '$PLAIN_DEL';"
+expect_ok "restoring an ordinary deleted event (no schedule)" "$(as "$ADMIN" "SELECT public.admin_restore_deleted_event('$PLAIN_DEL');")"
+expect_value "... still goes live exactly as before (unchanged behaviour)" "$(status "$PLAIN_DEL")" "live"
+expect_ok "the table owner (maintenance SQL; the role SECURITY DEFINER functions run as) setting a scheduled event live" "UPDATE public.events SET status = 'live' WHERE id = '$RS';"
+expect_value "... keeps it Coming Soon" "$(status "$RS")" "coming_soon"
+expect_ok "even with the opening marker set for a DIFFERENT event" "SELECT set_config('vents.event_sales_opening', '$EV1', false); UPDATE public.events SET status = 'live' WHERE id = '$RS';"
+expect_value "... it stays Coming Soon" "$(status "$RS")" "coming_soon"
+expect_error "a client that sets the marker itself is still refused" "open at the scheduled time" "$(as "$ORG" "SELECT set_config('vents.event_sales_opening', '$RS', false); UPDATE public.events SET status = 'live' WHERE id = '$RS';")"
+make_due "$RS"
+R=$(open_anon "$RS"); expect_value "when due, open_event_sales opens it and notifies its subscriber once" "$(j "$R" '.opened,.notified' | tr '\n' /)" "true/1/"
+
+echo "== Scheduler: the real pg_cron job (every minute) =="
+expect_value "0224 enabled pg_cron" "$(val "SELECT count(*) FROM pg_extension WHERE extname = 'pg_cron';")" "1"
+expect_value "the job is registered every minute, calling open_due_event_sales(200), active" \
+  "$(val "SELECT schedule || '|' || command || '|' || active FROM cron.job WHERE jobname = 'vents_open_due_event_sales';")" "* * * * *|SELECT public.open_due_event_sales(200)|true"
+expect_value "its run log is pruned daily (this job's rows only)" "$(val "SELECT count(*) FROM cron.job WHERE jobname = 'vents_open_due_event_sales_log_cleanup' AND command LIKE '%jobname = ''vents_open_due_event_sales''%';")" "1"
+SCH=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '1 day'" "Scheduled by cron")
+LATER=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '1 day'" "Not due yet")
+for u in "$U1" "$U2"; do "${PSQL[@]}" -q -c "$(as "$u" "SELECT public.subscribe_event_sale_alert('$SCH');")" >/dev/null; done
+make_due "$SCH"
+RUNS_BEFORE=$(val "SELECT count(*) FROM cron.job_run_details d JOIN cron.job j USING (jobid) WHERE j.jobname = 'vents_open_due_event_sales';")
+echo "   (waiting for pg_cron's next minute tick, up to 75s)"
+for i in $(seq 1 75); do [ "$(status "$SCH")" = "live" ] && break; sleep 1; done
+expect_value "pg_cron opened the due event on its own, within a minute" "$(status "$SCH")" "live"
+expect_value "... and notified its two subscribers exactly once" "$(notes "$SCH")" "2"
+expect_value "... the run is recorded as succeeded" "$(val "SELECT count(*) > $RUNS_BEFORE AND bool_and(status = 'succeeded') FROM cron.job_run_details d JOIN cron.job j USING (jobid) WHERE j.jobname = 'vents_open_due_event_sales';")" "t"
+expect_value "the same run left a not-yet-due event closed (never early)" "$(status "$LATER")" "coming_soon"
+
 echo "== Grants =="
 expect_value "anon cannot run the scheduler" "$(val "SELECT has_function_privilege('anon', 'public.open_due_event_sales(integer)', 'EXECUTE');")" "f"
 expect_value "authenticated cannot run the scheduler" "$(val "SELECT has_function_privilege('authenticated', 'public.open_due_event_sales(integer)', 'EXECUTE');")" "f"
 expect_value "nobody calls the core opener directly" "$(val "SELECT has_function_privilege('authenticated', 'public.event_open_sales_core(uuid,boolean)', 'EXECUTE') OR has_function_privilege('anon', 'public.event_open_sales_core(uuid,boolean)', 'EXECUTE');")" "f"
 expect_value "anon cannot subscribe" "$(val "SELECT has_function_privilege('anon', 'public.subscribe_event_sale_alert(uuid)', 'EXECUTE');")" "f"
+
+echo "== 0225: promotions -- production shape before the fix (verbatim 0002/0005/0007/0008/0012/0181 + 0180/0090/0182) =="
+"${PSQL[@]}" -q <<SQL
+CREATE TABLE public.event_promotions (id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, event_id uuid NOT NULL, organizer_id uuid NOT NULL, plan_type text NOT NULL, start_date timestamptz NOT NULL, end_date timestamptz NOT NULL, status text NOT NULL DEFAULT 'active'::text, created_at timestamptz NOT NULL DEFAULT now(), payment_ref text);
+ALTER TABLE public.event_promotions ADD CONSTRAINT event_promotions_plan_type_check CHECK ((plan_type = ANY (ARRAY['featured'::text, 'trending'::text, 'boosted'::text])));
+ALTER TABLE public.event_promotions ADD CONSTRAINT event_promotions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'expired'::text, 'pending'::text])));
+CREATE UNIQUE INDEX idx_event_promotions_payment_ref ON public.event_promotions USING btree (payment_ref);
+ALTER TABLE public.event_promotions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY delete_event_promotions ON public.event_promotions FOR DELETE TO authenticated USING ((organizer_id = ( SELECT auth.uid() AS uid)));
+CREATE POLICY insert_event_promotions ON public.event_promotions FOR INSERT TO authenticated WITH CHECK (((organizer_id = ( SELECT auth.uid() AS uid)) AND (event_id IN ( SELECT events.id
+   FROM public.events
+  WHERE (events.organizer_id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY update_event_promotions ON public.event_promotions FOR UPDATE TO authenticated USING ((organizer_id = ( SELECT auth.uid() AS uid))) WITH CHECK ((organizer_id = ( SELECT auth.uid() AS uid)));
+CREATE POLICY select_event_promotions ON public.event_promotions FOR SELECT TO authenticated USING (organizer_id = (SELECT auth.uid()));
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.event_promotions TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.event_promotions TO project_admin;
+SQL
+python3 - "$MIG" > "$TMP/promo_fns.sql" <<'PY'
+import re,sys
+m=sys.argv[1]
+for n,f in [('activate_event_promotion','0180_reject_boosted_event_promotion_activation'),('admin_set_event_featured','0090_harden_event_featuring'),('admin_set_event_trending','0182_admin_manual_trending_control')]:
+    t=open(f'{m}/{f}.sql').read()
+    print(list(re.finditer(r'CREATE OR REPLACE FUNCTION public\.'+n+r'\([\s\S]*?AS \$function\$[\s\S]*?\$function\$',t))[-1].group(0)+';')
+PY
+"${PSQL[@]}" -q < "$TMP/promo_fns.sql"
+# Production grants, verbatim (0137, 0090, 0182).
+"${PSQL[@]}" -q <<'SQL'
+REVOKE ALL ON FUNCTION public.activate_event_promotion(uuid, text, integer, text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.activate_event_promotion(uuid, text, integer, text, uuid) TO project_admin;
+REVOKE ALL ON FUNCTION public.admin_set_event_featured(uuid, boolean, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_set_event_featured(uuid, boolean, integer) TO authenticated, project_admin;
+REVOKE ALL ON FUNCTION public.admin_set_event_trending(uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_set_event_trending(uuid, boolean) TO authenticated, project_admin;
+SQL
+"${PSQL[@]}" -q -c "ALTER TABLE public.admin_logs ALTER COLUMN admin_id DROP NOT NULL;" 2>/dev/null || true
+P_LIVE=$(create "$ORG" live "now() + interval '30 days'" NULL "Promo live")
+P_DRAFT=$(create "$ORG" draft "now() + interval '30 days'" NULL "Promo draft")
+P_CS=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '2 days'" "Promo coming soon")
+P_HID=$(create "$ORG" live "now() + interval '30 days'" NULL "Promo hidden")
+P_END=$(create "$ORG" live "now() + interval '30 days'" NULL "Promo ended")
+P_DEL=$(create "$ORG" live "now() + interval '30 days'" NULL "Promo deleted")
+"${PSQL[@]}" -q -c "UPDATE public.events SET hidden_by_admin = true WHERE id = '$P_HID';" -c "UPDATE public.events SET event_date = now() - interval '3 days' WHERE id = '$P_END';" -c "UPDATE public.events SET deleted_at = now() WHERE id = '$P_DEL';"
+activate() { printf "SELECT public.activate_event_promotion('%s', '%s', 7, '%s', '%s');" "$1" "$2" "$3" "${4:-$ORG}"; }
+# The holes, demonstrated on the pre-0225 definitions (each rolled back).
+expect_ok "BEFORE 0225: an organizer can INSERT a free 'active' trending promotion row directly (the hole)" \
+  "BEGIN; $(as "$ORG" "INSERT INTO public.event_promotions (event_id, organizer_id, plan_type, start_date, end_date, status) VALUES ('$P_LIVE', '$ORG', 'trending', now(), now() + interval '30 days', 'active');") ROLLBACK;"
+expect_ok "BEFORE 0225: the paid path activates Featured on a Coming Soon event (the hole)" "BEGIN; $(activate "$P_CS" featured REF_HOLE) ROLLBACK;"
+PIN_BEFORE=$(val "SELECT string_agg(proname || ':' || md5(prosrc), ',' ORDER BY proname) FROM pg_proc WHERE proname IN ('activate_event_promotion','admin_set_event_featured','admin_set_event_trending');")
+
+echo "== 0225: precheck and apply =="
+expect_error "0225 refuses if a pinned function drifted from the repo definition" "differs from the definition this migration was written against" \
+  "BEGIN; CREATE OR REPLACE FUNCTION public.admin_set_event_featured(p_event_id uuid, p_featured boolean, p_duration_days integer DEFAULT 14) RETURNS void LANGUAGE sql AS 'SELECT NULL'; $(cat "$MIG/0225_promotion_eligibility.sql") ROLLBACK;"
+expect_ok "0225 applies in one transaction" "BEGIN; $(cat "$MIG/0225_promotion_eligibility.sql") COMMIT;"
+expect_error "a second apply refuses (pins now differ): 0225 never silently re-runs over a changed body" "differs from the definition" "BEGIN; $(cat "$MIG/0225_promotion_eligibility.sql") ROLLBACK;"
+
+echo "== 0225: the paid path (activate_event_promotion) =="
+expect_ok "eligible live event: Featured activates as before" "$(activate "$P_LIVE" featured REF_OK1)"
+expect_value "... promotion row written and the event featured (unchanged behaviour)" "$(val "SELECT (SELECT count(*) FROM public.event_promotions WHERE payment_ref = 'REF_OK1' AND status = 'active' AND plan_type = 'featured') || '/' || (SELECT is_featured AND featured_until > now() + interval '6 days' FROM public.events WHERE id = '$P_LIVE');")" "1/true"
+expect_ok "eligible live event: Trending activates as before" "$(activate "$P_LIVE" trending REF_OK2)"
+expect_ok "a replayed reference is still a no-op" "$(activate "$P_LIVE" featured REF_OK1)"
+"${PSQL[@]}" -q -c "$(as "$ORG" "UPDATE public.events SET status = 'draft' WHERE id = '$P_LIVE';")"
+expect_ok "... even after the event stops being eligible (a retry never errors)" "$(activate "$P_LIVE" featured REF_OK1)"
+expect_value "replays wrote nothing new" "$(val "SELECT count(*) FROM public.event_promotions WHERE event_id = '$P_LIVE';")" "2"
+"${PSQL[@]}" -q -c "$(as "$ORG" "UPDATE public.events SET status = 'live' WHERE id = '$P_LIVE';")"
+for case in "$P_DRAFT:not_on_sale:draft" "$P_CS:not_on_sale:Coming Soon" "$CXL:cancelled:cancelled" "$P_HID:hidden_by_admin:admin-hidden" "$P_END:ended:ended" "$P_DEL:deleted:deleted"; do
+  ev="${case%%:*}"; rest="${case#*:}"; reason="${rest%%:*}"; label="${rest#*:}"
+  expect_error "paid Featured refused for a $label event ($reason)" "not eligible for promotion ($reason)" "$(activate "$ev" featured "REF_F_$reason")"
+  expect_error "paid Trending refused for a $label event ($reason)" "not eligible for promotion ($reason)" "$(activate "$ev" trending "REF_T_$reason")"
+done
+expect_value "refusals wrote no promotion row and featured nothing" "$(val "SELECT (SELECT count(*) FROM public.event_promotions WHERE payment_ref LIKE 'REF_F_%' OR payment_ref LIKE 'REF_T_%') || '/' || (SELECT count(*) FROM public.events WHERE is_featured AND id <> '$P_LIVE');")" "0/0"
+expect_error "ownership check unchanged" "You do not own this event" "$(activate "$P_LIVE" featured REF_X "$ORG2")"
+expect_value "no client can call the paid path (0137 grants unchanged)" "$(val "SELECT has_function_privilege('authenticated', 'public.activate_event_promotion(uuid,text,integer,text,uuid)', 'EXECUTE');")" "f"
+
+echo "== 0225: admin Featured / Trending =="
+expect_error "admin cannot feature a Coming Soon event" "not eligible for promotion (not_on_sale)" "$(as "$ADMIN" "SELECT public.admin_set_event_featured('$P_CS', true, 7);")"
+expect_error "admin cannot feature a cancelled event" "not eligible for promotion (cancelled)" "$(as "$ADMIN" "SELECT public.admin_set_event_featured('$CXL', true, 7);")"
+expect_error "admin cannot feature an ended event" "not eligible for promotion (ended)" "$(as "$ADMIN" "SELECT public.admin_set_event_featured('$P_END', true, 7);")"
+expect_ok "admin features an eligible live event (unchanged)" "$(as "$ADMIN" "SELECT public.admin_set_event_featured('$P_LIVE', true, 7);")"
+expect_ok "un-featuring is never blocked (even a Coming Soon event)" "$(as "$ADMIN" "SELECT public.admin_set_event_featured('$P_CS', false);")"
+expect_error "Trending: Coming Soon still refused by the existing status check" "is not eligible for public discovery" "$(as "$ADMIN" "SELECT public.admin_set_event_trending('$P_CS', true);")"
+expect_error "Trending: a cancelled event is refused (0218 makes it a draft; existing check)" "is not eligible for public discovery" "$(as "$ADMIN" "SELECT public.admin_set_event_trending('$CXL', true);")"
+expect_error "Trending: ended now refused (was allowed)" "not eligible for promotion (ended)" "$(as "$ADMIN" "SELECT public.admin_set_event_trending('$P_END', true);")"
+expect_ok "Trending on an eligible live event works (unchanged)" "$(as "$ADMIN" "SELECT public.admin_set_event_trending('$P_LIVE', true);")"
+expect_ok "removing Trending is never blocked" "$(as "$ADMIN" "SELECT public.admin_set_event_trending('$P_END', false);")"
+expect_error "Sub-admin/user still cannot call them directly (unchanged)" "Super Admin access required" "$(as "$ORG" "SELECT public.admin_set_event_featured('$P_LIVE', true, 7);")"
+
+echo "== 0225: event_promotions is no longer writable by clients =="
+expect_error "organizer cannot INSERT a promotion row" "permission denied" "$(as "$ORG" "INSERT INTO public.event_promotions (event_id, organizer_id, plan_type, start_date, end_date, status) VALUES ('$P_LIVE', '$ORG', 'trending', now(), now() + interval '30 days', 'active');")"
+expect_error "organizer cannot extend a paid promotion" "permission denied" "$(as "$ORG" "UPDATE public.event_promotions SET end_date = now() + interval '365 days' WHERE payment_ref = 'REF_OK1';")"
+expect_error "organizer cannot delete promotion rows" "permission denied" "$(as "$ORG" "DELETE FROM public.event_promotions WHERE payment_ref = 'REF_OK1';")"
+expect_value "organizer still reads their own promotions (Promotions screen)" "$(val "$(as "$ORG" "SELECT count(*) FROM public.event_promotions;")")" "2"
+expect_value "another organizer reads none of them (0181 unchanged)" "$(val "$(as "$ORG2" "SELECT count(*) FROM public.event_promotions;")")" "0"
+
+echo "== 0225: pre-payment eligibility check for the app =="
+expect_value "owner, live event: eligible" "$(val "$(as "$ORG" "SELECT public.get_event_promotion_eligibility('$P_LIVE')::text;")" | jq -c .)" '{"reason":null,"eligible":true}'
+expect_value "owner, Coming Soon event: not eligible (not_on_sale)" "$(val "$(as "$ORG" "SELECT public.get_event_promotion_eligibility('$P_CS')->>'reason';")")" "not_on_sale"
+expect_value "someone else's event: reveals nothing" "$(val "$(as "$U1" "SELECT public.get_event_promotion_eligibility('$P_HID')::text;")" | jq -c .)" '{"reason":"not_found","eligible":false}'
+expect_value "anon cannot call it" "$(val "SELECT has_function_privilege('anon', 'public.get_event_promotion_eligibility(uuid)', 'EXECUTE');")" "f"
+expect_value "the rule itself is not client-callable" "$(val "SELECT has_function_privilege('authenticated', 'public.event_promotion_block_reason(uuid)', 'EXECUTE');")" "f"
+
+echo "== 0225: rollback =="
+UNDO5="$REPO_ROOT/supabase/rollback/undo_0225.sql"
+expect_error "undo_0225 refused without confirmation" "set vents.rollback_confirm" "$(cat "$UNDO5")"
+PROMO_ROWS=$(val "SELECT count(*) || '/' || string_agg(id::text, ',' ORDER BY id) FROM public.event_promotions;")
+expect_ok "undo_0225 runs in one transaction" "BEGIN; SET LOCAL vents.rollback_confirm = 'undo-0225'; $(cat "$UNDO5") COMMIT;"
+expect_value "the three functions are byte-identical to before 0225" "$(val "SELECT string_agg(proname || ':' || md5(prosrc), ',' ORDER BY proname) FROM pg_proc WHERE proname IN ('activate_event_promotion','admin_set_event_featured','admin_set_event_trending');")" "$PIN_BEFORE"
+expect_value "0225's functions are gone; promotion rows untouched" "$(val "SELECT count(*) FROM pg_proc WHERE proname IN ('event_promotion_block_reason','get_event_promotion_eligibility');")|$(val "SELECT count(*) || '/' || string_agg(id::text, ',' ORDER BY id) FROM public.event_promotions;")" "0|$PROMO_ROWS"
+expect_ok "undo_0225 is re-runnable" "BEGIN; SET LOCAL vents.rollback_confirm = 'undo-0225'; $(cat "$UNDO5") COMMIT;"
+expect_ok "0225 re-applies cleanly after undo (pins match again)" "BEGIN; $(cat "$MIG/0225_promotion_eligibility.sql") COMMIT;"
 
 echo "== Rollback: supabase/rollback/undo_0224.sql =="
 UNDO="$REPO_ROOT/supabase/rollback/undo_0224.sql"
@@ -358,6 +530,7 @@ expect_error "undo refused while Coming Soon events exist" "Coming Soon event" "
 expect_error "undo refused while pending Notify-me subscriptions exist" "pending Notify-me" "SET vents.rollback_confirm = 'undo-0224'; SET vents.rollback_coming_soon_to_draft = 'yes'; $(cat "$UNDO")"
 expect_value "refused undos changed nothing" "$(val "SELECT count(*) FROM public.events WHERE status = 'coming_soon';")/$(val "SELECT count(*) FROM public.event_sale_alerts WHERE notified_at IS NULL;")" "$CS_BEFORE/1"
 expect_ok "undo runs in one transaction with all confirmations" "BEGIN; SET LOCAL vents.rollback_confirm = 'undo-0224'; SET LOCAL vents.rollback_coming_soon_to_draft = 'yes'; SET LOCAL vents.rollback_discard_sale_alerts = 'yes'; $(cat "$UNDO") COMMIT;"
+expect_value "undo removed 0224's cron jobs but kept the pg_cron extension" "$(val "SELECT (SELECT count(*) FROM cron.job WHERE jobname LIKE 'vents_open_due_event_sales%') || '/' || (SELECT count(*) FROM pg_extension WHERE extname = 'pg_cron');")" "0/1"
 expect_value "0005's status CHECK is restored" "$(val "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'events_status_check';")" "CHECK ((status = ANY (ARRAY['live'::text, 'draft'::text])))"
 expect_value "0224's objects are gone" "$(val "SELECT (to_regclass('public.event_sale_alerts') IS NULL) || '/' || (SELECT count(*) FROM pg_proc WHERE proname IN ('open_event_sales','open_due_event_sales','event_open_sales_core','subscribe_event_sale_alert','unsubscribe_event_sale_alert','get_my_event_sale_alert_counts','events_sales_schedule_guard','event_has_sales_history')) || '/' || (SELECT count(*) FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'sales_open_at');")" "true/0/0"
 expect_value "every event, ticket and notification survives; opened events stay live" \
@@ -366,6 +539,9 @@ expect_value "former Coming Soon events are private drafts" "$(status "$TZ_EV")"
 expect_ok "existing draft -> live toggle still works after undo" "$(as "$ORG" "UPDATE public.events SET status = 'live' WHERE id = '$TZ_EV';")"
 expect_ok "undo is re-runnable" "BEGIN; SET LOCAL vents.rollback_confirm = 'undo-0224'; $(cat "$UNDO") COMMIT;"
 expect_ok "0224 re-applies cleanly after undo" "BEGIN; $(cat "$MIG/0224_coming_soon_events.sql") COMMIT;"
+expect_value "re-applying re-registers the job once (no duplicates)" "$(val "SELECT count(*) FROM cron.job WHERE jobname = 'vents_open_due_event_sales';")" "1"
+expect_ok "0224 is idempotent for the scheduler (second apply of the cron block)" "BEGIN; $(python3 -c "import sys;t=open(sys.argv[1]).read();print(t[t.index('DO \$cron\$'):])" "$MIG/0224_coming_soon_events.sql") COMMIT;"
+expect_value "still exactly one job after re-running the cron block" "$(val "SELECT count(*) FROM cron.job WHERE jobname = 'vents_open_due_event_sales';")" "1"
 
 echo
 echo "$PASSES passed, $FAILS failed"

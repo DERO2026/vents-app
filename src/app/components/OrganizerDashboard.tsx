@@ -869,12 +869,16 @@ export function OrganizerDashboard({
                                 setPublishingId(event.id);
                                 setPublishErrorId(null);
                                 try {
+                                  // A draft with a planned sales opening (0224) is
+                                  // published as Coming Soon; the server never lets
+                                  // it go straight on sale.
+                                  const nextStatus = (event as any).sales_open_at ? 'coming_soon' : 'live';
                                   const { error } = await supabase
                                     .from('events')
-                                    .update({ status: 'live' })
+                                    .update({ status: nextStatus })
                                     .eq('id', event.id);
                                   if (error) throw error;
-                                  setOrgEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, status: 'live' } : ev));
+                                  setOrgEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, status: nextStatus } : ev));
                                 } catch (err) {
                                   console.error('Failed to publish event:', err);
                                   Sentry.captureException(err);

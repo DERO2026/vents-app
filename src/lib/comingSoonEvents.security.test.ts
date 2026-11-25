@@ -43,8 +43,13 @@ describe('0224: checkout protection rests on the existing purchase gate', () => 
 
 describe('0224: guard trigger', () => {
   const g = () => fn('events_sales_schedule_guard');
-  it('restricts client writes only, and is not SECURITY DEFINER (so current_user is the caller)', () => {
-    expect(g()).toContain("IF current_user <> 'authenticated' THEN RETURN NEW; END IF;");
+  it('privileged writes cannot open sales either: without the opening marker a scheduled event stays Coming Soon', () => {
+    expect(g()).toMatch(/IF current_user <> 'authenticated' THEN\s+IF TG_OP = 'UPDATE' AND NEW\.status = 'live' AND OLD\.status IS DISTINCT FROM 'live'\s+AND NEW\.sales_open_at IS NOT NULL\s+AND current_setting\('vents\.event_sales_opening', true\) IS DISTINCT FROM NEW\.id::text THEN\s+NEW\.status := 'coming_soon';/);
+    const core = fn('event_open_sales_core');
+    expect(core).toMatch(/PERFORM set_config\('vents\.event_sales_opening', e\.id::text, true\);\s+UPDATE public\.events SET status = 'live' WHERE id = e\.id;\s+PERFORM set_config\('vents\.event_sales_opening', '', true\);/);
+  });
+
+  it('is not SECURITY DEFINER (so current_user is the caller)', () => {
     expect(g().slice(0, g().indexOf('AS $function$'))).not.toMatch(/SECURITY DEFINER/); // header only (the body's comment mentions it)
   });
   it('a scheduled event cannot be set live directly; sales time only moves to the future, never cleared, frozen once live', () => {
@@ -89,10 +94,17 @@ describe('0224: opening sales', () => {
     expect(m).toContain('REVOKE ALL ON FUNCTION public.event_open_sales_core(uuid, boolean) FROM PUBLIC, anon, authenticated;');
     expect(m).not.toMatch(/GRANT EXECUTE ON FUNCTION public\.event_open_sales_core/);
   });
-  it('registers the per-minute pg_cron job only when pg_cron exists; the Vercel cron is a backstop', () => {
+  it('enables pg_cron (Supabase documented method), registers the per-minute job, and refuses to apply otherwise', () => {
+    expect(m).toContain('CREATE EXTENSION pg_cron WITH SCHEMA pg_catalog;');
     expect(m).toContain("cron.schedule('vents_open_due_event_sales', '* * * * *', 'SELECT public.open_due_event_sales(200)')");
-    expect(m).toContain("IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN");
+    expect(m).toContain("RAISE EXCEPTION '0224 refused: pg_cron is not available on this database");
+    expect(m).toContain("RAISE EXCEPTION '0224 refused: the per-minute Coming Soon job was not registered'");
+    expect(m).not.toMatch(/RAISE NOTICE '0224: pg_cron is not installed/); // no silent fallback to the daily cron
+  });
+
+  it('the Vercel daily cron stays a backstop (authenticated by CRON_SECRET)', () => {
     expect(cron).toContain("callProjectAdminRpc<any>('open_due_event_sales', [500])");
+    expect(cron).toContain('req.headers.authorization !== `Bearer ${cronSecret}`');
   });
 });
 
@@ -125,6 +137,10 @@ describe('undo_0224.sql', () => {
     expect(undo).toContain("vents.rollback_coming_soon_to_draft");
     expect(undo).toContain("vents.rollback_discard_sale_alerts");
   });
+  it('removes only 0224\'s two cron jobs and keeps the pg_cron extension', () => {
+    expect(undo).toContain("WHERE jobname IN ('vents_open_due_event_sales', 'vents_open_due_event_sales_log_cleanup')");
+    expect(undo.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')).not.toMatch(/DROP EXTENSION/i);
+  });
   it('restores 0005\'s status CHECK and removes only 0224 objects; its only data change is coming_soon -> draft', () => {
     expect(undo).toContain("ADD CONSTRAINT events_status_check CHECK ((status = ANY (ARRAY['live'::text, 'draft'::text])));");
     const sql = undo.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
@@ -132,5 +148,16 @@ describe('undo_0224.sql', () => {
       "UPDATE public.events SET status = 'draft' WHERE status = 'coming_soon'",
     ]);
     expect(sql).not.toMatch(/\b(tickets|pending_purchases|notifications|wallet)\b/);
+  });
+});
+
+describe('client publish paths for scheduled drafts', () => {
+  it('Organizer Dashboard and Manage Events publish a scheduled draft as Coming Soon, never straight live', () => {
+    const root = join(__dirname, '..', '..');
+    const dash = readFileSync(join(root, 'src', 'app', 'components', 'OrganizerDashboard.tsx'), 'utf8');
+    const manage = readFileSync(join(root, 'src', 'app', 'components', 'ManageEventsScreen.tsx'), 'utf8');
+    expect(dash).toContain("const nextStatus = (event as any).sales_open_at ? 'coming_soon' : 'live';");
+    expect(dash).not.toMatch(/\.update\(\{ status: 'live' \}\)/);
+    expect(manage).toContain("const newStatus = event.status === 'draft' ? (event.salesOpenAt ? 'coming_soon' : 'live') : 'draft';");
   });
 });

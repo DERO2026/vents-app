@@ -18,6 +18,9 @@
 --     while any exist unless
 --       SET vents.rollback_discard_sale_alerts = 'yes';
 --   * The planned sales opening time of every event (sales_open_at).
+-- Kept on purpose: the pg_cron extension 0224 enabled. Only 0224's two jobs
+-- are removed; dropping the extension would delete every other cron job
+-- too (Supabase docs), so that stays a separate, explicit decision.
 DO $undo$
 DECLARE
   v_pending bigint;
@@ -38,7 +41,7 @@ BEGIN
     END IF;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    EXECUTE $q$SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'vents_open_due_event_sales'$q$;
+    EXECUTE $q$SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname IN ('vents_open_due_event_sales', 'vents_open_due_event_sales_log_cleanup')$q$;
   END IF;
 END
 $undo$;
