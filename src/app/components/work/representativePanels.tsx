@@ -5,6 +5,7 @@ import {
   claimStateView, eligibilityReasonText, formatNaira, isBackendUnavailable, REWARD_STAGES, type ClaimStatus,
 } from '../../../lib/workRoles';
 import { MLabel, MCard, Row, Ico, Pill, NoteBand, WorkButton, ErrorNote, Chips, Loading } from './workUi';
+import { PrivateAmount } from '../BalancePrivacy';
 
 // Representative data and panels (migration 0201). Every figure comes from
 // the representative's own RPCs; every rule is enforced server-side. Shared
@@ -389,7 +390,7 @@ export function ExpensesPanel({ reload, totals }: { reload: () => Promise<void>;
             <div key={s} style={{ background: ventsColors.elevated, borderRadius: 10, padding: '6px 8px', minWidth: 0 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: ventsColors.ink3 }}>{EXPENSE_LABEL[s]}</div>
               <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
-                {tally(s) ? formatNaira(tally(s)!.amount_kobo) : '—'}
+                {tally(s) ? <PrivateAmount>{formatNaira(tally(s)!.amount_kobo)}</PrivateAmount> : '—'}
               </div>
             </div>
           ))}

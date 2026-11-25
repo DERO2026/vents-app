@@ -5,6 +5,8 @@ import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache
 import { haptics } from '../../lib/haptics';
 import { Sentry } from '../../lib/sentry';
 import { VentsCentsInfoModal } from './VentsCentsInfoModal';
+import { PrivateAmount, BalanceVisibilityToggle } from './BalancePrivacy';
+import { MASK_VC } from '../../lib/balancePrivacy';
 
 const MAX_REFERRALS = 5;
 const FEATURE_IN_PEOPLE_COST_VC = 1500;
@@ -262,7 +264,10 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
         <button onClick={onBack} style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#f6f4f9" />
         </button>
-        <span style={{ fontSize: '12px', letterSpacing: '2px', color: '#9a93a8', fontWeight: 700 }}>VENTS CENTS</span>
+        <span style={{ fontSize: '12px', letterSpacing: '2px', color: '#9a93a8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          VENTS CENTS
+          <BalanceVisibilityToggle size={15} color="#9a93a8" />
+        </span>
         <button
           data-testid="vc-info-button"
           onClick={() => setInfoOpen(true)}
@@ -286,14 +291,14 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           )}
           <div style={{ fontSize: '12px', letterSpacing: '1.5px', color: '#c3bdd1', fontWeight: 700 }}>SPENDABLE BALANCE</div>
           <div data-testid="vc-spendable-balance" style={{ fontSize: '40px', fontWeight: 900, marginTop: '8px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '6px', color: '#f6f4f9', fontFamily: 'Manrope, sans-serif' }}>
-            <span style={{ color: '#c084fc', fontSize: '26px' }}>◎</span>{loading ? '—' : balance.toLocaleString()}
+            <span style={{ color: '#c084fc', fontSize: '26px' }}>◎</span>{loading ? '—' : <PrivateAmount mask="••••••">{balance.toLocaleString()}</PrivateAmount>}
           </div>
-          <div style={{ fontSize: '12.5px', color: '#9a93a8', marginTop: '4px' }}>≈ ₦{ticketRedemptionEstimate.toLocaleString()} in ticket credit</div>
+          <div style={{ fontSize: '12.5px', color: '#9a93a8', marginTop: '4px' }}>≈ <PrivateAmount>₦{ticketRedemptionEstimate.toLocaleString()}</PrivateAmount> in ticket credit</div>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '18px', marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             <div>
               <div style={{ fontSize: '10px', letterSpacing: '1px', color: '#8B8FA8', fontWeight: 700 }}>LIFETIME EARNED</div>
-              <div data-testid="vc-lifetime-earned" style={{ fontSize: '18px', fontWeight: 800, color: '#f6f4f9', marginTop: '2px' }}>{loading ? '—' : lifetimeEarned.toLocaleString()} VC</div>
+              <div data-testid="vc-lifetime-earned" style={{ fontSize: '18px', fontWeight: 800, color: '#f6f4f9', marginTop: '2px' }}>{loading ? '—' : <PrivateAmount mask="••••••">{lifetimeEarned.toLocaleString()}</PrivateAmount>} VC</div>
             </div>
             <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
             <div>
@@ -699,7 +704,7 @@ function ConvertToWalletModal({
               />
               <button onClick={() => setAmountStr(String(spendableBalance - (spendableBalance % 10)))} style={{ background: 'rgba(168,85,247,0.15)', border: 'none', borderRadius: '8px', padding: '5px 10px', color: '#c084fc', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>MAX</button>
             </div>
-            <p style={{ color: '#555C7A', fontSize: '11px', marginTop: '6px' }}>Available: {spendableBalance.toLocaleString()} VC</p>
+            <p style={{ color: '#555C7A', fontSize: '11px', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>Available: <PrivateAmount mask={MASK_VC}>{spendableBalance.toLocaleString()} VC</PrivateAmount> <BalanceVisibilityToggle size={13} color="#8B8FA8" /></p>
 
             {validationError && <p data-testid="convert-validation-error" style={{ color: '#EF4444', fontSize: '12.5px', marginTop: '10px' }}>{validationError}</p>}
 

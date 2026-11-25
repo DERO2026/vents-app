@@ -11,6 +11,8 @@ import { OrganizerEventOverview, OrganizerEventDisplayStatus } from './types';
 import { useOrganizerEvents, OrganizerEventSort } from '../../lib/useOrganizerEvents';
 import { supabase } from '../../lib/supabase';
 import { fetchMyEventCancellations, requestEventCancellation, CANCELLATION_STATUS_LABEL, type MyEventCancellation } from '../../lib/eventCancellation';
+import { BalanceVisibilityToggle } from './BalancePrivacy';
+import { privateAmount, useBalanceHidden } from '../../lib/balancePrivacy';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
@@ -68,6 +70,7 @@ export function ManageEventsScreen({
   onBack, currentUser, onOpenEdit, onCreateEvent, onViewAttendees, onViewAnalytics,
   onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted, onNavigate,
 }: ManageEventsScreenProps) {
+  const balanceHidden = useBalanceHidden();
   useDesktopWideShell();
   const { events, loading, error, sort, setSort, live, refresh } = useOrganizerEvents(currentUser?.id);
 
@@ -319,6 +322,7 @@ export function ManageEventsScreen({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
             <h1 style={{ color: C.text, fontSize: '20px', fontWeight: 700, margin: 0 }}>My Events</h1>
+            <BalanceVisibilityToggle size={15} color={C.faint} testId="manage-events-balance-toggle" />
             <span title={live ? 'Live' : 'Reconnecting'} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 700, color: live ? C.green : C.faint }}>
               {live ? <Wifi size={11} /> : <WifiOff size={11} />}
             </span>
@@ -443,7 +447,7 @@ export function ManageEventsScreen({
                     {/* Live stats row — always real DB data, never placeholder */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
                       <Stat label="Sold" value={`${event.soldQuantity}${event.ticketGoal > 0 ? `/${event.ticketGoal}` : ''}`} />
-                      <Stat label="Revenue" value={formatPrice(event.revenueKobo / 100)} />
+                      <Stat label="Revenue" value={privateAmount(formatPrice(event.revenueKobo / 100), balanceHidden)} />
                       <Stat label="Checked In" value={String(event.checkedInCount)} />
                     </div>
                     {event.ticketGoal > 0 && (

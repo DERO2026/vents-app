@@ -429,6 +429,9 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Set by an announcement push tap; consumed when NotificationsScreen mounts.
+  const [notificationsFocusAnnouncementId, setNotificationsFocusAnnouncementId] = useState<string | null>(null);
+  const [notificationsOpenKey, setNotificationsOpenKey] = useState(0);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   // Bumped on a Profile-tab re-tap (see handleTabChange) -- forwarded to
   // ProfileScreen as refreshSignal, which turns it into its own internal
@@ -2498,6 +2501,15 @@ export default function App() {
       setScreen('payment-request');
       return;
     }
+    if (data.type === 'announcement') {
+      // Announcement (0222): the notification centre's Announcements tab,
+      // with that announcement's reader open.
+      setNotificationsFocusAnnouncementId(typeof data.announcementId === 'string' ? data.announcementId : null);
+      setNotificationsOpenKey((k) => k + 1);
+      setScreenStack([]);
+      setScreen('notifications');
+      return;
+    }
     if (data.type === 'event_cancellation') {
       // Event cancellation (0218). Ticket holders: their ticket's refund view
       // (or Tix); the organizer: Manage Events, where the request's status and
@@ -3610,10 +3622,13 @@ export default function App() {
           {/* ── UTILITY SCREENS ── */}
           {screen === 'notifications' && (
             <NotificationsScreen
+              key={notificationsOpenKey}
               onBack={goBack}
               currentUser={currentUser}
               onRefreshUnread={fetchUnreadCount}
               onRouteNotification={routeNotification}
+              focusAnnouncementId={notificationsFocusAnnouncementId}
+              onFocusConsumed={() => setNotificationsFocusAnnouncementId(null)}
             />
           )}
           {myTicketsEverMounted && (

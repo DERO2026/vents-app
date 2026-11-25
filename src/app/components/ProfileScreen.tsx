@@ -26,6 +26,7 @@ import { AppVersionFooter } from './shared/AppVersionFooter';
 import { useWorkStatus } from './work/useWorkStatus';
 import { ProfileWorkCard, workIndicators } from './work/ProfileWorkCard';
 import { organizerRole, providerRole, representativeRole } from '../../lib/workRoles';
+import { useBalanceHidden } from '../../lib/balancePrivacy';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -69,6 +70,9 @@ export function ProfileScreen({
   // Role statuses for the VENTS Work card chips (organizer_requests,
   // service_provider_requests, service_providers, recruiters, VC balance).
   const work = useWorkStatus(currentUser);
+  // Must stay above the signed-out early return below: hooks run in the same
+  // order on every render, including after the user signs out on this screen.
+  const balanceHidden = useBalanceHidden();
 
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -259,6 +263,7 @@ export function ProfileScreen({
     provider: providerRole({ isProvider: currentUser?.is_service_provider === true, isStaff, request: work.providerRequest, profileStatus: work.providerProfileStatus }),
     representative: representativeRole(work.representative),
     vcSpendable: work.vcSpendable,
+    hidden: balanceHidden,
   });
   
   const filteredMenuItems = menuItems.filter(item => {

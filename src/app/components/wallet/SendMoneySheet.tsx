@@ -11,6 +11,7 @@ import {
 } from '../../../lib/walletTransfers';
 import { PIN_LENGTH, pinProblem, createPin } from '../../../lib/withdrawals';
 import { Sheet, PrimaryButton, FieldLabel, inputStyle, DetailRow, Notice } from './walletUi';
+import { PrivateAmount, BalanceVisibilityToggle } from '../BalancePrivacy';
 
 type Step = 'recipient' | 'amount' | 'review' | 'done';
 
@@ -165,8 +166,10 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
           <FieldLabel htmlFor="send-amount">Amount (₦)</FieldLabel>
           <input id="send-amount" data-testid="send-amount" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)}
             placeholder="0.00" style={{ ...inputStyle, fontSize: 22, fontWeight: 800 }} />
-          <p data-testid="send-available" style={{ margin: '6px 0 0', fontSize: 12, color: ventsColors.ink3 }}>
-            Available: {formatNaira(balanceKobo)} · You can send {formatNaira(status.remaining_today_kobo)} more today
+          <p data-testid="send-available" style={{ margin: '6px 0 0', fontSize: 12, color: ventsColors.ink3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>Available: <PrivateAmount>{formatNaira(balanceKobo)}</PrivateAmount></span>
+            <BalanceVisibilityToggle size={13} color={ventsColors.ink3} />
+            <span>· You can send {formatNaira(status.remaining_today_kobo)} more today</span>
           </p>
           {amountText && amountProblem && <p data-testid="send-amount-problem" style={{ margin: '6px 0 0', fontSize: 12.5, color: ventsColors.error }}>{amountProblem}</p>}
           <FieldLabel htmlFor="send-note">Note (optional)</FieldLabel>
@@ -227,7 +230,7 @@ export function SendMoneySheet({ balanceKobo, status, initialUsername, onClose, 
           <DetailRow label="To" value={`${recipient.name} (@${recipient.username})`} />
           <DetailRow label="Status" value={<span style={{ color: ventsColors.success }}>Completed</span>} />
           <DetailRow label="Reference" value={result.reference} mono testId="send-done-ref" />
-          {result.balanceKobo !== undefined && <DetailRow label="Your new balance" value={formatNaira(result.balanceKobo)} />}
+          {result.balanceKobo !== undefined && <DetailRow label="Your new balance" value={<PrivateAmount>{formatNaira(result.balanceKobo)}</PrivateAmount>} />}
           <div style={{ marginTop: 16 }}><PrimaryButton testId="send-done-close" onClick={onClose}>Done</PrimaryButton></div>
         </div>
       )}

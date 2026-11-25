@@ -3,6 +3,9 @@ import { supabase } from '../../../lib/supabase';
 import { getVcBalance } from '../../../lib/vcBalanceCache';
 import { formatNaira, isBackendUnavailable } from '../../../lib/workRoles';
 import { workPage, workScroll, WorkBar, Tiles, Tile, WorkButton, ErrorNote } from './workUi';
+import { PrivateAmount, BalanceVisibilityToggle } from '../BalancePrivacy';
+import { ventsColors } from '../../../lib/ventsDesignTokens';
+import { MASK_VC, privateAmount, useBalanceHidden } from '../../../lib/balancePrivacy';
 
 interface Earnings {
   withdrawableKobo: number;
@@ -99,34 +102,35 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
   }, [currentUser?.id]);
 
   const dash = '—';
+  const hidden = useBalanceHidden();
   const rep = data?.rep;
 
   return (
     <div data-testid="vents-earnings-screen" style={workPage}>
-      <WorkBar title="Earnings" sub="Across your VENTS roles" onBack={onBack} />
+      <WorkBar title="Earnings" sub="Across your VENTS roles" onBack={onBack} right={<span style={{ marginLeft: 'auto' }}><BalanceVisibilityToggle size={18} color={ventsColors.ink2} /></span>} />
       <div style={workScroll}>
         {error && <ErrorNote>{error}</ErrorNote>}
         <Tiles>
           <Tile wide testId="earn-tile-withdrawable" k="Withdrawable · Earnings wallet"
-            v={data ? formatNaira(data.withdrawableKobo) : dash} s="From ticket sales, bookings and rewards" />
+            v={data ? <PrivateAmount>{formatNaira(data.withdrawableKobo)}</PrivateAmount> : dash} s="From ticket sales, bookings and rewards" />
           {data?.onHoldKobo != null && data.onHoldKobo > 0 && (
-            <Tile wide testId="earn-tile-on-hold" k="On hold · not withdrawable yet" v={formatNaira(data.onHoldKobo)}
+            <Tile wide testId="earn-tile-on-hold" k="On hold · not withdrawable yet" v={<PrivateAmount>{formatNaira(data.onHoldKobo)}</PrivateAmount>}
               s={data.nextRelease
-                ? `Next ${formatNaira(data.nextRelease.kobo)} on ${new Date(data.nextRelease.at).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · 48 h after the event or booking`
+                ? `Next ${privateAmount(formatNaira(data.nextRelease.kobo), hidden)} on ${new Date(data.nextRelease.at).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · 48 h after the event or booking`
                 : '48 hours after the event ends or the booking is completed'} />
           )}
           {data?.owedKobo != null && data.owedKobo > 0 && (
-            <Tile wide testId="earn-tile-owed" k="Owed from a refund" v={formatNaira(data.owedKobo)} s="Taken from your next earnings" />
+            <Tile wide testId="earn-tile-owed" k="Owed from a refund" v={<PrivateAmount>{formatNaira(data.owedKobo)}</PrivateAmount>} s="Taken from your next earnings" />
           )}
           <Tile testId="earn-tile-pending" k="Pending payout"
-            v={data ? formatNaira(data.pendingPayoutKobo) : dash}
+            v={data ? <PrivateAmount>{formatNaira(data.pendingPayoutKobo)}</PrivateAmount> : dash}
             s={data?.pendingPayoutSince ? `Requested ${shortDate(data.pendingPayoutSince)}` : 'None requested'} />
           <Tile testId="earn-tile-vents-wallet" k="VENTS Wallet"
-            v={data?.ventsWalletKobo != null ? formatNaira(data.ventsWalletKobo) : dash} s="Spendable, not withdrawable"
+            v={data?.ventsWalletKobo != null ? <PrivateAmount>{formatNaira(data.ventsWalletKobo)}</PrivateAmount> : dash} s="Spendable, not withdrawable"
             onClick={() => onNavigate('customer-wallet')} />
           <Tile testId="earn-tile-vc" k="VENTS Cents"
-            v={data?.vcSpendable != null ? `${data.vcSpendable.toLocaleString()} VC` : dash}
-            s={data?.vcLifetime != null ? `Lifetime ${data.vcLifetime.toLocaleString()} VC` : undefined}
+            v={data?.vcSpendable != null ? <PrivateAmount mask={MASK_VC}>{`${data.vcSpendable.toLocaleString()} VC`}</PrivateAmount> : dash}
+            s={data?.vcLifetime != null ? `Lifetime ${privateAmount(`${data.vcLifetime.toLocaleString()} VC`, hidden, MASK_VC)}` : undefined}
             onClick={() => onNavigate('referral')} />
           {rep ? (
             rep.state !== 'live' ? (
@@ -134,7 +138,7 @@ export function VentsEarningsScreen({ currentUser, onBack, onNavigate }: {
                 s={rep.state === 'error' ? 'Could not load rewards' : 'Rewards are not switched on yet'}
                 onClick={() => onNavigate('representative-dashboard')} />
             ) : rep.creditedKobo > 0 ? (
-              <Tile testId="earn-tile-rep" k="Representative" v={formatNaira(rep.creditedKobo)}
+              <Tile testId="earn-tile-rep" k="Representative" v={<PrivateAmount>{formatNaira(rep.creditedKobo)}</PrivateAmount>}
                 s="Paid into your earnings wallet" onClick={() => onNavigate('representative-dashboard')} />
             ) : (
               <Tile testId="earn-tile-rep" k="Representative" small v="Not paid yet"

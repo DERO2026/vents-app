@@ -226,6 +226,9 @@ export interface NotificationPushData {
   // respond_to_recruiter_invitation).
   partnershipId?: string;
   recruiterId?: string;
+  // Announcements published via admin_publish_announcement (0222).
+  type?: string;
+  announcementId?: string;
   [key: string]: string | undefined;
 }
 
@@ -238,6 +241,8 @@ export interface Notification {
   read: boolean;
   icon: string;
   push_data: NotificationPushData | null;
+  // Raw created_at (ISO), for the announcement reader's full date.
+  createdAt?: string;
 }
 
 // Frontend-shape mirror of a public.service_providers row (see

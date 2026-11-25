@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import { ventsColors, ventsTypography } from '../../../lib/ventsDesignTokens';
 import type { PillTone, RoleRow } from '../../../lib/workRoles';
+import { MASK_VC, isBalanceHidden, privateAmount } from '../../../lib/balancePrivacy';
 
 // Profile -> VENTS Work entry card.
 //
@@ -30,8 +31,10 @@ export interface WorkIndicator {
   tone: PillTone;
 }
 
-export function workIndicators({ loading, organizer, provider, representative, vcSpendable }: {
+export function workIndicators({ loading, organizer, provider, representative, vcSpendable, hidden }: {
   loading: boolean;
+  /** Global hide-balances preference; pass useBalanceHidden() so the card re-renders on toggle. */
+  hidden?: boolean;
   organizer: RoleRow;
   provider: RoleRow;
   representative: RoleRow;
@@ -52,7 +55,7 @@ export function workIndicators({ loading, organizer, provider, representative, v
       key: 'vc',
       label: 'VENTS Cents',
       glyph: '◎',
-      value: vcSpendable === null ? (loading ? '…' : '—') : `${vcSpendable.toLocaleString('en-US')} VC`,
+      value: vcSpendable === null ? (loading ? '…' : '—') : privateAmount(`${vcSpendable.toLocaleString('en-US')} VC`, hidden ?? isBalanceHidden(), MASK_VC),
       tone: vcSpendable !== null && vcSpendable > 0 ? 'soon' : 'off',
     },
   ];

@@ -205,3 +205,32 @@ describe('Representative rewards', () => {
     expect(byTestId('claim-button-c1')).toBeNull();
   });
 });
+
+describe('hide balances (global, device-level)', () => {
+  const KEY = 'vents:balance-privacy:hidden';
+  beforeEach(() => { localStorage.setItem(KEY, '1'); });
+  afterEach(() => { localStorage.removeItem(KEY); });
+
+  it('VENTS Work hub masks withdrawable earnings and VENTS Cents', async () => {
+    tables.organizer_wallets = { balance_kobo: 1845000 };
+    await render(<VentsWorkScreen currentUser={user} onBack={() => {}} onNavigate={() => {}} onOpenCreatorStudio={() => {}} />);
+    expect(byTestId('work-tile-withdrawable')?.textContent).toContain('₦••••••');
+    expect(byTestId('work-tile-withdrawable')?.textContent).not.toContain('18,450');
+    expect(byTestId('work-tile-vc')?.textContent).toContain('•••••• VC');
+    expect(byTestId('work-tile-vc')?.textContent).not.toContain('1,250');
+  });
+
+  it('VENTS Earn masks every balance tile and reveals them with its eye', async () => {
+    tables.organizer_wallets = { balance_kobo: 1845000 };
+    tables.organizer_withdrawal_requests = [{ amount_kobo: 400000, created_at: '2026-10-26T10:00:00Z' }];
+    await render(<VentsEarningsScreen currentUser={{ id: 'u1' }} onBack={() => {}} onNavigate={() => {}} />);
+    for (const id of ['earn-tile-withdrawable', 'earn-tile-pending', 'earn-tile-vents-wallet']) {
+      expect(byTestId(id)?.textContent).toContain('₦••••••');
+    }
+    expect(container.textContent).not.toMatch(/18,450|4,000|3,200/);
+    expect(byTestId('earn-tile-vc')?.textContent).toContain('Lifetime •••••• VC');
+    await click(byTestId('balance-visibility-toggle')!);
+    expect(byTestId('earn-tile-withdrawable')?.textContent).toContain('₦18,450');
+    expect(byTestId('earn-tile-vc')?.textContent).toContain('Lifetime 4,900 VC');
+  });
+});

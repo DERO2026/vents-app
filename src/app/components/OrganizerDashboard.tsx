@@ -19,6 +19,7 @@ import { formatPrice } from './data';
 import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { hasEventEnded } from '../../lib/eventLifecycle';
+import { PrivateAmount, BalanceVisibilityToggle } from './BalancePrivacy';
 
 interface OrganizerDashboardProps {
   currentUser?: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -464,15 +465,16 @@ export function OrganizerDashboard({
             >
               <DollarSign size={18} color={ventsColors.success} />
             </div>
-            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
               Total Revenue
+              <BalanceVisibilityToggle size={13} color={ventsColors.ink3} />
             </span>
             <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
               {/* formatPrice(0) intentionally reads "Free" for a ticket
                   PRICE (0 = free ticket) -- wrong here, where 0 means "no
                   revenue collected yet", not "this organizer's events are
                   free". */}
-              {revenue ? formatPrice(revenue) : `${REGION.currencySymbol}0`}
+              <PrivateAmount testId="organizer-revenue-masked">{revenue ? formatPrice(revenue) : `${REGION.currencySymbol}0`}</PrivateAmount>
             </span>
           </div>
 

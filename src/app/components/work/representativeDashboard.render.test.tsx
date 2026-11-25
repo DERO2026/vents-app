@@ -624,3 +624,26 @@ describe('Representative referrals (0209)', () => {
     expect(byTestId('referrals-not-live')).not.toBeNull();
   });
 });
+
+describe('hide balances (global, device-level)', () => {
+  const KEY = 'vents:balance-privacy:hidden';
+  beforeEach(() => {
+    localStorage.setItem(KEY, '1');
+    rpcs.get_my_representative_performance = { data: perf(), error: null };
+    rpcs.get_my_representative_rewards = { data: rewards(), error: null };
+    rpcs.get_my_representative_history = historyRpc;
+    historyFail = null;
+    history = { claims: [], expenses: [], attributions: [] };
+  });
+  afterEach(() => { localStorage.removeItem(KEY); });
+
+  it('representative earnings wallet is masked; the public fixed reward rate is not', async () => {
+    await dash();
+    expect(byTestId('rep-wallet-available')?.textContent).toContain('₦••••••');
+    expect(byTestId('rep-wallet-available')?.textContent).not.toContain('50,000');
+    expect(byTestId('rep-wallet-pending')?.textContent).toContain('₦•••••• on hold');
+    expect(byTestId('rep-month-progress')?.textContent).toContain('₦50,000 each'); // the published rate stays visible
+    await click(byTestId('balance-visibility-toggle')!);
+    expect(byTestId('rep-wallet-available')?.textContent).toContain('₦50,000');
+  });
+});

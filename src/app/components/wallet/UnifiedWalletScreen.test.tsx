@@ -515,3 +515,37 @@ describe('Send / Receive availability is explained, never silently hidden', () =
     expect(q('send-money-sheet')!.querySelector('input')).toBeNull();
   });
 });
+
+describe('hide balances (global, device-level)', () => {
+  const KEY = 'vents:balance-privacy:hidden';
+  afterEach(() => { try { localStorage.removeItem(KEY); } catch { /* */ } });
+
+  it('when hidden is saved, the first render masks Wallet Balance, Earnings and VENTS Cents (no flash)', async () => {
+    localStorage.setItem(KEY, '1');
+    await render();
+    expect(q('wallet-balance-amount')!.textContent).toBe('₦••••••');
+    expect(q('wallet-earnings-amount')!.textContent).not.toMatch(/\d/);
+    expect(container!.textContent).not.toContain('7,500');
+    expect(q('balance-visibility-toggle')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('the eye reveals and hides; transaction amounts stay visible either way', async () => {
+    await render();
+    expect(q('wallet-balance-amount')!.textContent).toBe('₦7,500');
+    const txnText = () => Array.from(container!.querySelectorAll('[data-testid^="wallet-txn-"]')).map((e) => e.textContent).join(' ');
+    const before = txnText();
+    await click(q('balance-visibility-toggle'));
+    expect(q('wallet-balance-amount')!.textContent).toBe('₦••••••');
+    expect(localStorage.getItem(KEY)).toBe('1');
+    expect(txnText()).toBe(before); // purchases/transfers remain identifiable
+    await click(q('balance-visibility-toggle'));
+    expect(q('wallet-balance-amount')!.textContent).toBe('₦7,500');
+  });
+
+  it('tapping the eye does not switch tabs or open the balance card', async () => {
+    await render();
+    await click(q('wallet-tab-earnings'));
+    await click(q('balance-visibility-toggle'));
+    expect(q('wallet-tab-earnings')!.getAttribute('aria-selected')).toBe('true');
+  });
+});

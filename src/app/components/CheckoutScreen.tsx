@@ -16,6 +16,8 @@ import { formatKobo } from '../../lib/ticketFees';
 import { useTicketQuote, serviceFeeLabel, amountMatchesQuote, QUOTE_UNAVAILABLE_MESSAGE, PRICE_CHANGED_MESSAGE } from '../../lib/ticketQuote';
 import { friendlyOperationalError } from '../../lib/operationalStatus';
 import { UserAutocomplete } from './shared/UserAutocomplete';
+import { PrivateAmount, BalanceVisibilityToggle } from './BalancePrivacy';
+import { privateAmount, useBalanceHidden } from '../../lib/balancePrivacy';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -175,6 +177,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // be inventing new payment logic rather than fixing this screen.
   const [showInsufficientSheet, setShowInsufficientSheet] = useState(false);
   const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+  const balanceHidden = useBalanceHidden();
   const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
 
   useEffect(() => {
@@ -880,8 +883,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                           : walletBalanceKobo === null
                           ? 'Balance unavailable'
                           : insufficientForWallet
-                          ? `Insufficient (${formatKobo(walletBalanceKobo)} available)`
-                          : `${formatKobo(walletBalanceKobo)} available`}
+                          ? `Insufficient (${privateAmount(formatKobo(walletBalanceKobo), balanceHidden)} available)`
+                          : `${privateAmount(formatKobo(walletBalanceKobo), balanceHidden)} available`}
                       </span>
                     )}
                   </button>
@@ -1127,10 +1130,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           >
             <div style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', margin: '0 auto 20px' }} />
             <h2 style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 8px' }}>
+              {/* The shortfall stays visible: it is the amount the buyer must act on. */}
               You're {formatKobo(Math.max(0, totalKobo - (walletBalanceKobo || 0)))} short
             </h2>
             <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.55, margin: '0 0 20px' }}>
-              Your wallet has {formatKobo(walletBalanceKobo || 0)} and this order is {priceText(totalKobo)}. Pay the whole thing by card instead, or add funds to your wallet first from the Wallet tab.
+              Your wallet has <PrivateAmount>{formatKobo(walletBalanceKobo || 0)}</PrivateAmount> <BalanceVisibilityToggle size={13} color={ventsColors.ink2} style={{ verticalAlign: 'middle' }} /> and this order is {priceText(totalKobo)}. Pay the whole thing by card instead, or add funds to your wallet first from the Wallet tab.
             </p>
             <div style={{ padding: '16px', borderRadius: '16px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
@@ -1139,7 +1143,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                 <span style={{ color: ventsColors.ink2 }}>Wallet balance</span>
-                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatKobo(walletBalanceKobo || 0)}</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}><PrivateAmount>{formatKobo(walletBalanceKobo || 0)}</PrivateAmount></span>
               </div>
               <div style={{ height: '1px', background: 'rgba(255,255,255,0.09)' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>

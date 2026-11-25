@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Shield, Eye, MessageCircle, Search, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Shield, Eye, EyeOff, MessageCircle, Search, CheckCircle, AlertCircle } from 'lucide-react';
+import { setBalanceHidden, useBalanceHidden } from '../../lib/balancePrivacy';
 import { supabase } from '../../lib/supabase';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 
@@ -32,6 +33,8 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [openPicker, setOpenPicker] = useState<'profile_visible' | 'can_message' | null>(null);
+  // Device-level, applied instantly (no Save): see lib/balancePrivacy.
+  const balancesHidden = useBalanceHidden();
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -144,6 +147,23 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{settings.show_attended_events ? 'Visible' : 'Hidden'}</span>
               {toggle(settings.show_attended_events, v => setSettings(s => ({ ...s, show_attended_events: v })))}
+            </div>
+          )}
+
+          {row('Hide balances', 'Mask wallet balances, earnings and VENTS Cents everywhere in the app. Applies to this device only.', balancesHidden ? <EyeOff size={17} color="#A78BFA" /> : <Eye size={17} color="#A78BFA" />,
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{balancesHidden ? 'Hidden (₦••••••)' : 'Shown'}</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={balancesHidden}
+                aria-label="Hide balances"
+                data-testid="settings-hide-balances"
+                onClick={() => setBalanceHidden(!balancesHidden)}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+              >
+                {toggle(balancesHidden, () => {})}
+              </button>
             </div>
           )}
 

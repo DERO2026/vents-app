@@ -114,7 +114,9 @@ describe('Services wallet payment: UI payment-method selection is unambiguous', 
   });
 
   it('surfaces the live wallet balance and an insufficient-balance state before the customer taps Book & Pay', () => {
-    expect(profileScreenSrc).toContain('`Insufficient (₦${(walletBalanceKobo / 100).toLocaleString(\'en-US\')})`');
+    // The balance passes through the global hide-balances mask (lib/balancePrivacy);
+    // the insufficient state itself is always shown.
+    expect(profileScreenSrc).toContain('`Insufficient (${privateAmount(`₦${(walletBalanceKobo / 100).toLocaleString(\'en-US\')}`, balanceHidden)})`');
     expect(profileScreenSrc).toContain("'Insufficient Wallet Balance'");
   });
 });
