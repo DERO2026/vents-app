@@ -12,6 +12,7 @@ import { openPaystackPopup } from '../../lib/paystack';
 import { fetchMyWalletBalanceKobo, payServiceBookingWithWallet } from '../../lib/userWallet';
 import { formatServiceAmount } from '../../lib/currencies';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
+import { privateAmount, useBalanceHidden } from '../../lib/balancePrivacy';
 
 interface ServiceProviderProfileScreenProps {
   providerId: string;
@@ -85,6 +86,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   // informational only -- the real sufficiency check happens server-side.
   const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
   const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+  const balanceHidden = useBalanceHidden();
   const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
   // Real fields create_service_booking already accepts (0054_service_
   // bookings_marketplace.sql: p_scheduled_date/p_scheduled_time) but this
@@ -738,8 +740,8 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                         : walletBalanceKobo === null
                         ? 'Unavailable'
                         : insufficientForWallet
-                        ? `Insufficient (₦${(walletBalanceKobo / 100).toLocaleString('en-US')})`
-                        : `₦${(walletBalanceKobo / 100).toLocaleString('en-US')} available`}
+                        ? `Insufficient (${privateAmount(`₦${(walletBalanceKobo / 100).toLocaleString('en-US')}`, balanceHidden)})`
+                        : `${privateAmount(`₦${(walletBalanceKobo / 100).toLocaleString('en-US')}`, balanceHidden)} available`}
                     </span>
                   )}
                 </button>

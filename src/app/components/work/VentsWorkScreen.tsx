@@ -11,6 +11,9 @@ import { useWorkStatus, type WorkUser } from './useWorkStatus';
 import {
   workPage, workScroll, WorkBar, MLabel, MCard, Row, Ico, Pill, Tiles, Tile, ErrorNote, WorkButton, Chev,
 } from './workUi';
+import { PrivateAmount, BalanceVisibilityToggle } from '../BalancePrivacy';
+import { ventsColors } from '../../../lib/ventsDesignTokens';
+import { MASK_VC } from '../../../lib/balancePrivacy';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -112,13 +115,16 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
     <div data-testid="vents-work-screen" style={workPage}>
       <WorkBar title="VENTS Work" sub="Earn with VENTS" onBack={onBack} />
       <div style={workScroll}>
-        <MLabel>Earnings</MLabel>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <MLabel>Earnings</MLabel>
+          <BalanceVisibilityToggle size={15} color={ventsColors.ink3} style={{ marginRight: 2 }} />
+        </div>
         <Tiles>
           <Tile testId="work-tile-withdrawable" k="Withdrawable"
-            v={withdrawableKobo === null ? '—' : formatNaira(withdrawableKobo)} s="Earnings wallet ›"
+            v={withdrawableKobo === null ? '—' : <PrivateAmount>{formatNaira(withdrawableKobo)}</PrivateAmount>} s="Earnings wallet ›"
             onClick={() => onNavigate('vents-earnings')} />
           <Tile testId="work-tile-vc" k="VENTS Cents"
-            v={status.vcSpendable === null ? '—' : `${status.vcSpendable.toLocaleString()} VC`}
+            v={status.vcSpendable === null ? '—' : <PrivateAmount mask={MASK_VC}>{`${status.vcSpendable.toLocaleString()} VC`}</PrivateAmount>}
             s={vcTier ? `${vcTier} · convert ›` : 'Convert ›'}
             onClick={() => onNavigate('referral')} />
         </Tiles>

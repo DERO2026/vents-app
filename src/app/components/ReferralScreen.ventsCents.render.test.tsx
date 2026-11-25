@@ -368,3 +368,21 @@ describe('Layout is responsive, not a fixed mobile-only width', () => {
     expect(rootDiv.style.height).toBe('100%');
   });
 });
+
+describe('hide balances (global, device-level)', () => {
+  const KEY = 'vents:balance-privacy:hidden';
+  afterEach(() => { localStorage.removeItem(KEY); });
+
+  it('VENTS Cents spendable, lifetime and ticket-credit figures are masked; tier and multiplier are not', async () => {
+    localStorage.setItem(KEY, '1');
+    setupMocks({ lifetimeEarned: 5000, tier: 'gold', multiplier: '1.25', spendable: 1234 });
+    await renderScreen();
+    expect(byTestId('vc-spendable-balance')?.textContent).not.toContain('1,234');
+    expect(byTestId('vc-spendable-balance')?.textContent).toContain('••••••');
+    expect(byTestId('vc-lifetime-earned')?.textContent).not.toContain('5,000');
+    expect(byTestId('vc-multiplier')?.textContent).toBe('1.25×');
+    const eye = container!.querySelector('[data-testid="balance-visibility-toggle"]') as HTMLElement;
+    await act(async () => { eye.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(byTestId('vc-spendable-balance')?.textContent).toContain('1,234');
+  });
+});

@@ -8,6 +8,7 @@ import { ReferralsPanel } from './representativeReferrals';
 import {
   workPage, workScroll, WorkBar, MLabel, MCard, Row, Ico, Pill, Tiles, Tile, WorkButton, ErrorNote, Loading, NoteBand,
 } from './workUi';
+import { PrivateAmount, BalanceVisibilityToggle } from '../BalancePrivacy';
 
 export type RepTab = 'overview' | 'referrals' | 'monthly' | 'rewards' | 'team' | 'expenses';
 const TABS: { id: RepTab; label: string }[] = [
@@ -124,11 +125,14 @@ function Overview({ rep, perf, onNavigate, goTab }: {
     <>
       {perf?.representative && (
         <>
-          <MLabel>Earnings wallet</MLabel>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <MLabel>Earnings wallet</MLabel>
+            <BalanceVisibilityToggle size={15} color={ventsColors.ink3} style={{ marginRight: 2 }} />
+          </div>
           <Tiles>
-            <Tile testId="rep-wallet-available" k="Withdrawable" v={formatNaira(perf.wallet.balance_kobo)} s="All your VENTS earnings ›" onClick={() => onNavigate('earnings-wallet')} />
-            <Tile testId="rep-wallet-pending" k="Withdrawal pending" v={formatNaira(perf.wallet.pending_kobo)}
-              s={perf.wallet.on_hold_kobo > 0 ? `${formatNaira(perf.wallet.on_hold_kobo)} on hold` : 'Two-admin approval'} />
+            <Tile testId="rep-wallet-available" k="Withdrawable" v={<PrivateAmount>{formatNaira(perf.wallet.balance_kobo)}</PrivateAmount>} s="All your VENTS earnings ›" onClick={() => onNavigate('earnings-wallet')} />
+            <Tile testId="rep-wallet-pending" k="Withdrawal pending" v={<PrivateAmount>{formatNaira(perf.wallet.pending_kobo)}</PrivateAmount>}
+              s={perf.wallet.on_hold_kobo > 0 ? <><PrivateAmount>{formatNaira(perf.wallet.on_hold_kobo)}</PrivateAmount> on hold</> : 'Two-admin approval'} />
           </Tiles>
           <WorkButton testId="rep-withdraw" onClick={() => onNavigate('earnings-wallet')}>Withdraw earnings</WorkButton>
 
@@ -176,7 +180,7 @@ function Overview({ rep, perf, onNavigate, goTab }: {
               return (
                 <Row key={st.status} testId={`lifecycle-${st.status}`} title={st.label} sub={st.hint}
                   right={<span style={{ fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
-                    {t.count} · {formatNaira(t.amount_kobo)}</span>} />
+                    {t.count} · <PrivateAmount>{formatNaira(t.amount_kobo)}</PrivateAmount></span>} />
               );
             })}
             <WorkButton ghost onClick={() => goTab('rewards')}>See rewards</WorkButton>
@@ -203,7 +207,7 @@ function Monthly({ perf }: { perf: Performance }) {
               <div style={{ width: `${(m.qualifying / max) * 100}%`, height: '100%', background: ventsColors.accentStrong }} />
             </div>
             <div style={{ fontSize: 10.5, color: ventsColors.ink3 }}>
-              Paid {formatNaira(m.paid_kobo)}
+              Paid <PrivateAmount>{formatNaira(m.paid_kobo)}</PrivateAmount>
             </div>
           </div>
         ))}

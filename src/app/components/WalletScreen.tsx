@@ -13,6 +13,8 @@ import {
   PIN_LENGTH, pinProblem, fetchPinStatus, createPin, requestWithdrawal, fetchMyWithdrawals,
   stageInfo, STAGE_TONE_COLORS, type WithdrawalPinStatus, type WithdrawalStage,
 } from '../../lib/withdrawals';
+import { PrivateAmount, BalanceVisibilityToggle } from './BalancePrivacy';
+import { privateAmount, useBalanceHidden } from '../../lib/balancePrivacy';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; is_service_provider?: boolean } | null;
@@ -202,6 +204,7 @@ const sectionHeading: React.CSSProperties = { fontSize: '13px', fontWeight: 700,
 const embeddedSectionHeading: React.CSSProperties = { margin: '0 0 12px', fontSize: 18, fontWeight: 600, color: ventsColors.white };
 
 export function WalletScreen({ currentUser, onBack, embedded = false }: WalletScreenProps) {
+  const balanceHidden = useBalanceHidden();
   // Earnings/withdrawal/bank-account sections only apply to accounts that
   // can actually earn -- a plain attendee has no organizer_wallets row, so
   // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
@@ -743,15 +746,15 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
                     </p>
                     <img src="/brand/vents-logo-small.png" alt="" style={{ height: '15px', width: 'auto', display: 'block', opacity: 0.95, flexShrink: 0 }} />
                   </div>
-                  <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
+                  <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}><PrivateAmount testId="earnings-balance-masked">{fmt(balance)}</PrivateAmount></p>
                   <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Withdraw to your bank · not spendable in-app</p>
                   {pending > 0 && (
-                    <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
+                    <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: <PrivateAmount>{fmt(pending)}</PrivateAmount></p>
                   )}
                   {onHold > 0 && (
                     <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>
-                      On hold: {fmt(onHold)}
-                      {settlement?.nextReleaseAt ? ` · next ${fmt(settlement.nextReleaseKobo)} withdrawable ${new Date(settlement.nextReleaseAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
+                      On hold: <PrivateAmount>{fmt(onHold)}</PrivateAmount>
+                      {settlement?.nextReleaseAt ? ` · next ${privateAmount(fmt(settlement.nextReleaseKobo), balanceHidden)} withdrawable ${new Date(settlement.nextReleaseAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}
                     </p>
                   )}
                   {onHold > 0 && (
@@ -761,12 +764,12 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
                   )}
                   {(settlement?.pausedKobo ?? 0) > 0 && (
                     <p style={{ margin: '4px 0 0', color: ventsColors.pending, fontSize: '12px' }}>
-                      Paused: {fmt(settlement!.pausedKobo)} · {settlement!.pausedReason}
+                      Paused: <PrivateAmount>{fmt(settlement!.pausedKobo)}</PrivateAmount> · {settlement!.pausedReason}
                     </p>
                   )}
                   {(settlement?.owedKobo ?? 0) > 0 && (
                     <p style={{ margin: '4px 0 0', color: ventsColors.pending, fontSize: '12px' }}>
-                      Owed from a refund: {fmt(settlement!.owedKobo)} · taken from your next earnings
+                      Owed from a refund: <PrivateAmount>{fmt(settlement!.owedKobo)}</PrivateAmount> · taken from your next earnings
                     </p>
                   )}
                 </div>
@@ -787,7 +790,7 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', padding: '0 2px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <TrendingUp size={14} color={ventsColors.ink3} />
-                  <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
+                  <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: <PrivateAmount>{fmt(totalEarned)}</PrivateAmount></span>
                 </div>
                 <button
                   onClick={openAddBank}
@@ -976,7 +979,7 @@ export function WalletScreen({ currentUser, onBack, embedded = false }: WalletSc
               />
             ) : (<>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Withdraw Funds</p>
-            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>Available: <PrivateAmount>{fmt(balance)}</PrivateAmount> <BalanceVisibilityToggle size={14} color={ventsColors.ink2} /></p>
             {pinNotice && <p data-testid="pin-notice" style={{ fontSize: '12px', color: ventsColors.success, margin: '-12px 0 14px' }}>{pinNotice}</p>}
             <input
               type="number"

@@ -40,6 +40,8 @@ import { WalletScreen } from '../WalletScreen';
 import { SendMoneySheet } from './SendMoneySheet';
 import { ReceiveMoneySheet } from './ReceiveMoneySheet';
 import { Sheet, PrimaryButton, DetailRow, Notice, inputStyle } from './walletUi';
+import { PrivateAmount, BalanceVisibilityToggle } from '../BalancePrivacy';
+import { MASK_VC } from '../../../lib/balancePrivacy';
 
 export type WalletTab = 'balance' | 'earnings';
 
@@ -349,6 +351,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
               <ArrowLeft size={20} color={ventsColors.white} />
             </button>
             <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, letterSpacing: '-0.01em', flex: 1, minWidth: 0 }}>VENTS Wallet</h1>
+            <BalanceVisibilityToggle size={18} color={ventsColors.white} style={{ margin: '0 8px 0 0', padding: 8 }} />
             <span data-testid="wallet-unified-pill" style={{ background: W.unifiedBg, color: W.green, fontSize: 13, fontWeight: 500, padding: '4px 11px', borderRadius: 999, flexShrink: 0 }}>Unified</span>
           </div>
 
@@ -357,14 +360,14 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
             <button type="button" data-testid="wallet-balance-card" onClick={() => selectTab('balance')} aria-describedby="wallet-balance-help"
               style={{ ...summaryCard, background: W.balanceCard }}>
               <span style={summaryLabel}>Wallet Balance</span>
-              <span data-testid="wallet-balance-amount" style={summaryAmount}>{loading && balanceKobo === null ? '···' : formatNairaShort(balanceKobo || 0)}</span>
+              <span data-testid="wallet-balance-amount" style={summaryAmount}>{loading && balanceKobo === null ? '···' : <PrivateAmount>{formatNairaShort(balanceKobo || 0)}</PrivateAmount>}</span>
               <span style={{ ...pill, background: W.greenPillBg, color: W.green }}>Spendable</span>
               <span id="wallet-balance-help" style={srOnly}>Money you can spend on VENTS tickets and services{transfersOn ? ' or send to friends' : ''}. It can't be withdrawn to a bank.</span>
             </button>
             <button type="button" data-testid="wallet-earnings-card" onClick={() => selectTab('earnings')} aria-describedby="wallet-earnings-help"
               style={{ ...summaryCard, background: W.earningsCard }}>
               <span style={summaryLabel}>Earnings</span>
-              <span data-testid="wallet-earnings-amount" style={summaryAmount}>{earningsKobo === null ? '···' : formatNairaShort(earningsKobo)}</span>
+              <span data-testid="wallet-earnings-amount" style={summaryAmount}>{earningsKobo === null ? '···' : <PrivateAmount>{formatNairaShort(earningsKobo)}</PrivateAmount>}</span>
               <span style={{ ...pill, background: W.greyPillBg, color: W.greyPillText }}>Withdrawable</span>
               <span id="wallet-earnings-help" style={srOnly}>Money you earned on VENTS, withdrawable to your bank after settlement. It can't be spent or sent.</span>
             </button>
@@ -437,7 +440,7 @@ export function UnifiedWalletScreen({ currentUser, onBack, initialTab = 'balance
               <Coins size={20} color="#FFD700" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
-                  VENTS Cents{vc !== null ? <span style={{ color: '#FFD700' }}> · {vc.toLocaleString('en-NG')} VC</span> : null}
+                  VENTS Cents{vc !== null ? <span style={{ color: '#FFD700' }}> · <PrivateAmount mask={MASK_VC}>{vc.toLocaleString('en-NG')} VC</PrivateAmount></span> : null}
                 </p>
                 <p style={{ margin: '4px 0 0', fontSize: 12.5, color: W.sub, lineHeight: 1.45 }}>
                   Reward points, not naira, and not part of your Wallet Balance. Use them toward eligible tickets; at Gold tier you can convert them into Wallet Balance. VENTS Cents can't be withdrawn or sent.

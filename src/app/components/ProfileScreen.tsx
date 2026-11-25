@@ -26,6 +26,7 @@ import { AppVersionFooter } from './shared/AppVersionFooter';
 import { useWorkStatus } from './work/useWorkStatus';
 import { ProfileWorkCard, workIndicators } from './work/ProfileWorkCard';
 import { organizerRole, providerRole, representativeRole } from '../../lib/workRoles';
+import { useBalanceHidden } from '../../lib/balancePrivacy';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -253,12 +254,14 @@ export function ProfileScreen({
   // All four VENTS Work indicators, always shown with their live state
   // ("Start"/"Join" for roles not taken up yet), so the card never hides
   // a role or claims one is held.
+  const balanceHidden = useBalanceHidden();
   const workCardIndicators = workIndicators({
     loading: work.loading,
     organizer: organizerRole({ isOrganizer: !!currentUser?.isOrganizer, isStaff, isVerified, request: work.organizerRequest }),
     provider: providerRole({ isProvider: currentUser?.is_service_provider === true, isStaff, request: work.providerRequest, profileStatus: work.providerProfileStatus }),
     representative: representativeRole(work.representative),
     vcSpendable: work.vcSpendable,
+    hidden: balanceHidden,
   });
   
   const filteredMenuItems = menuItems.filter(item => {
