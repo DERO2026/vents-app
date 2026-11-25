@@ -62,6 +62,7 @@ fail() { echo "FAIL: $1" >&2; FAILS=$((FAILS+1)); }
 as() { printf "SET test.uid='%s'; SET ROLE authenticated; %s" "$1" "$2"; }
 anon() { printf "SET ROLE anon; %s" "$1"; }  # fresh session: no test.uid
 val() { "${PSQL[@]}" -tA -c "$1" 2>"$ERR" | tail -n1; }
+valq() { "${PSQL[@]}" -q -tA -c "$1" 2>"$ERR"; }   # whole output, no command tags (multi-statement probes)
 expect_value() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (expected '$3', got '$2')"; cat "$ERR" >&2; fi; }
 expect_ok() { if "${PSQL[@]}" -c "$2" >"$OUT" 2>"$ERR"; then pass "$1"; else fail "$1"; cat "$ERR" >&2; fi; }
 expect_error() {
@@ -172,6 +173,11 @@ expect_error "precheck refuses if a purchase function stops refusing non-live ev
   "BEGIN; CREATE OR REPLACE FUNCTION public.purchase_ticket(p_event_id uuid) RETURNS void LANGUAGE sql AS 'SELECT NULL'; $(cat "$MIG/0224_coming_soon_events.sql") ROLLBACK;"
 expect_value "the refused attempt changed nothing" "$(val "SELECT count(*) FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'sales_open_at';")" "0"
 expect_ok "0224 applies in one transaction on top of 0201-0219" "BEGIN; $(cat "$MIG/0224_coming_soon_events.sql") COMMIT;"
+# Determinism: the real per-minute job would race the tests below that make
+# an event due and then open it themselves. Paused here; it runs only in the
+# "real pg_cron job" section, which tests the scheduler itself.
+cron_job() { "${PSQL[@]}" -q -c "SELECT cron.alter_job(jobid, active := $1) FROM cron.job WHERE jobname = 'vents_open_due_event_sales';" >/dev/null; }
+cron_job false
 
 echo "== Lifecycle: create Coming Soon (same id through every transition) =="
 EV1=$(create "$ORG" coming_soon "now() + interval '30 days'" "now() + interval '2 days'" "Afrobeats Live")
@@ -389,6 +395,7 @@ make_due "$RS"
 R=$(open_anon "$RS"); expect_value "when due, open_event_sales opens it and notifies its subscriber once" "$(j "$R" '.opened,.notified' | tr '\n' /)" "true/1/"
 
 echo "== Scheduler: the real pg_cron job (every minute) =="
+cron_job true
 expect_value "0224 enabled pg_cron" "$(val "SELECT count(*) FROM pg_extension WHERE extname = 'pg_cron';")" "1"
 expect_value "the job is registered every minute, calling open_due_event_sales(200), active" \
   "$(val "SELECT schedule || '|' || command || '|' || active FROM cron.job WHERE jobname = 'vents_open_due_event_sales';")" "* * * * *|SELECT public.open_due_event_sales(200)|true"
@@ -404,6 +411,7 @@ expect_value "pg_cron opened the due event on its own, within a minute" "$(statu
 expect_value "... and notified its two subscribers exactly once" "$(notes "$SCH")" "2"
 expect_value "... the run is recorded as succeeded" "$(val "SELECT count(*) > $RUNS_BEFORE AND bool_and(status = 'succeeded') FROM cron.job_run_details d JOIN cron.job j USING (jobid) WHERE j.jobname = 'vents_open_due_event_sales';")" "t"
 expect_value "the same run left a not-yet-due event closed (never early)" "$(status "$LATER")" "coming_soon"
+cron_job false
 
 echo "== Grants =="
 expect_value "anon cannot run the scheduler" "$(val "SELECT has_function_privilege('anon', 'public.open_due_event_sales(integer)', 'EXECUTE');")" "f"
@@ -458,6 +466,49 @@ expect_ok "BEFORE 0225: an organizer can INSERT a free 'active' trending promoti
   "BEGIN; $(as "$ORG" "INSERT INTO public.event_promotions (event_id, organizer_id, plan_type, start_date, end_date, status) VALUES ('$P_LIVE', '$ORG', 'trending', now(), now() + interval '30 days', 'active');") ROLLBACK;"
 expect_ok "BEFORE 0225: the paid path activates Featured on a Coming Soon event (the hole)" "BEGIN; $(activate "$P_CS" featured REF_HOLE) ROLLBACK;"
 PIN_BEFORE=$(val "SELECT string_agg(proname || ':' || md5(prosrc), ',' ORDER BY proname) FROM pg_proc WHERE proname IN ('activate_event_promotion','admin_set_event_featured','admin_set_event_trending');")
+
+echo "== 0225: approved fingerprints for admin_set_event_featured (repo body, or the verified production body) =="
+# The verified production body = the repo body (0090) without its two comment
+# lines. Variants built from it: one code change, and a different comment.
+python3 - "$MIG/0090_harden_event_featuring.sql" "$TMP" <<'PY'
+import re,sys
+t=open(sys.argv[1]).read(); out=sys.argv[2]
+f=list(re.finditer(r'CREATE OR REPLACE FUNCTION public\.admin_set_event_featured\([\s\S]*?AS \$function\$[\s\S]*?\$function\$',t))[-1].group(0)
+c="  -- Was: is_admin(). Sub-Admins must now submit via request_admin_action\n  -- ('toggle_event_featured') and have an Admin/Root approve it (see 0092).\n"
+assert f.count(c)==1
+prod=f.replace(c,'',1)
+open(f'{out}/featured_prod.sql','w').write(prod+';\n')
+assert prod.count('p_duration_days > 90')==1
+open(f'{out}/featured_code_change.sql','w').write(prod.replace('p_duration_days > 90','p_duration_days > 365')+';\n')
+open(f'{out}/featured_other_comment.sql','w').write(f.replace(c,"  -- an unreviewed comment\n",1)+';\n')
+PY
+FEATURED_MD5="SELECT md5(replace(prosrc, E'\\r', '')) FROM pg_proc WHERE oid = 'public.admin_set_event_featured(uuid,boolean,integer)'::regprocedure;"
+expect_value "the harness starts from the reviewed repo body (approved fingerprint 1)" "$(val "$FEATURED_MD5")" "cb47d23e3c486406259f41fe9cc01ceb"
+expect_value "the reconstructed production body has exactly the verified production fingerprint (approved fingerprint 2)" \
+  "$(valq "BEGIN; $(cat "$TMP/featured_prod.sql") $FEATURED_MD5 ROLLBACK;" | grep -E '^[0-9a-f]{32}$')" "66a3bd2f21ec0813a5aa8e9100ed8aec"
+expect_value "0225 applies over the verified production body, and the eligibility check is installed" \
+  "$(valq "BEGIN; $(cat "$TMP/featured_prod.sql") $(cat "$MIG/0225_promotion_eligibility.sql") SELECT 'installed:' || (position('event_promotion_block_reason' IN prosrc) > 0) FROM pg_proc WHERE oid = 'public.admin_set_event_featured(uuid,boolean,integer)'::regprocedure; ROLLBACK;" | grep '^installed:')" "installed:true"
+expect_error "0225 refuses a production body with a one-token code change (90 -> 365 days)" "admin_set_event_featured differs from the definition" \
+  "BEGIN; $(cat "$TMP/featured_code_change.sql") $(cat "$MIG/0225_promotion_eligibility.sql") ROLLBACK;"
+expect_error "0225 refuses any other comment-only variant (only the two verified bodies pass)" "admin_set_event_featured differs from the definition" \
+  "BEGIN; $(cat "$TMP/featured_other_comment.sql") $(cat "$MIG/0225_promotion_eligibility.sql") ROLLBACK;"
+expect_error "an unexpected change to another pinned function is still refused (activate_event_promotion)" "activate_event_promotion differs from the definition" \
+  "BEGIN; CREATE OR REPLACE FUNCTION public.activate_event_promotion(p_event_id uuid, p_plan_type text, p_duration_days integer, p_payment_ref text, p_organizer_id uuid) RETURNS void LANGUAGE plpgsql AS 'BEGIN NULL; END'; $(cat "$MIG/0225_promotion_eligibility.sql") ROLLBACK;"
+cat > "$TMP/undo_from_prod.sql" <<SQL
+BEGIN;
+$(cat "$TMP/featured_prod.sql")
+CREATE TEMP TABLE pre AS SELECT regexp_replace(prosrc, E'\\n[ \\t]*--[^\\n]*', '', 'g') AS code FROM pg_proc WHERE oid = 'public.admin_set_event_featured(uuid,boolean,integer)'::regprocedure;
+$(cat "$MIG/0225_promotion_eligibility.sql")
+SET LOCAL vents.rollback_confirm = 'undo-0225';
+$(cat "$REPO_ROOT/supabase/rollback/undo_0225.sql")
+SELECT md5(replace(p.prosrc, E'\\r', '')) || '|' || (regexp_replace(p.prosrc, E'\\n[ \\t]*--[^\\n]*', '', 'g') = pre.code) || '|' || (position('event_promotion_block_reason' IN p.prosrc) = 0)
+  FROM pg_proc p, pre WHERE p.oid = 'public.admin_set_event_featured(uuid,boolean,integer)'::regprocedure;
+ROLLBACK;
+SQL
+expect_value "rollback from the production variant restores the reviewed repo body: same executable code, check removed" \
+  "$(valq "$(cat "$TMP/undo_from_prod.sql")" | grep -E '^[0-9a-f]{32}\|')" "cb47d23e3c486406259f41fe9cc01ceb|true|true"
+expect_value "every probe above was rolled back (still the repo body, no 0225 objects)" \
+  "$(val "$FEATURED_MD5")|$(val "SELECT count(*) FROM pg_proc WHERE proname IN ('event_promotion_block_reason','get_event_promotion_eligibility');")" "cb47d23e3c486406259f41fe9cc01ceb|0"
 
 echo "== 0225: precheck and apply =="
 expect_error "0225 refuses if a pinned function drifted from the repo definition" "differs from the definition this migration was written against" \

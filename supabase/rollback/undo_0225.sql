@@ -6,6 +6,10 @@
 -- and admin_set_event_trending (0182) verbatim, drops the two 0225
 -- functions, and restores 0008's organizer write policies and 0012's
 -- INSERT/UPDATE/DELETE grant on event_promotions to authenticated.
+-- admin_set_event_featured is restored as the reviewed repo body (0090). If
+-- production held the approved comment-less variant before 0225 (md5
+-- 66a3bd2f...), the restored body differs from it by those two comment
+-- lines only; the executable code is identical.
 -- WARNING: that last step re-opens the gap 0225 closed (an organizer can
 -- write promotion rows for their own events without paying). Promotion rows
 -- and event flags are not touched; no money is moved.

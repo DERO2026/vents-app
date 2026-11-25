@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 // Static guards for 0225_promotion_eligibility.sql / undo_0225.sql. Behaviour
 // is proven by real execution in scripts/local-pg-test/run-coming-soon-
@@ -57,7 +58,46 @@ describe('0225: the three granting functions are the repo bodies plus only the c
   it('refuses to apply over a drifted production definition (md5 pins)', () => {
     expect(m).toContain("SELECT md5(replace(p.prosrc, E'\\r', '')) INTO v_live");
     expect(m).toMatch(/differs from the definition this migration was written against/);
-    for (const n of Object.keys(ORIG)) expect(m).toMatch(new RegExp(`"${n}": "[0-9a-f]{32}"`));
+    expect(m).toContain('IF v_live IS NULL OR NOT ((v_pins->v_name) ? v_live) THEN');
+  });
+
+  // The pins, read from the migration itself.
+  const pins = () => JSON.parse(m.match(/v_pins jsonb := '(\{[^']*\})';/)![1]) as Record<string, string[]>;
+  const md5 = (t: string) => createHash('md5').update(t).digest('hex');
+  const COMMENT = "  -- Was: is_admin(). Sub-Admins must now submit via request_admin_action\n  -- ('toggle_event_featured') and have an Admin/Root approve it (see 0092).\n";
+
+  it('pins exactly the three functions; two of them to their single repo fingerprint', () => {
+    expect(Object.keys(pins()).sort()).toEqual(Object.keys(ORIG).sort());
+    for (const n of ['activate_event_promotion', 'admin_set_event_trending'] as const) {
+      expect(pins()[n]).toEqual([md5(fnIn(src[n], n))]);
+    }
+  });
+
+  it('admin_set_event_featured: exactly two approved fingerprints -- the reviewed repo body and the verified production body', () => {
+    const repo = fnIn(src.admin_set_event_featured, 'admin_set_event_featured');
+    expect(md5(repo)).toBe('cb47d23e3c486406259f41fe9cc01ceb');
+    // The production body (read-only check, 2026-11-25) is the repo body without 0090's two comment lines.
+    expect(repo.split(COMMENT)).toHaveLength(2);
+    const production = repo.replace(COMMENT, '');
+    expect(md5(production)).toBe('66a3bd2f21ec0813a5aa8e9100ed8aec');
+    expect(pins().admin_set_event_featured).toEqual([md5(repo), md5(production)]);
+    // Only the comment differs: the executable code is identical.
+    const code = (t: string) => t.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+    expect(code(production)).toBe(code(repo));
+  });
+
+  it('any other variant -- a code change, or a different comment -- is not an approved fingerprint', () => {
+    const repo = fnIn(src.admin_set_event_featured, 'admin_set_event_featured');
+    const approved = pins().admin_set_event_featured;
+    for (const variant of [
+      repo.replace('p_duration_days > 90', 'p_duration_days > 365'),
+      repo.replace(COMMENT, '').replace('p_duration_days > 90', 'p_duration_days > 365'),
+      repo.replace(COMMENT, '  -- an unreviewed comment\n'),
+      repo.replace(COMMENT, '').replace('IF NOT public.is_super_admin() THEN', 'IF false THEN'),
+      `${repo}\n`,
+    ]) {
+      expect(approved).not.toContain(md5(variant));
+    }
   });
   it('does not touch prices, durations, the Paystack route or grants on the paid path', () => {
     expect(m).not.toMatch(/(GRANT|REVOKE)[^;]*activate_event_promotion/);
@@ -80,6 +120,7 @@ describe('undo_0225.sql', () => {
     expect(undo).toContain("IF current_setting('vents.rollback_confirm', true) IS DISTINCT FROM 'undo-0225' THEN");
     for (const n of Object.keys(ORIG)) expect(fnIn(undo, n)).toBe(fnIn(src[n], n));
     expect(undo).toMatch(/WARNING: that last step re-opens the gap 0225 closed/);
+    expect(undo).toMatch(/approved comment-less variant before 0225 \(md5\n-- 66a3bd2f\.\.\.\)/);
     let top = undo;
     for (const n of Object.keys(ORIG)) top = top.replace(fnIn(undo, n), '');
     expect(top.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')).not.toMatch(/\b(DELETE\s+FROM|UPDATE\s+public\.|INSERT\s+INTO\s+public\.event_promotions)/i);
