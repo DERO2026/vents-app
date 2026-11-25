@@ -3,7 +3,8 @@ import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 
 // Announcements in the notification centre (one feed, not a second system):
-// an Announcements tab (server-filtered to 'broadcast'/'announcement'),
+// an Announcements tab (server-filtered: type 'announcement', or 'broadcast'
+// sent with the 📢 icon -- admin approval notices are 'broadcast' with ✅/❌),
 // an unread badge on that tab, a full-text reader that marks the row read,
 // a push tap opening the right announcement, and every other notification
 // keeping its existing tap-to-route behaviour.
@@ -17,12 +18,23 @@ const deletes: { filters: any[] }[] = [];
 
 function makeQuery(table: string) {
   const filters: [string, string, any][] = [];
+  // PostgREST or=() as the screen sends it: comma-separated eq conditions and
+  // and(...) groups. Evaluated, not string-matched, so a wrong filter fails.
+  const orGroups: string[][][] = [];
+  const parseOr = (expr: string) => {
+    const parts: string[] = []; let depth = 0; let cur = '';
+    for (const ch of expr) { if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; } if (ch === '(') depth++; if (ch === ')') depth--; cur += ch; }
+    parts.push(cur);
+    return parts.map((p) => (p.startsWith('and(') ? p.slice(4, -1).split(',') : [p]));
+  };
+  const condOk = (r: any, c: string) => { const [col, op, ...v] = c.split('.'); if (op !== 'eq') throw new Error('fake supports eq only: ' + c); return String(r[col]) === v.join('.'); };
   let mode: 'select' | 'update' | 'delete' = 'select';
   let patch: any = null;
   let head = false;
   let range: [number, number] | null = null;
   let limit: number | null = null;
-  const apply = () => rows.filter((r) => filters.every(([op, col, v]) => (op === 'eq' ? (r as any)[col] === v : (v as any[]).includes((r as any)[col]))));
+  const apply = () => rows.filter((r) => filters.every(([op, col, v]) => (op === 'eq' ? (r as any)[col] === v : (v as any[]).includes((r as any)[col])))
+    && orGroups.every((groups) => groups.some((g) => g.every((c) => condOk(r, c)))));
   const run = () => {
     if (table !== 'notifications') return { data: [], error: null };
     const matched = apply();
@@ -39,6 +51,7 @@ function makeQuery(table: string) {
     delete: () => { mode = 'delete'; return q; },
     eq: (c: string, v: any) => { filters.push(['eq', c, v]); return q; },
     in: (c: string, v: any[]) => { filters.push(['in', c, v]); return q; },
+    or: (expr: string) => { orGroups.push(parseOr(expr)); return q; },
     order: () => q,
     limit: (n: number) => { limit = n; return q; },
     range: (a: number, b: number) => { range = [a, b]; return q; },
@@ -48,7 +61,8 @@ function makeQuery(table: string) {
 }
 
 vi.mock('../../lib/supabase', () => ({ supabase: { from: (t: string) => makeQuery(t) } }));
-vi.mock('../../lib/userRealtime', () => ({ onUserRealtime: () => () => {} }));
+let rtHandler: (() => void) | null = null;
+vi.mock('../../lib/userRealtime', () => ({ onUserRealtime: (_u: any, _e: any, h: () => void) => { rtHandler = h; return () => {}; } }));
 vi.mock('../../lib/analyticsEvents', () => ({ analytics: { notificationOpened: () => {} } }));
 vi.mock('../../lib/sentry', () => ({ Sentry: { captureException: () => {} } }));
 
@@ -65,6 +79,8 @@ function seed() {
     { id: 'n-sale', user_id: ME, type: 'sale', title: 'New ticket sale', body: 'Someone bought a ticket', read: false, icon: '🎟', created_at: iso(1), push_data: { eventId: 'e-1', screen: 'sales-analytics' } },
     { id: 'n-msg', user_id: ME, type: 'message', title: 'New message', body: 'Hi', read: true, icon: '💬', created_at: iso(20), push_data: { userId: 'u-2', screen: 'chat' } },
     { id: 'n-other', user_id: 'someone-else', type: 'announcement', title: 'Not mine', body: 'x', read: false, icon: '📢', created_at: iso(2), push_data: null },
+    // Admin maker-checker notice: type 'broadcast' but NOT an announcement (0004/0186).
+    { id: 'n-adm', user_id: ME, type: 'broadcast', title: 'Your request has been approved', body: 'Your request (Feature event) was approved and executed.', read: false, icon: '✅', created_at: iso(15), push_data: null },
   ];
 }
 
@@ -90,10 +106,10 @@ describe('Notification centre: Announcements', () => {
   it('All tab still shows every notification of mine, newest first (existing behaviour)', async () => {
     await mount();
     expect(tab('All').getAttribute('aria-selected')).toBe('true');
-    expect(titles()).toEqual(['New ticket sale', 'Organizer payouts update', 'Hello everyone', 'New message']);
+    expect(titles()).toEqual(['New ticket sale', 'Organizer payouts update', 'Hello everyone', 'Your request has been approved', 'New message']);
   });
 
-  it('Announcements tab shows only broadcast/announcement rows, fetched with a server-side type filter', async () => {
+  it('Announcements tab shows only announcements (role announcements + 📢 broadcasts), fetched with a server-side filter', async () => {
     await mount();
     await click(tab('Announcements'));
     expect(tab('Announcements').getAttribute('aria-selected')).toBe('true');
@@ -140,9 +156,10 @@ describe('Notification centre: Announcements', () => {
   it('Mark all read on the Announcements tab only marks announcements', async () => {
     await mount();
     await click(tab('Announcements'));
-    await click(container.querySelector('[aria-label="Mark all read"]')!);
+    await click(container.querySelector('[aria-label="Mark all announcements read"]')!);
     expect(rows.find((x) => x.id === 'n-ann')!.read).toBe(true);
     expect(rows.find((x) => x.id === 'n-bc')!.read).toBe(true);
+    expect(rows.find((x) => x.id === 'n-adm')!.read).toBe(false); // admin notice is not an announcement
     expect(rows.find((x) => x.id === 'n-sale')!.read).toBe(false);
     expect(rows.find((x) => x.id === 'n-other')!.read).toBe(false);
   });
@@ -161,7 +178,7 @@ describe('Notification centre: Announcements', () => {
     // ConfirmDialog renders into a portal on document.body.
     expect(document.body.textContent).toContain('Clear all announcements?');
     await click(Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent === 'Clear All')!);
-    expect(rows.map((r) => r.id).sort()).toEqual(['n-msg', 'n-other', 'n-sale']);
+    expect(rows.map((r) => r.id).sort()).toEqual(['n-adm', 'n-msg', 'n-other', 'n-sale']);
   });
 
   it('an announcement push opens the Announcements tab with that announcement in the reader', async () => {
@@ -185,5 +202,71 @@ describe('Notification centre: Announcements', () => {
     await click(tab('Announcements'));
     expect(container.textContent).toContain('No announcements yet');
     expect(container.querySelector('[data-testid="announcements-unread"]')).toBeNull();
+  });
+
+  // ── release audit M1: admin approval notices are not announcements ──
+  it('admin approval/rejection notices stay in All, are not listed or counted as announcements, and keep their old tap behaviour', async () => {
+    await mount();
+    expect(titles()).toContain('Your request has been approved');
+    expect(container.querySelector('[data-testid="announcements-unread"]')?.textContent).toBe('2');
+    await click(row('Your request has been approved'));
+    expect(reader()).toBeNull(); // no announcement reader
+    expect(route).not.toHaveBeenCalled(); // no push_data -> no navigation, exactly as before
+    expect(rows.find((x) => x.id === 'n-adm')!.read).toBe(true); // still marked read on tap
+    await click(tab('Announcements'));
+    expect(titles()).not.toContain('Your request has been approved');
+  });
+
+  // ── release audit H1: live updates respect the selected tab ──
+  it('a live ordinary notification does not appear in the Announcements tab; a live announcement does', async () => {
+    await mount();
+    await click(tab('Announcements'));
+    rows.push({ id: 'n-live-sale', user_id: ME, type: 'sale', title: 'Live sale', body: 'x', read: false, icon: '🎟', created_at: iso(0), push_data: null });
+    await act(async () => { rtHandler!(); }); await flush();
+    expect(titles()).toEqual(['Organizer payouts update', 'Hello everyone']);
+    expect(tab('Announcements').getAttribute('aria-selected')).toBe('true');
+    rows.push({ id: 'n-live-ann', user_id: ME, type: 'broadcast', title: 'Live announcement', body: 'y', read: false, icon: '📢', created_at: iso(0), push_data: { type: 'announcement', announcementId: 'a-9', screen: 'notifications' } });
+    await act(async () => { rtHandler!(); }); await flush();
+    expect(titles()).toEqual(['Live announcement', 'Organizer payouts update', 'Hello everyone']);
+    expect(container.querySelector('[data-testid="announcements-unread"]')?.textContent).toBe('3');
+  });
+
+  it('after switching back to All, live updates show every notification again', async () => {
+    await mount({ focusAnnouncementId: 'gone' }); // starts on Announcements
+    await click(tab('All'));
+    rows.push({ id: 'n-live-sale', user_id: ME, type: 'sale', title: 'Live sale', body: 'x', read: false, icon: '🎟', created_at: iso(0), push_data: null });
+    await act(async () => { rtHandler!(); }); await flush();
+    expect(titles()[0]).toBe('Live sale');
+    expect(titles()).toContain('New ticket sale');
+  });
+
+  // ── release audit M4: overall unread vs announcement-only unread ──
+  it('header shows unread across ALL notifications; the Announcements chip shows announcements only', async () => {
+    await mount();
+    // mine unread: n-ann, n-bc, n-sale, n-adm = 4; announcements unread: n-ann, n-bc = 2
+    expect(container.querySelector('[data-testid="notifications-unread-total"]')?.textContent).toBe('4 unread');
+    expect(container.querySelector('[data-testid="announcements-unread"]')?.getAttribute('aria-label')).toBe('2 unread announcements');
+    await click(tab('Announcements'));
+    expect(container.querySelector('[data-testid="notifications-unread-total"]')?.textContent).toBe('4 unread'); // same meaning on both tabs
+    await click(row('Hello everyone'));
+    await click(reader()!.querySelector('[aria-label="Close announcement"]')!);
+    expect(container.querySelector('[data-testid="notifications-unread-total"]')?.textContent).toBe('3 unread');
+    expect(container.querySelector('[data-testid="announcements-unread"]')?.textContent).toBe('1');
+  });
+
+  it('header total counts unread rows beyond the first loaded page (server count, not loaded rows)', async () => {
+    for (let i = 0; i < 60; i++) rows.push({ id: `bulk-${i}`, user_id: ME, type: 'social', title: `Bulk ${i}`, body: 'b', read: false, icon: '👋', created_at: iso(100 + i), push_data: null });
+    await mount();
+    expect(container.querySelectorAll('[data-testid="notification-row"]').length).toBe(50);
+    expect(container.querySelector('[data-testid="notifications-unread-total"]')?.textContent).toBe('64 unread');
+  });
+
+  it('when every announcement is read, the Announcements tab hides its Mark-all button but the header still shows other unread', async () => {
+    rows.forEach((r) => { if (r.id === 'n-ann' || r.id === 'n-bc') r.read = true; });
+    await mount();
+    await click(tab('Announcements'));
+    expect(container.querySelector('[aria-label="Mark all announcements read"]')).toBeNull();
+    expect(container.querySelector('[data-testid="announcements-unread"]')).toBeNull();
+    expect(container.querySelector('[data-testid="notifications-unread-total"]')?.textContent).toBe('2 unread');
   });
 });

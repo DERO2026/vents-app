@@ -15,8 +15,9 @@
 --     back and EDIT it, and PUBLISH it later. Before this, an announcement
 --     only existed as N copies inside recipients' notifications.
 --   * A link from each delivered notification back to its announcement
---     (push_data = {type:'announcement', announcementId}), so a push tap or
---     an in-app tap opens the announcement reader.
+--     (push_data = {type:'announcement', announcementId, screen:'notifications'}),
+--     so a push tap or an in-app tap opens the announcement reader (older
+--     app builds open the Notifications screen).
 --
 -- Design decisions:
 --   * Delivery reuses the notifications table and its push pipeline -- no
@@ -32,11 +33,15 @@
 --     only is_admin_or_root() can SELECT it, and nobody can write it except
 --     through the SECURITY DEFINER functions below.
 --   * Authorization matches 0191: is_admin_or_root() (Super Admin tier;
---     Sub-Admins excluded) for every function, checked first.
+--     Sub-Admins excluded) for every function, checked first, and FAILS
+--     CLOSED: with no auth.uid(), production's is_root() is NULL, so
+--     is_admin_or_root() can be NULL and a bare `IF NOT ...` would not
+--     raise. COALESCE(..., false) refuses that case too.
 --   * Publish is race-safe and idempotent: the row is locked FOR UPDATE and
 --     must still be a draft, so two concurrent publishes cannot double-send.
 --
 -- Production: NOT applied by this change. Apply only with owner approval.
+-- Rollback: supabase/rollback/undo_0222.sql.
 
 CREATE TABLE public.announcements (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -92,7 +97,7 @@ DECLARE
   v_status   text;
   v_id       uuid;
 BEGIN
-  IF NOT public.is_admin_or_root() THEN
+  IF NOT COALESCE(public.is_admin_or_root(), false) THEN
     RAISE EXCEPTION 'Only admins can manage announcements';
   END IF;
 
@@ -135,7 +140,7 @@ AS $function$
 DECLARE
   v_status text;
 BEGIN
-  IF NOT public.is_admin_or_root() THEN
+  IF NOT COALESCE(public.is_admin_or_root(), false) THEN
     RAISE EXCEPTION 'Only admins can manage announcements';
   END IF;
   SELECT status INTO v_status FROM public.announcements WHERE id = p_id FOR UPDATE;
@@ -164,7 +169,7 @@ DECLARE
   v_push     jsonb;
   v_count    int;
 BEGIN
-  IF NOT public.is_admin_or_root() THEN
+  IF NOT COALESCE(public.is_admin_or_root(), false) THEN
     RAISE EXCEPTION 'Only admins can publish announcements';
   END IF;
 
@@ -177,7 +182,10 @@ BEGIN
   -- Same limiter as 0191, own key: stops a runaway client loop.
   PERFORM public.check_rate_limit('admin_publish_announcement:' || v_admin_id::text, 10, 300);
 
-  v_push := jsonb_build_object('type', 'announcement', 'announcementId', v_ann.id::text);
+  -- type/announcementId: new builds open this announcement's reader.
+  -- screen: older builds, which do not know 'announcement', fall back to
+  -- their existing 'notifications' route instead of doing nothing.
+  v_push := jsonb_build_object('type', 'announcement', 'announcementId', v_ann.id::text, 'screen', 'notifications');
 
   CASE v_ann.audience
     WHEN 'everyone' THEN

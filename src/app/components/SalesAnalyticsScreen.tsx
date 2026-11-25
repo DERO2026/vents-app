@@ -6,6 +6,8 @@ import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { Sentry } from '../../lib/sentry';
 import { hasEventEnded } from '../../lib/eventLifecycle';
+import { BalanceVisibilityToggle } from './BalancePrivacy';
+import { privateAmount, useBalanceHidden } from '../../lib/balancePrivacy';
 
 interface SalesAnalyticsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -23,7 +25,7 @@ interface SalesAnalyticsScreenProps {
   onNavigate?: (screen: 'org-dashboard' | 'manage-events' | 'promote-event' | 'promotions' | 'wallet') => void;
 }
 
-function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
+function BarChartSVG({ data, hidden = false }: { data: { day: string; revenue: number }[]; hidden?: boolean }) {
   const W = 320, H = 140, PL = 8, PR = 8, PT = 8, PB = 24;
   const maxVal = Math.max(...data.map((d) => d.revenue));
   const max = maxVal === 0 ? 1 : maxVal;
@@ -82,7 +84,8 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
         const y = PT + innerH * frac + 4;
         return (
           <text key={`ylabel-${i}`} x={PL} y={y} fill={ventsColors.ink2} fontSize={9}>
-            ₦{val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : `${val / 1000}k`}
+            {/* Axis amounts reveal revenue; masked with the global hide-balances setting. */}
+            {hidden ? '₦•••' : `₦${val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : `${val / 1000}k`}`}
           </text>
         );
       })}
@@ -169,6 +172,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle,
 }
 
 function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void; onNavigate?: SalesAnalyticsScreenProps['onNavigate'] }) {
+  const balanceHidden = useBalanceHidden();
   useDesktopWideShell();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<{
@@ -367,7 +371,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { current
           <ArrowLeft size={18} color={ventsColors.ink2} />
         </button>
         <div>
-          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>Sales Analytics</h1>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', display: 'flex', alignItems: 'center', gap: '10px' }}>Sales Analytics <BalanceVisibilityToggle size={16} color={ventsColors.ink2} /></h1>
           <p style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
             This week · All events
           </p>
@@ -439,7 +443,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { current
             {/* Top stats */}
             <div className="sa-portfolio-stats">
               {[
-                { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'All paid tickets', color: ventsColors.success },
+                { label: 'Total Revenue', value: privateAmount(`₦${(analytics.totalRevenue).toLocaleString()}`, balanceHidden), sub: 'All paid tickets', color: ventsColors.success },
                 { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Active tickets', color: ventsColors.accent },
                 { label: 'Live Events', value: analytics.liveEvents.toLocaleString(), sub: 'Published, not ended', color: '#93C5FD' },
                 { label: 'Avg. Attendance', value: `${analytics.avgAttendance}%`, sub: 'Checked in / sold', color: ventsColors.pending },
@@ -466,7 +470,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { current
             <div className="sa-portfolio-charts">
               {/* Daily revenue chart */}
               <ChartCard title="Daily Revenue">
-                <BarChartSVG data={analytics.daily} />
+                <BarChartSVG hidden={balanceHidden} data={analytics.daily} />
               </ChartCard>
 
               {/* Ticket type breakdown -- handoff SA1: "donut replaced with
@@ -604,6 +608,7 @@ function TrendBars({ data, valueKey, color, formatValue }: {
 }
 
 function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void; eventId: string; eventTitle?: string }) {
+  const balanceHidden = useBalanceHidden();
   useDesktopWideShell();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -642,7 +647,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
           <ArrowLeft size={18} color={ventsColors.ink2} />
         </button>
         <div style={{ minWidth: 0 }}>
-          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Event Analytics</h1>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>Event Analytics <BalanceVisibilityToggle size={16} color={ventsColors.ink2} /></h1>
           <p style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px', margin: 0 }}>
             {data?.eventTitle || eventTitle || 'This event'}
           </p>
@@ -676,11 +681,11 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
               {data.overview.remaining !== null && (
                 <StatTile label="Tickets Remaining" value={data.overview.remaining.toLocaleString()} sub={`of ${data.overview.ticketGoal.toLocaleString()} capacity`} />
               )}
-              <StatTile label="Gross Ticket Sales" value={fmtKobo(data.overview.grossKobo)} sub="paid tickets only" subColor={ventsColors.success} />
-              <StatTile label="Organizer Amount Earned" value={fmtKobo(data.overview.organizerEarnedKobo)} sub="credited to your wallet" subColor={ventsColors.success} />
+              <StatTile label="Gross Ticket Sales" value={privateAmount(fmtKobo(data.overview.grossKobo), balanceHidden)} sub="paid tickets only" subColor={ventsColors.success} />
+              <StatTile label="Organizer Amount Earned" value={privateAmount(fmtKobo(data.overview.organizerEarnedKobo), balanceHidden)} sub="credited to your wallet" subColor={ventsColors.success} />
               <StatTile
                 label="VENTS Service Fee"
-                value={fmtKobo(data.overview.buyerFeeKobo)}
+                value={privateAmount(fmtKobo(data.overview.buyerFeeKobo), balanceHidden)}
                 sub="paid by buyers, not deducted"
               />
             </div>
@@ -712,7 +717,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
                           {t.soldCount} sold{t.remaining !== null ? ` · ${t.remaining} left` : ''}
                         </p>
                       </div>
-                      <span style={{ color: ventsColors.success, fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>{fmtKobo(t.revenueKobo)}</span>
+                      <span style={{ color: ventsColors.success, fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>{privateAmount(fmtKobo(t.revenueKobo), balanceHidden)}</span>
                     </div>
                   ))}
                 </div>

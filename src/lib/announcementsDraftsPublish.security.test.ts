@@ -9,27 +9,30 @@ import { join } from 'node:path';
 
 let m: string;
 let app: string;
+let undo: string;
 const fn = (name: string) => m.match(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\([\\s\\S]*?\\$function\\$;`))?.[0] ?? '';
 
 beforeAll(() => {
   const root = join(__dirname, '..', '..');
   m = readFileSync(join(root, 'supabase', 'migrations', '0222_announcements_drafts_publish.sql'), 'utf8');
   app = readFileSync(join(root, 'src', 'app', 'App.tsx'), 'utf8');
+  undo = readFileSync(join(root, 'supabase', 'rollback', 'undo_0222.sql'), 'utf8');
 });
 
 describe('0222: authorization', () => {
   for (const name of ['admin_save_announcement_draft', 'admin_delete_announcement_draft', 'admin_publish_announcement']) {
-    it(`${name} checks is_admin_or_root() before anything else`, () => {
+    it(`${name} checks is_admin_or_root() first, failing closed when it is NULL (no auth.uid())`, () => {
       const body = fn(name);
       expect(body).toMatch(/SECURITY DEFINER/);
       expect(body).toMatch(/SET search_path TO ''/);
       const begin = body.indexOf('BEGIN');
-      const auth = body.indexOf('IF NOT public.is_admin_or_root() THEN');
+      const auth = body.indexOf('IF NOT COALESCE(public.is_admin_or_root(), false) THEN');
       expect(auth).toBeGreaterThan(begin);
       for (const later of ['INSERT INTO', 'UPDATE public.announcements', 'DELETE FROM', 'SELECT status', 'SELECT * INTO']) {
         const i = body.indexOf(later);
         if (i >= 0) expect(i).toBeGreaterThan(auth);
       }
+      expect(body).not.toMatch(/IF NOT public\.is_admin_or_root\(\)/); // bare form does not raise on NULL (release audit H2)
       expect(body).not.toMatch(/public\.is_admin\(\)/); // Sub-Admins stay excluded, as in 0191
       expect(body).not.toMatch(/EXECUTE\s+(format|')/i); // no dynamic SQL
     });
@@ -64,7 +67,7 @@ describe('0222: publish', () => {
 
   it('delivers through notifications with push_data linking back to the announcement', () => {
     const body = fn('admin_publish_announcement');
-    expect(body).toContain("v_push := jsonb_build_object('type', 'announcement', 'announcementId', v_ann.id::text);");
+    expect(body).toContain("v_push := jsonb_build_object('type', 'announcement', 'announcementId', v_ann.id::text, 'screen', 'notifications');");
     expect(body.match(/INSERT INTO public\.notifications \(id, user_id, type, title, body, read, icon, created_at, push_data\)/g)).toHaveLength(3);
   });
 
@@ -97,5 +100,34 @@ describe('App push routing for announcements', () => {
     expect(ann).toBeGreaterThan(0);
     for (const later of ['if (data.transferId)', 'if (data.ticketId)']) expect(handler.indexOf(later)).toBeGreaterThan(ann);
     expect(handler.slice(ann, ann + 600)).toContain("setScreen('notifications')");
+  });
+});
+
+describe('undo_0222.sql (release audit H3)', () => {
+  it('is gated like the other undo scripts and refuses to discard drafts silently', () => {
+    expect(undo).toContain("IF current_setting('vents.rollback_confirm', true) IS DISTINCT FROM 'undo-0222' THEN");
+    expect(undo).toContain("vents.rollback_discard_drafts");
+  });
+
+  it('drops exactly the objects 0222 creates, and nothing else', () => {
+    const drops = undo.match(/^DROP [^;]+;/gm) ?? [];
+    expect(drops).toEqual([
+      'DROP FUNCTION IF EXISTS public.admin_publish_announcement(uuid);',
+      'DROP FUNCTION IF EXISTS public.admin_delete_announcement_draft(uuid);',
+      'DROP FUNCTION IF EXISTS public.admin_save_announcement_draft(uuid, text, text, text);',
+      'DROP TABLE IF EXISTS public.announcements;',
+    ]);
+    for (const created of m.match(/CREATE (?:OR REPLACE FUNCTION|TABLE) public\.(\w+)/g) ?? []) {
+      const name = created.split('public.')[1];
+      expect(undo).toContain(`public.${name}`);
+    }
+    // No data statements at all: notifications, admin_logs and 0189-0191 objects are never touched.
+    expect(undo.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')).not.toMatch(/\b(DELETE\s+FROM|UPDATE\s+public|TRUNCATE|INSERT\s+INTO)\b/i);
+    const sql = undo.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+    expect(sql).not.toMatch(/\b(admin_send_announcement|announcement_groups|announcement_group_members|announcement_mutes|notifications|admin_logs)\b/i);
+  });
+
+  it('documents that delivered notifications remain after rollback', () => {
+    expect(undo).toMatch(/Notifications already delivered[\s\S]*stay in\s+--\s+every recipient's feed/);
   });
 });

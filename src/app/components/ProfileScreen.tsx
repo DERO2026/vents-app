@@ -70,6 +70,9 @@ export function ProfileScreen({
   // Role statuses for the VENTS Work card chips (organizer_requests,
   // service_provider_requests, service_providers, recruiters, VC balance).
   const work = useWorkStatus(currentUser);
+  // Must stay above the signed-out early return below: hooks run in the same
+  // order on every render, including after the user signs out on this screen.
+  const balanceHidden = useBalanceHidden();
 
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -254,7 +257,6 @@ export function ProfileScreen({
   // All four VENTS Work indicators, always shown with their live state
   // ("Start"/"Join" for roles not taken up yet), so the card never hides
   // a role or claims one is held.
-  const balanceHidden = useBalanceHidden();
   const workCardIndicators = workIndicators({
     loading: work.loading,
     organizer: organizerRole({ isOrganizer: !!currentUser?.isOrganizer, isStaff, isVerified, request: work.organizerRequest }),

@@ -58,14 +58,42 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DB_NAME;" 
 sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE $DB_NAME;" >/dev/null
 "${PSQL[@]}" -q -f "$SCRIPT_DIR/schema-vents-earn.sql" >/dev/null
 
-# is_admin_or_root(): same meaning as production (Super Admin tier: role
-# 'admin'; sub-admins excluded). check_rate_limit(): production's body (0004).
+# is_root()/is_super_admin()/is_admin_or_root(): production's definitions
+# VERBATIM (0004_functions.sql) -- not a simplified stub. They matter: with
+# no auth.uid(), is_root() is NULL, so is_admin_or_root() can be NULL rather
+# than false (release audit H2). check_rate_limit(): production's body (0004).
+# service_role mirrors Supabase's default EXECUTE grant on new functions.
 "${PSQL[@]}" -q <<'SQL'
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='project_admin') THEN CREATE ROLE project_admin; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role; END IF;
 END $$;
-CREATE OR REPLACE FUNCTION public.is_admin_or_root() RETURNS boolean LANGUAGE sql STABLE AS
-$$ SELECT EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin') $$;
+GRANT USAGE ON SCHEMA public, auth TO project_admin, service_role;
+CREATE OR REPLACE FUNCTION public.is_root()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  SELECT auth.uid() = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832'::uuid;
+$function$;
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  SELECT public.is_root()
+     OR EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin');
+$function$;
+CREATE OR REPLACE FUNCTION public.is_admin_or_root()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  SELECT public.is_super_admin();
+$function$;
 GRANT EXECUTE ON FUNCTION public.is_admin_or_root() TO authenticated;
 CREATE TABLE public.admin_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), admin_id uuid, action text NOT NULL,
@@ -101,7 +129,20 @@ SQL
 "${PSQL[@]}" -q -1 -f "$MIG/0198_notifications_type_check_allow_announcement.sql" >/dev/null
 "${PSQL[@]}" -q -c "INSERT INTO public.announcement_mutes (user_id, group_id) SELECT '$ORG2', id FROM public.announcement_groups WHERE key='organizers';"
 "${PSQL[@]}" -q -1 -f "$MIG/0222_announcements_drafts_publish.sql" >/dev/null
+# Supabase's default privileges give service_role EXECUTE on every new
+# function; 0222 revokes only PUBLIC/anon/authenticated, so mirror that here.
+"${PSQL[@]}" -q -c "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;"
 echo "== 0222 applied in one transaction =="
+for fn in is_root is_super_admin is_admin_or_root; do
+  live=$("${PSQL[@]}" -tA -c "SELECT md5(regexp_replace(prosrc, '\s+', ' ', 'g')) FROM pg_proc WHERE proname='$fn' AND pronamespace='public'::regnamespace")
+  repo=$(python3 - "$MIG/0004_functions.sql" "$fn" <<'PY'
+import re,sys,hashlib
+t=open(sys.argv[1]).read(); m=re.search(r'CREATE OR REPLACE FUNCTION public\.'+sys.argv[2]+r'\(\)[\s\S]*?AS \$function\$([\s\S]*?)\$function\$', t)
+print(hashlib.md5(re.sub(r'\s+',' ',m.group(1)).encode()).hexdigest())
+PY
+)
+  if [ "$live" = "$repo" ]; then pass "harness $fn() is production's 0004 body verbatim"; else fail "harness $fn() differs from 0004"; fi
+done
 
 echo "== Authorization =="
 for who in "$PLAIN:plain user" "$SUB:sub-admin" "$ORG1:organizer"; do
@@ -110,6 +151,14 @@ for who in "$PLAIN:plain user" "$SUB:sub-admin" "$ORG1:organizer"; do
     "$(as "$uid") SELECT public.admin_save_announcement_draft(NULL, 'everyone', 'T', 'B');"
 done
 expect_value "refused calls wrote nothing" "SELECT count(*) FROM public.announcements;" "0"
+
+echo "== Fails closed with no auth.uid() (release audit H2) =="
+expect_value "is_admin_or_root() with no uid is NULL (the case COALESCE guards)" "SELECT coalesce(public.is_admin_or_root()::text, 'NULL');" "NULL"
+for r in project_admin service_role postgres; do
+  set_role=""; [ "$r" != postgres ] && set_role="SET ROLE $r;"
+  expect_error "$r with no uid cannot create a draft" "Only admins can manage announcements" "$set_role SELECT public.admin_save_announcement_draft(NULL, 'everyone', 'T', 'B');"
+done
+expect_value "no-uid attempts wrote nothing" "SELECT count(*) FROM public.announcements;" "0"
 
 echo "== Validation =="
 expect_error "invalid audience rejected" "Invalid audience" "$(as "$ADMIN") SELECT public.admin_save_announcement_draft(NULL, 'admins', 'T', 'B');"
@@ -142,14 +191,19 @@ expect_error "anon cannot read" "permission denied" "SET ROLE anon; SELECT count
 expect_value "anon cannot execute publish" "SELECT has_function_privilege('anon','public.admin_publish_announcement(uuid)','EXECUTE');" "f"
 expect_value "authenticated can execute publish (body gates on is_admin_or_root)" "SELECT has_function_privilege('authenticated','public.admin_publish_announcement(uuid)','EXECUTE');" "t"
 expect_error "non-admin publish through the RPC is refused" "Only admins can publish" "$(as "$PLAIN") SET ROLE authenticated; SELECT public.admin_publish_announcement('$D1');"
+for r in project_admin service_role postgres; do
+  set_role=""; [ "$r" != postgres ] && set_role="SET ROLE $r;"
+  expect_error "$r with no uid cannot publish" "Only admins can publish" "$set_role SELECT public.admin_publish_announcement('$D1');"
+  expect_error "$r with no uid cannot delete a draft" "Only admins can manage announcements" "$set_role SELECT public.admin_delete_announcement_draft('$D1');"
+done
 expect_value "refused publish left it a draft and sent nothing" "SELECT status || '|' || (SELECT count(*) FROM public.notifications) FROM public.announcements WHERE id='$D1';" "draft|0"
 
 echo "== Publish: targeting identical to 0191 =="
 expect_value "service_providers publish -> 1 recipient" "$(as "$ADMIN") SELECT public.admin_publish_announcement('$D1')->>'recipients';" "1"
 expect_value "delivered only to the provider, type announcement, unread" \
   "SELECT string_agg(user_id::text || '/' || type || '/' || read, ',') FROM public.notifications;" "$PROV/announcement/false"
-expect_value "delivered row carries push_data linking to the announcement" \
-  "SELECT push_data->>'type' || '|' || (push_data->>'announcementId' = '$D1') FROM public.notifications;" "announcement|true"
+expect_value "delivered row carries push_data linking to the announcement, plus screen for older builds" \
+  "SELECT push_data->>'type' || '|' || (push_data->>'announcementId' = '$D1') || '|' || (push_data->>'screen') FROM public.notifications;" "announcement|true|notifications"
 expect_value "announcement marked published with recipients and time" \
   "SELECT status || '|' || recipients || '|' || (published_at IS NOT NULL) || '|' || (published_by = '$ADMIN') FROM public.announcements WHERE id='$D1';" "published|1|true|true"
 expect_error "published announcement cannot be edited" "cannot be edited" "$(as "$ADMIN") SELECT public.admin_save_announcement_draft('$D1', 'everyone', 'Sneaky', 'Rewrite');"
@@ -206,6 +260,21 @@ expect_value "rate-limited draft stays a draft" "SELECT status FROM public.annou
 
 echo "== 0191 still works alongside (installed app builds) =="
 expect_ok "admin_send_announcement unchanged and callable" "$(as "$ADMIN") SELECT public.admin_send_announcement('organizers', 'Legacy', 'Still works');"
+
+echo "== Rollback: supabase/rollback/undo_0222.sql =="
+UNDO="$REPO_ROOT/supabase/rollback/undo_0222.sql"
+NOTIF_BEFORE=$("${PSQL[@]}" -tA -c "SELECT count(*) FROM public.notifications;")
+expect_error "undo refused without confirmation" "undo_0222 refused: set vents.rollback_confirm" "$(cat "$UNDO")"
+expect_error "undo refused while drafts exist unless discarding is confirmed" "unpublished draft" "SET vents.rollback_confirm = 'undo-0222'; $(cat "$UNDO")"
+expect_value "refused undos changed nothing" "SELECT (to_regclass('public.announcements') IS NOT NULL) || '|' || (SELECT count(*) FROM pg_proc WHERE proname LIKE 'admin_%announcement%' AND pronamespace='public'::regnamespace);" "true|4"
+expect_ok "undo runs in one transaction with both confirmations" "BEGIN; SET LOCAL vents.rollback_confirm = 'undo-0222'; SET LOCAL vents.rollback_discard_drafts = 'yes'; $(cat "$UNDO") COMMIT;"
+expect_value "only 0222's objects are gone; 0191's admin_send_announcement remains" \
+  "SELECT (to_regclass('public.announcements') IS NULL) || '|' || string_agg(proname, ',' ORDER BY proname) FROM pg_proc WHERE proname LIKE 'admin_%announcement%' AND pronamespace='public'::regnamespace;" "true|admin_send_announcement"
+expect_value "delivered notifications survive the undo" "SELECT count(*) FROM public.notifications;" "$NOTIF_BEFORE"
+expect_value "0189 announcement tables untouched" "SELECT count(*) FROM public.announcement_groups;" "2"
+expect_ok "legacy send still works after undo" "$(as "$ADMIN") SELECT public.admin_send_announcement('everyone', 'After undo', 'Still works');"
+expect_ok "undo is re-runnable (IF EXISTS)" "BEGIN; SET LOCAL vents.rollback_confirm = 'undo-0222'; $(cat "$UNDO") COMMIT;"
+expect_ok "0222 re-applies cleanly after undo" "$(cat "$MIG/0222_announcements_drafts_publish.sql")"
 
 sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null
 if [ "$FAILS" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "$FAILS CHECK(S) FAILED" >&2; exit 1; fi

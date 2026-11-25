@@ -20,13 +20,23 @@ function formatRelativeTime(isoString: string): string {
   return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// Announcements are delivered as ordinary notification rows: 'broadcast'
-// (sent to everyone) and 'announcement' (sent to a role audience) --
-// admin_send_announcement (0191) and admin_publish_announcement (0222).
-// They get their own tab and a full-text reader, but stay in the one
-// notification feed (same read state, badge, push and delete behaviour).
-export const ANNOUNCEMENT_TYPES = ['broadcast', 'announcement'] as const;
-export const isAnnouncement = (n: { type: string }) => (ANNOUNCEMENT_TYPES as readonly string[]).includes(n.type);
+// Announcements are delivered as ordinary notification rows -- by
+// admin_send_broadcast (0188), admin_send_announcement (0191) and
+// admin_publish_announcement (0222):
+//   * type 'announcement' (sent to a role audience), or
+//   * type 'broadcast' with icon '📢' (sent to everyone).
+// The icon matters: the admin maker-checker functions (approve/
+// reject_admin_action, 0004 ... 0186) also insert type 'broadcast' -- "Your
+// request has been approved/rejected", icon '✅'/'❌' -- and those are admin
+// notices, not announcements. Every announcement producer in the migration
+// history uses '📢', so this rule classifies old and new rows alike without
+// touching the admin notices or their delivery.
+// Announcements get their own tab and a full-text reader, but stay in the
+// one notification feed (same read state, badge, push and delete behaviour).
+export const ANNOUNCEMENT_ICON = '📢';
+export const ANNOUNCEMENT_FILTER = `type.eq.announcement,and(type.eq.broadcast,icon.eq.${ANNOUNCEMENT_ICON})`;
+export const isAnnouncement = (n: { type: string; icon?: string | null }) =>
+  n.type === 'announcement' || (n.type === 'broadcast' && n.icon === ANNOUNCEMENT_ICON);
 
 function formatFullDate(isoString: string): string {
   return new Date(isoString).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -108,8 +118,29 @@ export function NotificationsScreen({
     push_data: n.push_data ?? null,
   });
 
-  // Restricts a notifications query to announcements on that tab.
-  const scoped = (q: any) => (tab === 'announcements' ? q.in('type', ANNOUNCEMENT_TYPES as unknown as string[]) : q);
+  // Restricts a notifications query to announcements on that tab. Reads the
+  // tab through a ref: the realtime listener below is registered once and
+  // would otherwise keep the tab from its first render (release audit H1).
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const scoped = (q: any) => (tabRef.current === 'announcements' ? q.or(ANNOUNCEMENT_FILTER) : q);
+
+  // Unread across every notification type (the header) -- server-side, so it
+  // is right even when the list is paginated. The bell badge (App.tsx) uses
+  // the same count.
+  const [totalUnread, setTotalUnread] = useState<number | null>(null);
+  const fetchTotalUnread = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', currentUser.id)
+        .eq('read', false);
+      if (!error && typeof count === 'number') setTotalUnread(count);
+    } catch { /* falls back to the loaded rows below */ }
+  };
+  const refreshCounts = () => { fetchAnnouncementUnread(); fetchTotalUnread(); };
 
   const fetchAnnouncementUnread = async () => {
     if (!currentUser?.id) return;
@@ -119,7 +150,7 @@ export function NotificationsScreen({
         .select('id', { count: 'exact', head: true })
         .eq('user_id', currentUser.id)
         .eq('read', false)
-        .in('type', ANNOUNCEMENT_TYPES as unknown as string[]);
+        .or(ANNOUNCEMENT_FILTER);
       if (!error && typeof count === 'number') setAnnouncementUnread(count);
     } catch { /* tab badge only; the main badge is App's */ }
   };
@@ -179,7 +210,7 @@ export function NotificationsScreen({
 
   useEffect(() => {
     fetchNotifications();
-    fetchAnnouncementUnread();
+    refreshCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, tab]);
 
@@ -210,11 +241,16 @@ export function NotificationsScreen({
     // trigger signals new_notification here. Only I can join it (0199).
     // The channel is shared with App's badge listener (userRealtime), so
     // leaving this screen only drops this handler, never the channel.
-    return onUserRealtime(currentUser.id, 'new_notification', () => { fetchNotifications(); fetchAnnouncementUnread(); });
+    return onUserRealtime(currentUser.id, 'new_notification', () => { fetchNotifications(); refreshCounts(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
-  const unreadCount = items.filter((n) => !n.read).length;
+  // Header: unread across ALL notifications (server count; loaded rows until
+  // it arrives). The Announcements chip carries the announcement-only count.
+  const loadedUnread = items.filter((n) => !n.read).length;
+  const unreadCount = totalUnread ?? (tab === 'all' ? loadedUnread : 0);
+  // What "Mark all read" on this tab would change.
+  const tabUnread = tab === 'announcements' ? Math.max(announcementUnread, loadedUnread) : Math.max(unreadCount, loadedUnread);
 
   const markAllRead = async () => {
     if (!currentUser?.id) return;
@@ -227,7 +263,7 @@ export function NotificationsScreen({
         .eq('read', false));
       if (error) throw error;
       onRefreshUnread?.();
-      fetchAnnouncementUnread();
+      refreshCounts();
     } catch (err) {
       console.error("Failed to mark all as read:", err);
       Sentry.captureException(err);
@@ -246,7 +282,7 @@ export function NotificationsScreen({
         .eq('id', id);
       if (error) throw error;
       onRefreshUnread?.();
-      if (opened && isAnnouncement(opened)) fetchAnnouncementUnread();
+      refreshCounts();
     } catch (err) {
       console.error("Failed to mark notification as read:", err);
       Sentry.captureException(err);
@@ -262,7 +298,7 @@ export function NotificationsScreen({
       const { error } = await supabase.from('notifications').delete().eq('id', id);
       if (error) throw error;
       onRefreshUnread?.();
-      fetchAnnouncementUnread();
+      refreshCounts();
     } catch (err) {
       console.error("Failed to delete notification:", err);
       Sentry.captureException(err);
@@ -281,7 +317,7 @@ export function NotificationsScreen({
       const { error } = await scoped(supabase.from('notifications').delete().eq('user_id', currentUser.id));
       if (error) throw error;
       onRefreshUnread?.();
-      fetchAnnouncementUnread();
+      refreshCounts();
     } catch (err) {
       console.error("Failed to clear notifications:", err);
       Sentry.captureException(err);
@@ -416,18 +452,18 @@ export function NotificationsScreen({
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: ventsColors.accent, boxShadow: '0 0 5px rgba(168,85,247,0.8)' }} />
               <span style={{ color: ventsColors.ink2, fontSize: '11px', letterSpacing: '0.02em' }}>
-                {unreadCount} new
+                <span data-testid="notifications-unread-total">{unreadCount} unread</span>
               </span>
             </div>
           )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative', zIndex: 1 }}>
-          {unreadCount > 0 && (
+          {tabUnread > 0 && (
             <button
               onClick={markAllRead}
-              title="Mark all read"
-              aria-label="Mark all read"
+              title={tab === 'announcements' ? 'Mark all announcements read' : 'Mark all read'}
+              aria-label={tab === 'announcements' ? 'Mark all announcements read' : 'Mark all read'}
               style={{
                 background: 'rgba(255,255,255,0.04)',
                 backdropFilter: 'blur(20px) saturate(180%)',
