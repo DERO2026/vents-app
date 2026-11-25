@@ -18,6 +18,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { isEventDiscoverable } from '../../lib/eventLifecycle';
+import { formatSalesOpen, useComingSoonEvents, useSaleAlerts } from '../../lib/comingSoon';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
 import { formatEventDateRange, formatCardCTA } from './data';
@@ -248,6 +249,8 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     placeId: dbEvent.place_id || null,
     locationType: dbEvent.location_type || 'in_person',
     contactPhone: dbEvent.show_phone && dbEvent.contact_phone ? dbEvent.contact_phone : '',
+    status: dbEvent.status || 'live',
+    salesOpenAt: dbEvent.sales_open_at || null,
   };
 }
 
@@ -847,6 +850,179 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
   );
 }
 
+// ── Coming Soon Carousel (0224) ───────────────────────────────────
+// Same visual system as FeaturedCarousel above, token for token: section
+// heading, dot pager, 4s auto-advance, swipe, 28px card radius, 52vh card
+// (280-460px), border, shadow, full-bleed flyer, flyerScrim(40), glass badge
+// pill, save button, and the overlay's type scale. FeaturedCarousel itself is
+// untouched. Differences are content only: the badge reads COMING SOON, the
+// sales opening time is shown, and the CTA pill is "Notify me" (there is no
+// purchase CTA -- these events are not on sale).
+export function ComingSoonCarousel({
+  events, onEventPress, isSaved, onToggleSave, isNotifying, isNotifyPending, onToggleNotify,
+}: {
+  events: Event[];
+  onEventPress: (e: Event) => void;
+  isSaved: string[];
+  onToggleSave: (id: string) => void;
+  isNotifying: (id: string) => boolean;
+  isNotifyPending: (id: string) => boolean;
+  onToggleNotify: (id: string) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartX = useRef<number | null>(null);
+
+  const advance = useCallback(() => {
+    setCurrentIndex((prev) => (prev + 1) % events.length);
+  }, [events.length]);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (events.length <= 1) return;
+    timerRef.current = setInterval(advance, 4000);
+  }, [advance, events.length]);
+
+  useEffect(() => {
+    if (events.length <= 1) return;
+    timerRef.current = setInterval(advance, 4000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [advance, events.length]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) {
+      setCurrentIndex((prev) => (prev + 1) % events.length);
+    } else {
+      setCurrentIndex((prev) => (prev - 1 + events.length) % events.length);
+    }
+    resetTimer();
+  };
+
+  const event = events[currentIndex % events.length];
+  if (!event) return null;
+  const notifying = isNotifying(event.id);
+  const pending = isNotifyPending(event.id);
+  const salesLabel = formatSalesOpen(event.salesOpenAt);
+
+  return (
+    <div className="mb-6" data-testid="coming-soon-section">
+      <div className="flex items-center justify-between px-4 mb-3">
+        <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+          Coming Soon
+        </h3>
+        {events.length > 1 && (
+          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+            {events.map((_, i) => (
+              <button
+                key={i}
+                aria-label={`Show coming soon event ${i + 1}`}
+                onClick={() => { setCurrentIndex(i); resetTimer(); }}
+                style={{
+                  width: i === currentIndex ? '18px' : '6px',
+                  height: '6px',
+                  borderRadius: '3px',
+                  background: i === currentIndex ? ventsColors.accentSoft : 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'width 0.3s, background 0.3s',
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      <div
+        className="px-4"
+        data-testid="coming-soon-card"
+        onClick={() => onEventPress(event)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEventPress(event); } }}
+        role="button" tabIndex={0}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        style={{ cursor: 'pointer' }}
+      >
+        <div style={{ borderRadius: '28px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: ventsColors.surface, border: '1px solid rgba(168,85,247,0.15)', boxShadow: '0 24px 48px rgba(88,28,135,0.22), 0 4px 12px rgba(0,0,0,0.35)' }}>
+          <ImageCarousel
+            images={event.images && event.images.length > 0 ? event.images : (event.image ? [event.image] : [])}
+            alt={event.title}
+            imageFit="cover"
+            showDots={false}
+            style={{ width: '100%', height: '100%' }}
+          />
+          <div data-testid="coming-soon-scrim" aria-hidden style={flyerScrim(40)} />
+          <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
+            <span data-testid="coming-soon-badge" style={{
+              background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+              border: '1px solid rgba(255,255,255,0.16)', color: ventsColors.white,
+              fontFamily: "'JetBrains Mono', monospace", fontSize: '9px', fontWeight: 700,
+              padding: '6px 10px', borderRadius: '8px', letterSpacing: '0.14em',
+            }}>COMING SOON</span>
+          </div>
+          <button
+            aria-label={isSaved.includes(event.id) ? 'Remove from saved' : 'Save event'}
+            onClick={(ev) => { ev.stopPropagation(); haptics.light(); onToggleSave(event.id); }}
+            style={{ position: 'absolute', top: '14px', right: '14px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <span style={{ fontSize: '14px', filter: isSaved.includes(event.id) ? 'none' : 'grayscale(1) opacity(0.6)' }}>🔖</span>
+          </button>
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 16px 18px' }}>
+            {event.organizer && event.organizer !== 'Verified Organizer' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                <p style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 600, margin: 0 }}>@{event.organizer}</p>
+                <BadgeChip tier={event.organizerVcBadge} />
+              </div>
+            )}
+            <p style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Manrope, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ color: 'rgba(255,255,255,0.92)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>{event.date}</span>
+              <span style={{ color: 'rgba(255,255,255,0.92)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>{event.venue && event.venue !== event.city ? `${event.venue}, ${event.city}` : event.city}</span>
+              <button
+                type="button"
+                data-testid="coming-soon-notify"
+                aria-pressed={notifying}
+                disabled={pending}
+                onClick={async (ev) => {
+                  ev.stopPropagation();
+                  haptics.light();
+                  const res = await onToggleNotify(event.id);
+                  setNotice(res.ok ? null : (res.error || null));
+                }}
+                style={{
+                  fontSize: '12px', fontWeight: 800, width: 'fit-content',
+                  borderRadius: '20px', padding: '4px 12px', cursor: pending ? 'default' : 'pointer',
+                  color: notifying ? ventsColors.success : ventsColors.white,
+                  background: notifying ? 'rgba(6,214,160,0.15)' : '#7B2FBE',
+                  border: notifying ? '1px solid rgba(6,214,160,0.4)' : 'none',
+                }}
+              >
+                {notifying ? '✓ Notifying you' : '🔔 Notify me'}
+              </button>
+            </div>
+            {salesLabel && (
+              <p data-testid="coming-soon-sales-open" style={{ color: 'rgba(255,255,255,0.92)', fontSize: '12px', margin: '8px 0 0', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
+                Tickets on sale {salesLabel}
+              </p>
+            )}
+            {notice && (
+              <p role="status" style={{ color: ventsColors.pending, fontSize: '11px', fontWeight: 700, margin: '6px 0 0' }}>{notice}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function HomeScreen({
   onEventPress,
   savedEvents,
@@ -1404,6 +1580,17 @@ export function HomeScreen({
 
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 
+  // Coming Soon (0224): its own query (status 'coming_soon' never appears in
+  // the on-sale feed above), same country/age/block scoping as that feed.
+  const comingSoonIsMinor = currentUserDob
+    ? (Date.now() - new Date(currentUserDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000) < 18
+    : false;
+  const { events: comingSoonEvents } = useComingSoonEvents(
+    { country: countryFilter, blockedOrganizerIds: blockedIdSet, isMinor: comingSoonIsMinor },
+    mapDbEventToFrontend,
+  );
+  const saleAlerts = useSaleAlerts(currentUser?.id ?? null);
+
   return (
     <div
       className="flex flex-col h-full"
@@ -1839,6 +2026,19 @@ export function HomeScreen({
                     onEventPress={onEventPress}
                     isSaved={savedEvents}
                     onToggleSave={onToggleSave}
+                  />
+                )}
+
+                {/* Coming Soon Events (0224) -- same visual system as Featured */}
+                {comingSoonEvents.length > 0 && (
+                  <ComingSoonCarousel
+                    events={comingSoonEvents}
+                    onEventPress={onEventPress}
+                    isSaved={savedEvents}
+                    onToggleSave={onToggleSave}
+                    isNotifying={saleAlerts.isSubscribed}
+                    isNotifyPending={saleAlerts.isPending}
+                    onToggleNotify={saleAlerts.toggle}
                   />
                 )}
 

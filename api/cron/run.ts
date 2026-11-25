@@ -139,6 +139,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     settlementResult = { error: `earnings release failed: ${err?.message || err}` };
   }
 
+  // ── 0c) Coming Soon sales opening (0224) ────────────────────────────────
+  // Backstop for pg_cron's per-minute job: opens any Coming Soon event whose
+  // planned ticket sales time has passed and sends its Notify-me alerts
+  // (exactly once -- the database marks each subscriber as it notifies).
+  // Never opens early. Fails soft on a database without 0224.
+  let comingSoonResult: any = null;
+  try {
+    comingSoonResult = await callProjectAdminRpc<any>('open_due_event_sales', [500]);
+  } catch (err: any) {
+    comingSoonResult = { error: `coming soon opening failed: ${err?.message || err}` };
+  }
+
   // ── 1) Reminder sweep ──────────────────────────────────────────────────
   let reminderResult: any = null;
   try {
@@ -151,31 +163,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── 2) Push delivery ────────────────────────────────────────────────────
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
   if (!saJson) {
-    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, comingSoon: comingSoonResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
   }
 
   let sa: { project_id: string; client_email: string; private_key: string };
   try {
     sa = JSON.parse(saJson);
   } catch {
-    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, comingSoon: comingSoonResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
   }
 
   let rows: PendingRow[];
   try {
     rows = await callProjectAdminTableRpc<PendingRow>('get_pending_push_notifications', [200]);
   } catch (err: any) {
-    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, comingSoon: comingSoonResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
   }
   if (!rows.length) {
-    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, comingSoon: comingSoonResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
   }
 
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sa);
   } catch (err: any) {
-    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, settlement: settlementResult, comingSoon: comingSoonResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
   }
 
   const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
@@ -262,6 +274,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return res.status(200).json({
     archived: archiveResult,
     settlement: settlementResult,
+    comingSoon: comingSoonResult,
     reminders: reminderResult,
     push: { sent, pruned: pruned.size, marked: toMark.size, total: rows.length },
   });

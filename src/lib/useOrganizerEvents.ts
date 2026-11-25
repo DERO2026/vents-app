@@ -13,6 +13,9 @@ export type OrganizerEventSort = 'newest' | 'oldest';
 
 function toDisplayStatus(row: any): OrganizerEventDisplayStatus {
   if (row.status === 'draft') return 'draft';
+  // Coming Soon (0224): public but not on sale -- never shown as 'live',
+  // so live-only actions (Promote, Scan, Make Live) are not offered.
+  if (row.status === 'coming_soon') return row.is_ended ? 'ended' : 'coming_soon';
   if (row.is_ended) return 'ended';
   if (row.is_sold_out) return 'sold_out';
   return 'live';
@@ -28,7 +31,9 @@ function mapRow(row: any): OrganizerEventOverview {
     price: Number(row.price) || 0,
     ticketGoal: Number(row.ticket_goal) || 0,
     ticketTypes: Array.isArray(row.ticket_types) ? row.ticket_types : [],
-    status: row.status === 'draft' ? 'draft' : 'live',
+    status: row.status === 'draft' ? 'draft' : row.status === 'coming_soon' ? 'coming_soon' : 'live',
+    salesOpenAt: row.sales_open_at ?? null,
+    saleAlertCount: Number(row.sale_alert_count) || 0,
     is18Plus: !!row.is_18_plus,
     createdAt: row.created_at,
     soldCount: Number(row.sold_count) || 0,
@@ -42,6 +47,21 @@ function mapRow(row: any): OrganizerEventOverview {
     isSoldOut: !!row.is_sold_out,
     displayStatus: toDisplayStatus(row),
   };
+}
+
+async function loadSaleSchedule(ids: string[]): Promise<Map<string, { sales_open_at: string | null; sale_alert_count: number }>> {
+  const out = new Map<string, { sales_open_at: string | null; sale_alert_count: number }>();
+  if (ids.length === 0) return out;
+  try {
+    const [{ data: times, error: tErr }, { data: counts }] = await Promise.all([
+      supabase.from('events').select('id, sales_open_at').in('id', ids).not('sales_open_at', 'is', null),
+      supabase.rpc('get_my_event_sale_alert_counts' as any, {}),
+    ]);
+    if (tErr) return out;
+    const countById = new Map<string, number>((Array.isArray(counts) ? counts : []).map((c: any) => [c.event_id, Number(c.subscribers) || 0]));
+    for (const t of times ?? []) out.set((t as any).id, { sales_open_at: (t as any).sales_open_at, sale_alert_count: countById.get((t as any).id) ?? 0 });
+  } catch { /* pre-0224 database: no schedules */ }
+  return out;
 }
 
 export function useOrganizerEvents(organizerId: string | undefined) {
@@ -62,7 +82,13 @@ export function useOrganizerEvents(organizerId: string | undefined) {
       const { data, error: err } = await supabase.rpc('get_organizer_events_overview' as any, {});
       if (err) throw err;
       if (!mountedRef.current) return;
-      setEvents(Array.isArray(data) ? data.map(mapRow) : []);
+      const rows: any[] = Array.isArray(data) ? data : [];
+      // 0224 extras, fetched alongside the unchanged overview RPC: each
+      // event's planned sales opening and its Notify-me count (a number,
+      // never who). A database without 0224 simply has neither.
+      const scheduled = await loadSaleSchedule(rows.map((r) => r.id));
+      if (!mountedRef.current) return;
+      setEvents(rows.map((r) => mapRow({ ...r, ...(scheduled.get(r.id) ?? {}) })));
     } catch (e: any) {
       if (!mountedRef.current) return;
       setError(e?.message || 'Could not load your events. Pull to refresh to try again.');

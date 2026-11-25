@@ -42,6 +42,11 @@ export interface Event {
   tags?: string[];
   lineup?: string[];
   contactPhone?: string;
+  // events.status ('live' | 'draft' | 'coming_soon') and the planned ticket
+  // sales opening for a Coming Soon event (0224). A Coming Soon event is
+  // public but cannot be purchased until its sales open.
+  status?: string;
+  salesOpenAt?: string | null;
   isPromoted?: boolean;
   promoPlan?: string | null;
   bookingsCount?: number;
@@ -383,7 +388,7 @@ export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile' | 'services';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
 export type UserRole = 'attendee' | 'organizer';
 
-export type OrgEventStatus = 'under_review' | 'approved' | 'live' | 'draft';
+export type OrgEventStatus = 'under_review' | 'approved' | 'live' | 'draft' | 'coming_soon';
 
 export interface OrganizerEvent {
   id: string;
@@ -409,7 +414,8 @@ export interface OrganizerEvent {
 // never from a client-side timer. 'live'/'draft' mirror the DB's own CHECK
 // constraint values; 'ended'/'sold_out' are computed overlays on top of a
 // 'live' event, not separate DB status values.
-export type OrganizerEventDisplayStatus = 'live' | 'draft' | 'ended' | 'sold_out';
+// 'coming_soon' (0224): public, not yet on sale; opens at salesOpenAt.
+export type OrganizerEventDisplayStatus = 'live' | 'draft' | 'ended' | 'sold_out' | 'coming_soon';
 
 // One row from get_organizer_events_overview() — the single-call source of
 // truth for "My Created Events" (real status + live ticket/revenue/check-in
@@ -423,7 +429,11 @@ export interface OrganizerEventOverview {
   price: number;
   ticketGoal: number;
   ticketTypes: Array<{ id: string; name: string; price: number; quantity: number; description?: string }>;
-  status: 'live' | 'draft';
+  status: 'live' | 'draft' | 'coming_soon';
+  // Planned ticket sales opening (0224); null for events with no schedule.
+  salesOpenAt?: string | null;
+  // Users who chose "Notify me" (count only -- never who).
+  saleAlertCount?: number;
   is18Plus: boolean;
   createdAt: string;
   soldCount: number;

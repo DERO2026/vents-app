@@ -8,6 +8,7 @@ import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { Sentry } from '../../lib/sentry';
+import { isEventActive } from '../../lib/eventLifecycle';
 import {
   EVENT_PROMOTION_PRICES_NAIRA,
   EVENT_PROMOTION_DURATIONS,
@@ -60,6 +61,45 @@ const DURATIONS: { value: Duration; label: string }[] = EVENT_PROMOTION_DURATION
   label: `${value} Days`,
 }));
 
+// Promotions are only for events that are on sale (0225): live, not
+// cancelled, not admin-hidden, not ended. Draft and Coming Soon events are
+// not on sale. Mirrors public.event_promotion_block_reason; the server is
+// the authority and refuses anything else.
+export function isPromotableEvent(e: any): boolean {
+  return !e?.cancelled_at && isEventActive({
+    event_date: e?.event_date, end_date: e?.end_date, status: e?.status,
+    hidden_by_admin: e?.hidden_by_admin, deleted_at: e?.deleted_at,
+  });
+}
+
+const PROMOTION_BLOCK_MESSAGE: Record<string, string> = {
+  not_on_sale: 'Only events that are on sale can be promoted. Draft and Coming Soon events can be promoted once ticket sales open.',
+  cancelled: 'This event was cancelled, so it can no longer be promoted.',
+  hidden_by_admin: 'This event is hidden by VENTS, so it can\'t be promoted right now.',
+  ended: 'This event has ended, so it can no longer be promoted.',
+  deleted: 'This event was deleted.',
+  not_found: 'This event could not be found.',
+};
+
+// Asks the server (get_event_promotion_eligibility, 0225) right before the
+// payment popup, so nobody pays for a promotion the server would refuse.
+// On a database without 0225 the RPC is missing: fall back to the client rule.
+async function checkPromotionEligibility(eventId: string, clientEligible: boolean): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_event_promotion_eligibility', { p_event_id: eventId });
+    if (error) {
+      const code = String((error as any).code ?? '');
+      if (code === 'PGRST202' || code === '42883') return clientEligible ? null : PROMOTION_BLOCK_MESSAGE.not_on_sale;
+      return 'Could not confirm this event can be promoted. Please try again.';
+    }
+    const res = (data ?? {}) as { eligible?: boolean; reason?: string | null };
+    if (res.eligible) return null;
+    return PROMOTION_BLOCK_MESSAGE[res.reason ?? ''] ?? 'This event can\'t be promoted right now.';
+  } catch {
+    return 'Could not confirm this event can be promoted. Please try again.';
+  }
+}
+
 export function PromoteEventScreen({ onBack, currentUser, initialEventId, onPromoted }: PromoteEventScreenProps) {
   const [selectedPlan, setSelectedPlan] = useState<Plan>('featured');
   const [selectedDuration, setSelectedDuration] = useState<Duration>(7);
@@ -90,13 +130,19 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       
       if (error) throw error;
       if (data) {
-        setEvents(data);
-        if (data.length > 0) {
-          if (initialEventId && data.some((e: any) => e.id === initialEventId)) {
+        // Only events that can actually be promoted (on sale), so the
+        // organizer is never offered -- or charged for -- one the server
+        // would refuse.
+        const promotable = data.filter(isPromotableEvent);
+        setEvents(promotable);
+        if (promotable.length > 0) {
+          if (initialEventId && promotable.some((e: any) => e.id === initialEventId)) {
             setSelectedEventId(initialEventId);
           } else {
-            setSelectedEventId(data[0].id);
+            setSelectedEventId(promotable[0].id);
           }
+        } else {
+          setSelectedEventId('');
         }
       }
     } catch (err) {
@@ -105,12 +151,20 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
     }
   };
 
-  const handlePay = () => {
-    if (!selectedEventId || !currentUser) return;
+  const handlePay = async () => {
+    if (!selectedEventId || !currentUser || loading) return;
     const plan = PLANS.find(p => p.id === selectedPlan);
     if (!plan) return;
     const amountNaira = plan.price[selectedDuration];
     setLoading(true);
+    setActivationError(null);
+    const selected = events.find((e) => e.id === selectedEventId);
+    const blocked = await checkPromotionEligibility(selectedEventId, !!selected && isPromotableEvent(selected));
+    if (blocked) {
+      setActivationError(blocked);
+      setLoading(false);
+      return; // no payment is started
+    }
 
     openPaystackPopup({
       email: currentUser.email,
@@ -235,7 +289,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         <div style={{ marginBottom: '24px' }}>
           {events.length === 0 ? (
             <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontSize: '13px' }}>
-              No events found. Please create an event first.
+              No events can be promoted right now. Only events with ticket sales open can be promoted (not drafts, Coming Soon, cancelled or ended events).
             </div>
           ) : (
             <PickerField
