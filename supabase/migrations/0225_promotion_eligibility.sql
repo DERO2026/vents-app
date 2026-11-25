@@ -27,7 +27,9 @@
 --     Turning a promotion off is never blocked. Each body is re-created from
 --     the repo text with only that check inserted, and is md5-pinned below:
 --     if production has drifted, this migration refuses instead of
---     overwriting an unknown definition.
+--     overwriting an unknown definition. The only accepted alternative is
+--     admin_set_event_featured's verified production body, which differs
+--     from the repo body by two comment lines only.
 --   * activate_event_promotion keeps its replay behaviour: a payment_ref that
 --     was already activated returns before the new check.
 --   * get_event_promotion_eligibility(event): the same rule for the app to
@@ -45,7 +47,12 @@
 
 DO $pre$
 DECLARE
-  v_pins jsonb := '{"activate_event_promotion": "8f8932cb3c011315d227d4dc3295df84", "admin_set_event_featured": "cb47d23e3c486406259f41fe9cc01ceb", "admin_set_event_trending": "77b628b0cc71e848cf0a1024238da46f"}';
+  -- Each function may be in exactly one of the listed states, nothing else.
+  -- admin_set_event_featured has two approved variants: the reviewed repo
+  -- body (0090) and the verified production body, which is the same code
+  -- without 0090's two comment lines ("-- Was: is_admin(). Sub-Admins must
+  -- now submit ...") -- read-only production check, 2026-11-25.
+  v_pins jsonb := '{"activate_event_promotion": ["8f8932cb3c011315d227d4dc3295df84"], "admin_set_event_featured": ["cb47d23e3c486406259f41fe9cc01ceb", "66a3bd2f21ec0813a5aa8e9100ed8aec"], "admin_set_event_trending": ["77b628b0cc71e848cf0a1024238da46f"]}';
   v_name text;
   v_live text;
 BEGIN
@@ -59,9 +66,9 @@ BEGIN
   FOR v_name IN SELECT jsonb_object_keys(v_pins) LOOP
     SELECT md5(replace(p.prosrc, E'\r', '')) INTO v_live
       FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = v_name;
-    IF v_live IS DISTINCT FROM v_pins->>v_name THEN
-      RAISE EXCEPTION '0225 refused: public.% differs from the definition this migration was written against (live md5 %, expected %)',
-        v_name, COALESCE(v_live, 'missing'), v_pins->>v_name;
+    IF v_live IS NULL OR NOT ((v_pins->v_name) ? v_live) THEN
+      RAISE EXCEPTION '0225 refused: public.% differs from the definition this migration was written against (live md5 %, expected one of %)',
+        v_name, COALESCE(v_live, 'missing'), v_pins->v_name;
     END IF;
   END LOOP;
 END
