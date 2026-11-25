@@ -15,7 +15,10 @@ import { AdminSystemScreen } from './AdminSystemScreen';
 
 const rpcCalls: { name: string; args: any }[] = [];
 const auditLogCalls: any[] = [];
-const annNames = () => rpcCalls.map((c) => c.name).filter((n) => n.includes('announcement'));
+// Announcement WRITE calls. admin_list_announcement_test_recipients (0223) is
+// a read the panel makes on load to decide whether to show Internal test.
+const LIST_TEST = 'admin_list_announcement_test_recipients';
+const annNames = () => rpcCalls.map((c) => c.name).filter((n) => n.includes('announcement') && n !== LIST_TEST);
 const calls = (name: string) => rpcCalls.filter((c) => c.name === name).map((c) => c.args);
 let rpcResponses: Record<string, { data: any; error: any }> = {};
 let rpcDelayMs = 0;
@@ -42,6 +45,8 @@ vi.mock('./adminAuditLog', () => ({
   writeAuditLog: (...args: any[]) => { auditLogCalls.push(args); return Promise.resolve(); },
 }));
 
+const MISSING_FUNCTION = { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.admin_list_announcement_test_recipients without parameters in the schema cache' } };
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 const MISSING_TABLE = { data: null, error: { code: 'PGRST205', message: "Could not find the table 'public.announcements' in the schema cache" } };
 
 let container: HTMLDivElement;
@@ -56,6 +61,8 @@ beforeEach(() => {
     admin_save_announcement_draft: { data: 'draft-1', error: null },
     admin_publish_announcement: { data: { success: true, recipients: 7 }, error: null },
     admin_delete_announcement_draft: { data: null, error: null },
+    // Default: 0223 not applied -- the panel is the three-audience panel.
+    [LIST_TEST]: MISSING_FUNCTION,
   };
   announcementsResponse = { data: [], error: null };
   container = document.createElement('div');
@@ -72,9 +79,9 @@ async function flush() {
   await act(async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); });
 }
 
-async function mount() {
+async function mount(user: { id: string; role: string } = { id: 'root-1', role: 'root' }) {
   root = createRoot(container);
-  act(() => { root.render(<AdminSystemScreen currentUser={{ id: 'root-1', role: 'root' }} />); });
+  act(() => { root.render(<AdminSystemScreen currentUser={user} />); });
   await flush();
 }
 
@@ -322,5 +329,189 @@ describe('Announcements panel: before migration 0222 (legacy fallback)', () => {
     await mount();
     expect(card().querySelector('[data-testid="announcement-legacy-notice"]')).toBeNull();
     expect(card().textContent).toMatch(/permission denied/);
+  });
+});
+
+describe('Announcements panel: Internal test audience (0223)', () => {
+  const ROOT_REC = { user_id: ROOT_UID, username: 'root', added_at: '2026-11-25T08:00:00Z' };
+  const asRoot = () => mount({ id: ROOT_UID, role: 'admin' });
+  const radios = () => Array.from(card().querySelectorAll('button[role="radio"]')).map((b) => b.textContent);
+  const buttonText = (t: string) => Array.from(card().querySelectorAll('button')).find((b) => b.textContent?.trim() === t) as HTMLButtonElement | undefined;
+  const recipients = (n: number) => Array.from({ length: n }, (_, i) => ({ user_id: `00000000-0000-0000-0000-0000000000${String(i).padStart(2, '0')}`, username: `tester${i}`, added_at: '2026-11-25T08:00:00Z' }));
+
+  it('0223 applied: a fourth "Internal test" chip appears after the three production audiences, unchanged and in order', async () => {
+    rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+    await asRoot();
+    expect(radios()).toEqual(['Everyone', 'Organizers', 'Service Providers', 'Internal test']);
+    expect(audienceButton('Everyone').getAttribute('aria-checked')).toBe('true'); // default unchanged
+  });
+
+  it('0223 not applied (missing function): no Internal test chip, panel is the three-audience panel', async () => {
+    await asRoot();
+    expect(calls(LIST_TEST)).toHaveLength(1);
+    expect(radios()).toEqual(['Everyone', 'Organizers', 'Service Providers']);
+    expect(card().querySelector('[data-testid="internal-test-audience"]')).toBeNull();
+  });
+
+  it('0222 not applied (legacy immediate send): no Internal test chip, even if the list function answered', async () => {
+    announcementsResponse = MISSING_TABLE;
+    rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+    await asRoot();
+    expect(radios()).toEqual(['Everyone', 'Organizers', 'Service Providers']);
+  });
+
+  it('empty list: publishing to Internal test is disabled and explained; no write RPC is possible', async () => {
+    rpcResponses[LIST_TEST] = { data: [], error: null };
+    await asRoot();
+    await fill('Pipeline test', 'Internal only.', 'Internal test');
+    expect(card().textContent).toMatch(/Sending to:\s*Internal test/);
+    expect(card().querySelector('[data-testid="internal-test-empty"]')?.textContent).toMatch(/No internal test recipients are designated, so publishing is disabled/);
+    expect(sendButton().disabled).toBe(true);
+    await click(sendButton());
+    expect(container.textContent).not.toMatch(/Publish "Pipeline test"/);
+    expect(annNames()).toHaveLength(0);
+  });
+
+  it('list load error: publishing to Internal test stays disabled and the error is shown', async () => {
+    rpcResponses[LIST_TEST] = { data: null, error: { code: '42501', message: 'Only admins can view internal test recipients' } };
+    await asRoot();
+    await fill('Pipeline test', 'Internal only.', 'Internal test');
+    expect(card().textContent).toMatch(/Only admins can view internal test recipients/);
+    expect(sendButton().disabled).toBe(true);
+  });
+
+  it('more than 10 listed (defence in depth): publishing is disabled', async () => {
+    rpcResponses[LIST_TEST] = { data: recipients(11), error: null };
+    await asRoot();
+    await fill('Pipeline test', 'Internal only.', 'Internal test');
+    expect(sendButton().disabled).toBe(true);
+  });
+
+  it('with Root designated: confirmation names the exact accounts, then save(internal_test) + publish', async () => {
+    rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+    rpcResponses.admin_publish_announcement = { data: { success: true, recipients: 1 }, error: null };
+    await asRoot();
+    await fill('Pipeline test', 'Internal only.', 'Internal test');
+    expect(card().querySelector('[data-testid="internal-test-audience"]')?.textContent).toMatch(/\(1\/10\): @root/);
+    expect(sendButton().disabled).toBe(false);
+    await click(sendButton());
+    expect(annNames()).toHaveLength(0);
+    expect(container.textContent).toMatch(/Publish "Pipeline test" to Internal test \(1 account: @root\)\?/);
+    await click(confirmButton());
+    expect(calls('admin_save_announcement_draft')).toEqual([{ p_id: null, p_audience: 'internal_test', p_title: 'Pipeline test', p_body: 'Internal only.' }]);
+    expect(calls('admin_publish_announcement')).toEqual([{ p_id: 'draft-1' }]);
+    expect(calls('admin_send_announcement')).toHaveLength(0);
+    expect(container.textContent).toMatch(/Announcement published to 1 internal test recipient\./);
+    expect(auditLogCalls[0][3]).toEqual({ audience: 'internal_test', title: 'Pipeline test', recipients: 1 });
+  });
+
+  it('a server refusal (e.g. list emptied meanwhile) is shown and the draft is kept', async () => {
+    rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+    rpcResponses.admin_publish_announcement = { data: null, error: { message: 'Internal test audience has no recipients' } };
+    await asRoot();
+    await fill('Pipeline test', 'Internal only.', 'Internal test');
+    await click(sendButton());
+    await click(confirmButton());
+    expect(container.textContent).toMatch(/Internal test audience has no recipients/);
+    expect(card().querySelector('[data-testid="announcement-editing"]')).toBeTruthy();
+  });
+
+  it('selecting a production audience is unaffected by the internal list (no internal note, publish enabled)', async () => {
+    rpcResponses[LIST_TEST] = { data: [], error: null };
+    await asRoot();
+    await fill('Hello', 'All users.', 'Organizers');
+    expect(card().querySelector('[data-testid="internal-test-audience"]')).toBeNull();
+    expect(sendButton().disabled).toBe(false);
+    await click(sendButton());
+    expect(container.textContent).toMatch(/Publish "Hello" to Organizers\?/);
+  });
+
+  it('editing an internal_test draft restores the Internal test selection', async () => {
+    rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+    announcementsResponse = { data: [{ id: 'd-it', title: 'IT draft', body: 'b', audience: 'internal_test', status: 'draft', updated_at: '2026-11-25T08:00:00Z', published_at: null, recipients: null }], error: null };
+    await asRoot();
+    expect(card().querySelector('[data-testid="announcement-draft-row"]')?.textContent).toMatch(/Internal test/);
+    await click(card().querySelector('[aria-label="Edit draft IT draft"]')!);
+    expect(audienceButton('Internal test').getAttribute('aria-checked')).toBe('true');
+  });
+
+  describe('recipient management (Root only)', () => {
+    it('Root sees the list with Remove, and "Add me" when not listed', async () => {
+      rpcResponses[LIST_TEST] = { data: [], error: null };
+      await asRoot();
+      await fill('x', 'y', 'Internal test');
+      expect(card().querySelector('[data-testid="internal-test-recipients"]')).toBeTruthy();
+      expect(buttonText('Add me')).toBeTruthy();
+    });
+
+    it('"Add me" calls admin_add_announcement_test_recipient with Root\'s own id, then reloads the list', async () => {
+      rpcResponses[LIST_TEST] = { data: [], error: null };
+      await asRoot();
+      await fill('x', 'y', 'Internal test');
+      rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+      await click(buttonText('Add me')!);
+      expect(calls('admin_add_announcement_test_recipient')).toEqual([{ p_user_id: ROOT_UID }]);
+      expect(calls(LIST_TEST).length).toBeGreaterThanOrEqual(2);
+      expect(card().querySelectorAll('[data-testid="internal-test-recipient-row"]')).toHaveLength(1);
+      expect(card().textContent).toMatch(/@root \(you\)/);
+      expect(buttonText('Add me')).toBeUndefined();
+      expect(calls('admin_publish_announcement')).toHaveLength(0); // managing recipients never publishes
+    });
+
+    it('adding by user ID requires a valid UUID and an explicit confirmation', async () => {
+      rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+      await asRoot();
+      await fill('x', 'y', 'Internal test');
+      const input = card().querySelector('input[aria-label="User ID to add to internal test"]') as HTMLInputElement;
+      await act(async () => { setValue(input, 'not-a-uuid'); });
+      await flush();
+      expect(buttonText('Add')!.disabled).toBe(true);
+      const id = '11111111-2222-3333-4444-555555555555';
+      await act(async () => { setValue(input, `  ${id}  `); });
+      await flush();
+      await click(buttonText('Add')!);
+      expect(calls('admin_add_announcement_test_recipient')).toHaveLength(0);
+      expect(container.textContent).toMatch(new RegExp(`Add user ${id} to the internal test audience\\?`));
+      await click(confirmButton('Add'));
+      expect(calls('admin_add_announcement_test_recipient')).toEqual([{ p_user_id: id }]);
+    });
+
+    it('Remove calls admin_remove_announcement_test_recipient for that account', async () => {
+      rpcResponses[LIST_TEST] = { data: [ROOT_REC], error: null };
+      await asRoot();
+      await fill('x', 'y', 'Internal test');
+      await click(card().querySelector('[aria-label="Remove @root from internal test"]')!);
+      expect(calls('admin_remove_announcement_test_recipient')).toEqual([{ p_user_id: ROOT_UID }]);
+    });
+
+    it('at 10 recipients the add controls are replaced by the limit notice', async () => {
+      rpcResponses[LIST_TEST] = { data: recipients(10), error: null };
+      await asRoot();
+      await fill('x', 'y', 'Internal test');
+      expect(card().querySelector('[data-testid="internal-test-cap"]')?.textContent).toMatch(/Limit of 10 recipients reached/);
+      expect(buttonText('Add me')).toBeUndefined();
+      expect(card().querySelector('input[aria-label="User ID to add to internal test"]')).toBeNull();
+      expect(sendButton().disabled).toBe(false); // exactly 10 may still publish
+    });
+
+    it('a server refusal (e.g. limit) is shown and the list is reloaded', async () => {
+      rpcResponses[LIST_TEST] = { data: [], error: null };
+      rpcResponses.admin_add_announcement_test_recipient = { data: null, error: { message: 'Internal test audience is limited to 10 recipients' } };
+      await asRoot();
+      await fill('x', 'y', 'Internal test');
+      const before = calls(LIST_TEST).length;
+      await click(buttonText('Add me')!);
+      expect(container.textContent).toMatch(/limited to 10 recipients/);
+      expect(calls(LIST_TEST).length).toBe(before + 1);
+    });
+
+    it('a non-Root admin sees the audience and list but no management controls', async () => {
+      rpcResponses[LIST_TEST] = { data: [], error: null };
+      await mount({ id: 'admin-2', role: 'admin' });
+      await fill('x', 'y', 'Internal test');
+      expect(card().querySelector('[data-testid="internal-test-recipients"]')).toBeNull();
+      expect(buttonText('Add me')).toBeUndefined();
+      expect(card().querySelector('[data-testid="internal-test-empty"]')?.textContent).toMatch(/Only Root can add recipients/);
+    });
   });
 });
