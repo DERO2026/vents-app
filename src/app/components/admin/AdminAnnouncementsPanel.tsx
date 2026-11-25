@@ -12,20 +12,37 @@
 // detects that and falls back to the previous behaviour -- an immediate
 // send through admin_send_announcement -- so shipping this UI ahead of the
 // migration never removes the ability to send an announcement.
+//
+// Internal test audience (migration 0223): a fourth chip, "Internal test",
+// that delivers only to an explicit allowlist of at most 10 accounts
+// (public.announcement_test_recipients), so the full pipeline can be tested
+// without reaching real users. The chip appears only when 0223 is applied
+// (admin_list_announcement_test_recipients exists); otherwise the panel is
+// exactly the three-audience panel above. Publishing to it is disabled
+// while the list is empty. Adding/removing recipients is Root-only on the
+// server (is_root(), audit-logged), so the management block below renders
+// for Root only.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Send, Pencil, Trash2, FilePlus2 } from 'lucide-react';
+import { Send, Pencil, Trash2, FilePlus2, FlaskConical, UserPlus, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { ConfirmModal } from './adminShared';
 import { writeAuditLog } from './adminAuditLog';
+import { isRoot as permIsRoot } from '../../../lib/permissions';
 
-export type AnnouncementAudience = 'everyone' | 'organizers' | 'service_providers';
+export type AnnouncementAudience = 'everyone' | 'organizers' | 'service_providers' | 'internal_test';
 
 export const ANNOUNCEMENT_AUDIENCES: { value: AnnouncementAudience; label: string }[] = [
   { value: 'everyone', label: 'Everyone' },
   { value: 'organizers', label: 'Organizers' },
   { value: 'service_providers', label: 'Service Providers' },
 ];
+
+// 0223. Not part of ANNOUNCEMENT_AUDIENCES: those are the three production
+// audiences; this one is shown only when 0223 is applied.
+export const INTERNAL_TEST_AUDIENCE: { value: AnnouncementAudience; label: string } = { value: 'internal_test', label: 'Internal test' };
+// Mirrors the server cap in 0223 (enforced on add and again on publish).
+export const INTERNAL_TEST_MAX_RECIPIENTS = 10;
 
 // Server-side caps (0191 / 0222). Mirrored for immediate feedback only.
 export const ANNOUNCE_TITLE_MAX = 80;
@@ -42,13 +59,24 @@ interface AnnouncementRow {
   recipients: number | null;
 }
 
-const audienceLabel = (a: string) => ANNOUNCEMENT_AUDIENCES.find((x) => x.value === a)?.label ?? a;
+interface TestRecipient { user_id: string; username: string | null; added_at: string }
+
+const audienceLabel = (a: string) => [...ANNOUNCEMENT_AUDIENCES, INTERNAL_TEST_AUDIENCE].find((x) => x.value === a)?.label ?? a;
+const recipientName = (r: TestRecipient) => (r.username ? `@${r.username}` : `${r.user_id.slice(0, 8)}…`);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // PostgREST reports a missing table as PGRST205 (schema cache) or 42P01.
 function isMissingTableError(err: any): boolean {
   const code = String(err?.code ?? '');
   const text = `${err?.message ?? ''} ${err?.details ?? ''}`;
   return code === 'PGRST205' || code === '42P01' || /announcements/.test(text) && /(does not exist|schema cache|Could not find)/i.test(text);
+}
+
+// PostgREST reports a missing function as PGRST202 (schema cache) or 42883.
+function isMissingFunctionError(err: any): boolean {
+  const code = String(err?.code ?? '');
+  const text = `${err?.message ?? ''} ${err?.details ?? ''}`;
+  return code === 'PGRST202' || code === '42883' || /admin_list_announcement_test_recipients/.test(text) && /(does not exist|schema cache|Could not find)/i.test(text);
 }
 
 function formatWhen(iso: string | null): string {
@@ -64,11 +92,18 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<AnnouncementAudience>('everyone');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [busy, setBusy] = useState<null | 'save' | 'publish' | 'delete'>(null);
+  const [busy, setBusy] = useState<null | 'save' | 'publish' | 'delete' | 'recipients'>(null);
   const [rows, setRows] = useState<AnnouncementRow[]>([]);
   // null = still checking; false = 0222 not applied (legacy immediate send).
   const [draftsAvailable, setDraftsAvailable] = useState<boolean | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  // 0223: internalAvailable false = not applied (no Internal test chip). testRecipients null =
+  // list not loaded/failed -> publishing to Internal test stays disabled.
+  const [internalAvailable, setInternalAvailable] = useState(false);
+  const [testRecipients, setTestRecipients] = useState<TestRecipient[] | null>(null);
+  const [testRecipientsError, setTestRecipientsError] = useState<string | null>(null);
+  const [newRecipientId, setNewRecipientId] = useState('');
+  const isRootUser = permIsRoot(currentUser as any);
   // A second click on ConfirmModal's Confirm lands before React re-renders
   // with the new busy state; a synchronous ref closes that double-send race.
   const inFlight = useRef(false);
@@ -78,6 +113,29 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
   const bodyTrimmed = body.trim();
   const valid = !!titleTrimmed && !!bodyTrimmed && titleTrimmed.length <= ANNOUNCE_TITLE_MAX && bodyTrimmed.length <= ANNOUNCE_BODY_MAX;
   const label = audienceLabel(audience);
+  const isInternal = audience === 'internal_test';
+  const recipientCount = testRecipients?.length ?? 0;
+  // Empty-list and 10-recipient safeguards (the server refuses both too).
+  const internalBlocked = isInternal && (testRecipients === null || recipientCount === 0 || recipientCount > INTERNAL_TEST_MAX_RECIPIENTS);
+
+  const loadTestRecipients = useCallback(async () => {
+    setTestRecipientsError(null);
+    let data: any = null; let error: any = null;
+    try {
+      ({ data, error } = await supabase.rpc('admin_list_announcement_test_recipients'));
+    } catch (err: any) {
+      error = err ?? { message: 'Could not load internal test recipients.' };
+    }
+    if (error) {
+      if (isMissingFunctionError(error)) { setInternalAvailable(false); setTestRecipients(null); return; }
+      setInternalAvailable(true); setTestRecipients(null);
+      setTestRecipientsError(error.message || 'Could not load internal test recipients.');
+      return;
+    }
+    if (!Array.isArray(data)) { setInternalAvailable(false); setTestRecipients(null); return; }
+    setInternalAvailable(true);
+    setTestRecipients(data as TestRecipient[]);
+  }, []);
 
   const load = useCallback(async () => {
     setListError(null);
@@ -99,7 +157,8 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
     }
     setDraftsAvailable(true);
     setRows((data ?? []) as AnnouncementRow[]);
-  }, []);
+    await loadTestRecipients();
+  }, [loadTestRecipients]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -127,7 +186,7 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
   };
 
   const doPublish = async () => {
-    if (inFlight.current) return;
+    if (inFlight.current || internalBlocked) return;
     inFlight.current = true;
     setConfirm(null);
     setBusy('publish');
@@ -156,10 +215,13 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
   };
 
   const handlePublish = () => {
-    if (!valid || busy) return;
+    if (!valid || busy || internalBlocked) return;
+    const target = isInternal
+      ? `${label} (${recipientCount} account${recipientCount === 1 ? '' : 's'}: ${(testRecipients ?? []).map(recipientName).join(', ')})`
+      : label;
     setConfirm({
       title: 'Publish Announcement',
-      message: `Publish "${titleTrimmed}" to ${label}? Recipients are notified immediately (in-app and by push) and it cannot be edited afterwards.`,
+      message: `Publish "${titleTrimmed}" to ${target}? Recipients are notified immediately (in-app and by push) and it cannot be edited afterwards.`,
       confirmLabel: 'Publish', danger: false,
       onConfirm: doPublish,
     });
@@ -185,6 +247,45 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
         } catch (err: any) { onFlash(false, err?.message || 'Failed to delete draft.'); } finally { setBusy(null); }
       },
     });
+  };
+
+  // ── Internal test recipients (Root only; server enforces is_root()) ──
+  const changeRecipient = async (fn: 'admin_add_announcement_test_recipient' | 'admin_remove_announcement_test_recipient', userId: string, okText: string) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setConfirm(null); setBusy('recipients');
+    try {
+      const { error } = await supabase.rpc(fn, { p_user_id: userId });
+      if (error) throw error;
+      onFlash(true, okText);
+      if (fn === 'admin_add_announcement_test_recipient') setNewRecipientId('');
+    } catch (err: any) {
+      onFlash(false, err?.message || 'Failed to update internal test recipients.');
+    } finally {
+      await loadTestRecipients();
+      setBusy(null); inFlight.current = false;
+    }
+  };
+  const atCap = recipientCount >= INTERNAL_TEST_MAX_RECIPIENTS;
+  const rootListed = !!testRecipients?.some((r) => r.user_id === currentUser.id);
+  const newIdTrimmed = newRecipientId.trim();
+  const newIdValid = UUID_RE.test(newIdTrimmed);
+  const handleAddSelf = () => {
+    if (busy || atCap || rootListed) return;
+    changeRecipient('admin_add_announcement_test_recipient', currentUser.id, 'You were added to the internal test audience.');
+  };
+  const handleAddById = () => {
+    if (busy || atCap || !newIdValid) return;
+    setConfirm({
+      title: 'Add Internal Test Recipient',
+      message: `Add user ${newIdTrimmed} to the internal test audience? They will receive every Internal test announcement (in-app and by push) until removed.`,
+      confirmLabel: 'Add', danger: false,
+      onConfirm: () => changeRecipient('admin_add_announcement_test_recipient', newIdTrimmed, 'Internal test recipient added.'),
+    });
+  };
+  const handleRemoveRecipient = (r: TestRecipient) => {
+    if (busy) return;
+    changeRecipient('admin_remove_announcement_test_recipient', r.user_id, `${recipientName(r)} removed from the internal test audience.`);
   };
 
   const drafts = rows.filter((r) => r.status === 'draft');
@@ -224,7 +325,7 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
       )}
 
       <div role="radiogroup" aria-label="Announcement audience" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {ANNOUNCEMENT_AUDIENCES.map((a) => (
+        {[...ANNOUNCEMENT_AUDIENCES, ...(internalAvailable && draftsAvailable === true ? [INTERNAL_TEST_AUDIENCE] : [])].map((a) => (
           <button key={a.value} type="button" role="radio" aria-checked={audience === a.value} onClick={() => setAudience(a.value)} disabled={disabled} style={chip(audience === a.value)}>
             {a.label}
           </button>
@@ -233,6 +334,40 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
       <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: 0 }}>
         Sending to: <span style={{ color: adminTheme.textStrong, fontWeight: 700 }}>{label}</span>
       </p>
+      {isInternal && (
+        <div data-testid="internal-test-audience" style={{ padding: '8px 10px', borderRadius: 10, background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <FlaskConical size={12} /> Only explicitly designated test accounts receive this ({recipientCount}/{INTERNAL_TEST_MAX_RECIPIENTS}){recipientCount > 0 ? `: ${(testRecipients ?? []).map(recipientName).join(', ')}` : ''}.
+          </p>
+          {testRecipientsError && <p style={{ color: adminTheme.red, fontSize: 11, margin: 0 }}>{testRecipientsError}</p>}
+          {testRecipients !== null && recipientCount === 0 && (
+            <p data-testid="internal-test-empty" style={{ color: adminTheme.red, fontSize: 11, fontWeight: 700, margin: 0 }}>
+              No internal test recipients are designated, so publishing is disabled.{isRootUser ? ' Add one below.' : ' Only Root can add recipients.'}
+            </p>
+          )}
+          {isRootUser && (
+            <div data-testid="internal-test-recipients" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {(testRecipients ?? []).map((r) => (
+                <div key={r.user_id} data-testid="internal-test-recipient-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, color: adminTheme.textStrong, fontSize: 12 }}>{recipientName(r)}{r.user_id === currentUser.id ? ' (you)' : ''}</span>
+                  <button type="button" aria-label={`Remove ${recipientName(r)} from internal test`} onClick={() => handleRemoveRecipient(r)} disabled={disabled} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={14} color={adminTheme.red} /></button>
+                </div>
+              ))}
+              {testRecipients !== null && (atCap ? (
+                <p data-testid="internal-test-cap" style={{ color: adminTheme.textFaint, fontSize: 11, margin: 0 }}>Limit of {INTERNAL_TEST_MAX_RECIPIENTS} recipients reached. Remove one to add another.</p>
+              ) : (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {!rootListed && (
+                    <button type="button" onClick={handleAddSelf} disabled={disabled} style={{ ...chip(false), display: 'flex', alignItems: 'center', gap: 4 }}><UserPlus size={12} /> Add me</button>
+                  )}
+                  <input value={newRecipientId} onChange={(e) => setNewRecipientId(e.target.value)} placeholder="User ID to add" aria-label="User ID to add to internal test" disabled={disabled} style={{ ...field, flex: 1, minWidth: 160, padding: '6px 10px', fontSize: 12 }} />
+                  <button type="button" onClick={handleAddById} disabled={disabled || !newIdValid} style={{ ...chip(false), opacity: newIdValid ? 1 : 0.5 }}>Add</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" maxLength={ANNOUNCE_TITLE_MAX} disabled={disabled} style={field} />
       <p style={{ color: adminTheme.textFainter, fontSize: 10, margin: '-6px 0 0', textAlign: 'right' }}>{titleTrimmed.length}/{ANNOUNCE_TITLE_MAX}</p>
@@ -245,7 +380,7 @@ export function AdminAnnouncementsPanel({ currentUser, onFlash }: {
             {busy === 'save' ? 'Saving…' : editingId ? 'Update draft' : 'Save draft'}
           </button>
         )}
-        <button type="button" onClick={handlePublish} disabled={disabled || !valid || draftsAvailable === null} style={{ flex: 2, background: valid ? adminTheme.accentSoftBg : adminTheme.panelAlt, border: `1px solid ${valid ? adminTheme.accentSoftBorder : adminTheme.border}`, borderRadius: 12, padding: 12, color: valid ? adminTheme.accentFrom : adminTheme.textFainter, fontSize: 14, fontWeight: 700, cursor: valid && !disabled ? 'pointer' : 'default' }}>
+        <button type="button" onClick={handlePublish} disabled={disabled || !valid || draftsAvailable === null || internalBlocked} style={{ flex: 2, background: valid ? adminTheme.accentSoftBg : adminTheme.panelAlt, border: `1px solid ${valid ? adminTheme.accentSoftBorder : adminTheme.border}`, borderRadius: 12, padding: 12, color: valid ? adminTheme.accentFrom : adminTheme.textFainter, fontSize: 14, fontWeight: 700, cursor: valid && !disabled ? 'pointer' : 'default' }}>
           {busy === 'publish' ? 'Publishing…' : `📣 Publish to ${label}`}
         </button>
       </div>
