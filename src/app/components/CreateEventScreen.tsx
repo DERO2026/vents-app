@@ -30,6 +30,7 @@ import { isSafeHttpsUrl } from '../../lib/externalLink';
 import { OrganizerDeductionNotice, TicketNetEarnings, useOrganizerDeductionRateText } from './OrganizerDeductionNotice';
 import { formatKobo } from '../../lib/ticketFees';
 import { toE164ContactPhone, splitStoredContactPhone } from '../../lib/contactPhone';
+import { formatSalesOpen, salesOpenAtFromLocal, salesOpenAtToLocal, validateSalesOpen } from '../../lib/comingSoon';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; country?: string } | null;
@@ -163,6 +164,16 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   // Edit-mode state — populated from the DB when editEventId is provided
   const [loadingEdit, setLoadingEdit] = useState(!!editEventId);
   const originalStatusRef = useRef<string>('live');
+  // Coming Soon (0224): 'now' = the existing behaviour (on sale when
+  // published); 'coming_soon' = public now, ticket sales open at the planned
+  // Nigeria-time date/time. The server enforces every rule again.
+  const [salesMode, setSalesMode] = useState<'now' | 'coming_soon'>('now');
+  const [salesDate, setSalesDate] = useState('');
+  const [salesTime, setSalesTime] = useState('');
+  const originalSalesOpenAtRef = useRef<string | null>(null);
+  // New events, and edits of events not yet on sale. Once on sale the
+  // opening is history and can't change (the server refuses it too).
+  const salesScheduleEditable = !editEventId || originalStatusRef.current !== 'live';
   const originalCreatedAtRef = useRef<number>(Date.now());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -317,6 +328,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           setContactPhone(parts.national);
         }
         originalStatusRef.current = row.status || 'live';
+        originalSalesOpenAtRef.current = row.sales_open_at || null;
+        if (row.sales_open_at && row.status !== 'live') {
+          const local = salesOpenAtToLocal(row.sales_open_at);
+          setSalesMode('coming_soon'); setSalesDate(local.date); setSalesTime(local.time);
+        }
         originalCreatedAtRef.current = row.created_at ? new Date(row.created_at).getTime() : Date.now();
       } catch (err: any) {
         setErrorMessage(err.message || 'Failed to load event for editing.');
@@ -545,10 +561,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     setGalleryUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const submitEvent = async (eventStatus: 'live' | 'draft') => {
+  const submitEvent = async (requestedStatus: 'live' | 'draft') => {
     setSubmitting(true);
     setErrorMessage(null);
     try {
+      // Coming Soon: publishing makes the event public as Coming Soon (not on
+      // sale); a draft keeps the planned opening for later.
+      const comingSoon = salesMode === 'coming_soon';
+      const eventStatus: 'live' | 'draft' | 'coming_soon' = comingSoon && requestedStatus === 'live' ? 'coming_soon' : requestedStatus;
+      const plannedSalesOpenAt = comingSoon ? salesOpenAtFromLocal(salesDate, salesTime) : null;
       // Boundary-layer schema validation — rejects malformed/malicious
       // payloads before any DB call is made.
       const eventCheck = eventCreateSchema.safeParse({
@@ -576,6 +597,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       const endTimestamp = endDate
         ? new Date(`${endDate}T${endTime || startTime}:00${REGION.timezoneOffset}`).toISOString()
         : null;
+      if (comingSoon) {
+        const salesError = validateSalesOpen(plannedSalesOpenAt, eventTimestamp);
+        if (salesError) throw new Error(salesError);
+      }
 
       // No manual token rehydration needed here (unlike the old InsForge
       // path) — the Supabase client attaches the current session to every
@@ -622,7 +647,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           status: eventStatus,
           createdAt: Date.now(),
         };
-        if (eventStatus === 'live') {
+        if (eventStatus === 'live' || eventStatus === 'coming_soon') {
           haptics.success();
           confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
           publishedEventRef.current = createdEvent;
@@ -658,6 +683,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         // the organizer's default account.
         payout_account_id: payoutAccountId || null,
         status: eventStatus,
+        ...(plannedSalesOpenAt ? { sales_open_at: plannedSalesOpenAt } : {}),
         is_18_plus: is18Plus,
         contact_phone: showPhone && contactPhone ? toE164ContactPhone(contactPhoneCountryCode, contactPhone) : null,
         show_phone: showPhone,
@@ -739,7 +765,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         createdAt: Date.now(),
       };
 
-      if (eventStatus === 'live') {
+      if (eventStatus === 'live' || eventStatus === 'coming_soon') {
         // Published events get a dedicated success state — no more silent
         // auto-redirect. The user explicitly chooses when to leave via the
         // "Return to Home Page" button (handleReturnHome).
@@ -827,7 +853,21 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       // Failsafe: a hung update must never leave the user stuck on "Save
       // Changes" forever.
+      // Coming Soon (0224): before sales open the planned time can move to
+      // another future time; it can't be removed or set once sales are open
+      // (the server refuses both).
+      let salesOpenUpdate: Record<string, any> = {};
+      if (originalStatusRef.current !== 'live' && salesMode === 'coming_soon') {
+        const planned = salesOpenAtFromLocal(salesDate, salesTime);
+        if (planned !== originalSalesOpenAtRef.current && !(planned && originalSalesOpenAtRef.current && new Date(planned).getTime() === new Date(originalSalesOpenAtRef.current).getTime())) {
+          const salesError = validateSalesOpen(planned, eventTimestamp);
+          if (salesError) throw new Error(salesError);
+          salesOpenUpdate = { sales_open_at: planned };
+        }
+      }
+
       const updateRow: Record<string, any> = {
+        ...salesOpenUpdate,
         title: sanitize(title),
         description: sanitize(description),
         image_url: imageUrl,
@@ -1957,8 +1997,46 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               </div>
             </div>
 
+            {/* Ticket sales: open now (unchanged default) or Coming Soon (0224) */}
+            {salesScheduleEditable && (
+              <div data-testid="ticket-sales-mode" style={{ background: ventsColors.surface, borderRadius: '14px', border: '1px solid rgba(255,255,255,0.06)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, margin: 0 }}>Ticket sales</p>
+                {!(editEventId && originalSalesOpenAtRef.current) && (
+                  <div role="radiogroup" aria-label="Ticket sales" style={{ display: 'flex', gap: '8px' }}>
+                    {([['now', 'Open now'], ['coming_soon', 'Coming Soon']] as const).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={salesMode === mode}
+                        data-testid={`sales-mode-${mode}`}
+                        onClick={() => setSalesMode(mode)}
+                        style={{ flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', background: salesMode === mode ? 'rgba(168,85,247,0.15)' : 'transparent', border: `1px solid ${salesMode === mode ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.1)'}`, color: salesMode === mode ? ventsColors.white : ventsColors.ink2 }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {salesMode === 'coming_soon' && (
+                  <>
+                    <p style={{ color: ventsColors.ink2, fontSize: '12px', lineHeight: 1.5, margin: 0 }}>
+                      Your event is public right away and people can tap Notify me. Tickets go on sale automatically at this time (Nigeria time), and everyone who asked is notified.
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input type="date" aria-label="Ticket sales open date" data-testid="sales-open-date" value={salesDate} min={new Date().toISOString().split('T')[0]} max={date || undefined} onChange={(e) => setSalesDate(e.target.value)} style={{ flex: 1, background: ventsColors.bg, border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: ventsColors.ink1, fontSize: '13px' }} />
+                      <input type="time" aria-label="Ticket sales open time" data-testid="sales-open-time" value={salesTime} onChange={(e) => setSalesTime(e.target.value)} style={{ flex: 1, background: ventsColors.bg, border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: ventsColors.ink1, fontSize: '13px' }} />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {[
               { label: 'Title', value: title || '(not set)' },
+              ...(salesMode === 'coming_soon' && salesScheduleEditable
+                ? [{ label: 'Ticket sales', value: salesDate && salesTime ? `Coming Soon · on sale ${formatSalesOpen(salesOpenAtFromLocal(salesDate, salesTime))}` : '(not set)' }]
+                : []),
               { label: 'Category', value: category || '(not set)' },
               { label: 'Date', value: date ? (endDate && endDate !== date ? `${date} – ${endDate}` : date) : '(not set)' },
               { label: 'Time', value: startTime ? `${startTime}${endTime ? ` – ${endTime}` : ''}` : '(not set)' },
@@ -2085,7 +2163,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             : submitting
             ? 'Saving...'
             : step === 6
-            ? (editEventId ? 'Save Changes' : 'Publish Event')
+            ? (editEventId ? 'Save Changes' : salesMode === 'coming_soon' ? 'Publish as Coming Soon' : 'Publish Event')
             : `Next: ${STEPS[step].label}`}
         </button>
         {step === 6 && !submitting && !editEventId && (

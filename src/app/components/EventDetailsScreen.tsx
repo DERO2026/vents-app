@@ -34,6 +34,7 @@ import { Event, TicketType } from './types';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { formatPrice, formatPriceRange } from './data';
 import { hasEventEnded, isEventDiscoverable } from '../../lib/eventLifecycle';
+import { formatSalesOpen, isComingSoon, isSalesDue, openEventSalesIfDue, useSaleAlerts } from '../../lib/comingSoon';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
 import { canViewAttendanceCount, rowShowsAttendanceCount } from '../../lib/attendanceVisibility';
@@ -320,7 +321,36 @@ export function EventDetailsScreen({
   // access per RLS -- ended-ness is a UI/purchase-eligibility concern, not
   // a visibility one).
   const hasEnded = hasEventEnded({ event_date: (event as any).event_date, end_date: (event as any).endDate });
+  // Coming Soon (0224): public but not on sale. Every purchase function
+  // refuses it server-side; this only renders that state. Once the planned
+  // time passes, ask the server to open it (it never opens early) and switch
+  // to the normal purchase UI only when the server confirms.
+  const [salesOpenedHere, setSalesOpenedHere] = useState(false);
+  const comingSoon = isComingSoon(event) && !salesOpenedHere;
+  const salesOpenLabel = formatSalesOpen(event.salesOpenAt);
+  const saleAlerts = useSaleAlerts(currentUserId ?? null);
+  const [notifyNotice, setNotifyNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isComingSoon(event) || !event.salesOpenAt) return;
+    let cancelled = false;
+    const tryOpen = async () => {
+      if (await openEventSalesIfDue(event.id) && !cancelled) setSalesOpenedHere(true);
+    };
+    if (isSalesDue(event.salesOpenAt)) { void tryOpen(); return () => { cancelled = true; }; }
+    // Opening within the next day: check again at the planned time.
+    const wait = new Date(event.salesOpenAt).getTime() - Date.now();
+    if (wait > 24 * 60 * 60 * 1000) return () => { cancelled = true; };
+    const timer = setTimeout(() => { void tryOpen(); }, wait + 1000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [event.id, event.status, event.salesOpenAt]);
+  const toggleNotify = async () => {
+    haptics.light();
+    const res = await saleAlerts.toggle(event.id);
+    setNotifyNotice(res.ok ? null : (res.error || null));
+  };
   const selectionIssue = selectionProblem(selectedTicket, selectedQty);
+  // Coming Soon renders its own bottom bar and no order panel, so canBook is
+  // never reachable for it; the server refuses the purchase regardless.
   const canBook = !hasEnded && selectionIssue === null;
   const freeSelection = isFreeSelection(selectedTicket, selectedQty);
   const allSoldOut = ticketTypes.length > 0 && !ticketTypes.some(isTicketAvailable);
@@ -1495,7 +1525,23 @@ export function EventDetailsScreen({
         {/* Ticket Options — stays available even after a prior purchase, so
             an attendee who already has a ticket can still buy more (extra
             tickets for friends, a different tier, etc). */}
-        {ticketTypes.length > 0 && (
+        {ticketTypes.length > 0 && comingSoon && (
+          <div ref={ticketsRef} data-testid="coming-soon-tickets" style={{ marginBottom: '24px' }}>
+            <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>Tickets</span>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.5, margin: '8px 0 12px' }}>
+              {salesOpenLabel ? `Tickets go on sale ${salesOpenLabel} (Nigeria time).` : 'Tickets are not on sale yet.'} Tap Notify me and we'll let you know the moment they are.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {ticketTypes.map((t) => (
+                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '14px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{t.name}</span>
+                  <span style={{ color: ventsColors.ink2, fontSize: '14px', fontVariantNumeric: 'tabular-nums lining-nums' }}>{Number(t.price) > 0 ? formatKobo(Math.round(Number(t.price) * 100)) : 'Free'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {ticketTypes.length > 0 && !comingSoon && (
           <div ref={ticketsRef} className="edt-tickets-inline" style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
@@ -1651,7 +1697,7 @@ export function EventDetailsScreen({
           action rather than duplicating the full ticket-tier list, since
           that list already lives in the left column and stays reachable via
           the "Tickets" tab / normal scroll on desktop too. */}
-      {ticketTypes.length > 0 && !hasEnded && (
+      {ticketTypes.length > 0 && !hasEnded && !comingSoon && (
         <div className="edt-purchase-panel">
           <div style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
             Your Order
@@ -1848,6 +1894,31 @@ export function EventDetailsScreen({
           <div style={{ flex: 1, textAlign: 'center', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', padding: '14px 28px' }}>
             Event Ended
           </div>
+        ) : comingSoon ? (
+          <>
+            <div data-testid="event-coming-soon-bar" style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>Coming Soon</div>
+              <div style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {salesOpenLabel ? `Tickets on sale ${salesOpenLabel}` : 'Tickets not on sale yet'}
+              </div>
+              {notifyNotice && <div role="status" style={{ color: ventsColors.pending, fontSize: '11px', fontWeight: 700 }}>{notifyNotice}</div>}
+            </div>
+            <button
+              type="button"
+              data-testid="event-notify-me"
+              aria-pressed={saleAlerts.isSubscribed(event.id)}
+              disabled={saleAlerts.isPending(event.id)}
+              onClick={toggleNotify}
+              style={{
+                flex: 1, borderRadius: '16px', padding: '14px 18px', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer',
+                color: saleAlerts.isSubscribed(event.id) ? ventsColors.success : ventsColors.white,
+                background: saleAlerts.isSubscribed(event.id) ? 'rgba(6,214,160,0.15)' : '#7B2FBE',
+                border: saleAlerts.isSubscribed(event.id) ? '1px solid rgba(6,214,160,0.4)' : 'none',
+              }}
+            >
+              {saleAlerts.isSubscribed(event.id) ? '✓ Notifying you' : '🔔 Notify me'}
+            </button>
+          </>
         ) : (
           <>
             {/* The SELECTED category and quantity ("Guys × 1"). Never the

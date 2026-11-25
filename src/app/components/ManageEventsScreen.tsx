@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { fetchMyEventCancellations, requestEventCancellation, CANCELLATION_STATUS_LABEL, type MyEventCancellation } from '../../lib/eventCancellation';
 import { BalanceVisibilityToggle } from './BalancePrivacy';
 import { privateAmount, useBalanceHidden } from '../../lib/balancePrivacy';
+import { formatSalesOpen, isSalesDue } from '../../lib/comingSoon';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
@@ -52,7 +53,12 @@ const STATUS_META: Record<OrganizerEventDisplayStatus, { bg: string; color: stri
   draft:     { bg: 'rgba(139,143,168,0.1)', color: C.sub,   border: 'rgba(139,143,168,0.2)', label: 'Draft',     icon: Edit2 },
   ended:     { bg: 'rgba(139,143,168,0.1)', color: C.faint, border: 'rgba(255,255,255,0.08)', label: 'Ended',    icon: Clock },
   sold_out:  { bg: 'rgba(255,184,48,0.12)', color: C.gold,  border: 'rgba(255,184,48,0.35)',  label: 'Sold Out', icon: Flame },
+  coming_soon: { bg: 'rgba(59,130,246,0.12)', color: C.blue, border: 'rgba(59,130,246,0.32)', label: 'Coming Soon', icon: Clock },
 };
+
+// A scheduled event (0224): Coming Soon, or Coming Soon hidden as a draft.
+// Its sales open only through open_event_sales once salesOpenAt has passed.
+const isScheduled = (e: OrganizerEventOverview) => !!e.salesOpenAt && e.status !== 'live';
 
 function isEditLocked(ev: OrganizerEventOverview): boolean {
   if (!ev.eventDate || ev.status !== 'live') return false;
@@ -201,11 +207,13 @@ export function ManageEventsScreen({
     }
     setHideWarningTarget(null);
     setToggling(event.id);
-    const newStatus = event.status === 'draft' ? 'live' : 'draft';
+    // A hidden scheduled event goes back to Coming Soon, never straight on
+    // sale (the server refuses that: sales open at the scheduled time).
+    const newStatus = event.status === 'draft' ? (event.salesOpenAt ? 'coming_soon' : 'live') : 'draft';
     try {
       const { error: err } = await supabase.from('events').update({ status: newStatus }).eq('id', event.id);
       if (err) throw err;
-      setActionMsg({ id: event.id, text: newStatus === 'live' ? 'Event is now live' : 'Event hidden as a draft' });
+      setActionMsg({ id: event.id, text: newStatus === 'live' ? 'Event is now live' : newStatus === 'coming_soon' ? 'Event is public as Coming Soon' : 'Event hidden as a draft' });
       refresh(true);
     } catch (e: any) {
       setActionMsg({ id: event.id, text: e?.message || 'Could not update event', error: true });
@@ -213,6 +221,32 @@ export function ManageEventsScreen({
       setToggling(null);
       setOptionsEvent(null);
       setTimeout(() => setActionMsg(null), 3000);
+    }
+  }
+
+  // Coming Soon -> on sale (0224). The server opens it only once the planned
+  // time has passed, keeps the same event, and notifies Notify-me users once.
+  async function openSales(event: OrganizerEventOverview) {
+    setToggling(event.id);
+    try {
+      const { data, error: err } = await supabase.rpc('open_event_sales', { p_event_id: event.id });
+      if (err) throw err;
+      const res = (data ?? {}) as { opened?: boolean; reason?: string; notified?: number };
+      const text = res.opened
+        ? `Ticket sales are open${res.notified ? ` · ${res.notified} ${res.notified === 1 ? 'person' : 'people'} notified` : ''}`
+        : res.reason === 'already_open' ? 'Ticket sales are already open'
+        : res.reason === 'not_due' ? `Ticket sales open ${formatSalesOpen(event.salesOpenAt)}`
+        : res.reason === 'hidden_by_admin' ? 'This event is hidden by VENTS; sales open once it is restored'
+        : res.reason === 'ended' ? 'This event has already ended'
+        : 'Ticket sales could not be opened';
+      setActionMsg({ id: event.id, text, error: !res.opened && res.reason !== 'already_open' });
+      refresh(true);
+    } catch (e: any) {
+      setActionMsg({ id: event.id, text: e?.message || 'Ticket sales could not be opened', error: true });
+    } finally {
+      setToggling(null);
+      setOptionsEvent(null);
+      setTimeout(() => setActionMsg(null), 4000);
     }
   }
 
@@ -395,7 +429,7 @@ export function ManageEventsScreen({
                   className="vents-manage-card"
                   style={{ background: C.card, border: `1px solid ${meta.border}`, borderRadius: '18px', overflow: 'hidden', animationDelay: `${Math.min(idx, 8) * 30}ms` }}
                 >
-                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? '#34D399' : event.displayStatus === 'sold_out' ? ventsColors.pending : event.displayStatus === 'ended' ? ventsColors.elevated : ventsColors.elevated }} />
+                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? '#34D399' : event.displayStatus === 'sold_out' ? ventsColors.pending : event.displayStatus === 'coming_soon' ? C.blue : event.displayStatus === 'ended' ? ventsColors.elevated : ventsColors.elevated }} />
 
                   <div style={{ padding: '14px' }}>
                     {/* Status + title */}
@@ -443,6 +477,23 @@ export function ManageEventsScreen({
                         {event.price > 0 ? formatPrice(event.price) : 'Free'}
                       </span>
                     </div>
+
+                    {/* Coming Soon (0224): planned opening + Notify-me count (a number, never who) */}
+                    {isScheduled(event) && (
+                      <div data-testid={`coming-soon-status-${event.id}`} style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: '10px', padding: '8px 12px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ color: C.text, fontSize: '11.5px', fontWeight: 600 }}>
+                          {isSalesDue(event.salesOpenAt) ? 'Ticket sales are due to open' : `Tickets on sale ${formatSalesOpen(event.salesOpenAt)}`}
+                        </span>
+                        <span data-testid={`sale-alert-count-${event.id}`} style={{ color: C.blue, fontSize: '11.5px', fontWeight: 700 }}>
+                          🔔 {event.saleAlertCount ?? 0} want{(event.saleAlertCount ?? 0) === 1 ? 's' : ''} to be notified
+                        </span>
+                        {isSalesDue(event.salesOpenAt) && (
+                          <button type="button" onClick={() => openSales(event)} disabled={toggling === event.id} className="vents-action-btn" style={{ width: '100%', background: '#7B2FBE', border: 'none', borderRadius: '10px', padding: '9px', color: ventsColors.white, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                            {toggling === event.id ? 'Opening…' : 'Open ticket sales'}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Live stats row — always real DB data, never placeholder */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
@@ -533,7 +584,10 @@ export function ManageEventsScreen({
               ...(optionsEvent.displayStatus === 'live' || optionsEvent.displayStatus === 'sold_out'
                 ? [{ icon: <Megaphone size={18} />, label: 'Send Announcement', color: C.purple, action: () => { openAnnounce(optionsEvent); setOptionsEvent(null); } }]
                 : []),
-              ...(openCancellation(optionsEvent.id) ? [] : [{ icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: toggling === optionsEvent.id ? 'Working…' : (optionsEvent.status === 'draft' ? 'Make Live' : 'Hide as Draft'), color: C.sub, disabled: toggling === optionsEvent.id, action: () => toggleHide(optionsEvent) }]),
+              ...(isScheduled(optionsEvent) && isSalesDue(optionsEvent.salesOpenAt) && !openCancellation(optionsEvent.id)
+                ? [{ icon: <Ticket size={18} />, label: toggling === optionsEvent.id ? 'Working…' : 'Open Ticket Sales', color: C.green, disabled: toggling === optionsEvent.id, action: () => openSales(optionsEvent) }]
+                : []),
+              ...(openCancellation(optionsEvent.id) || (optionsEvent.status === 'draft' && isScheduled(optionsEvent) && isSalesDue(optionsEvent.salesOpenAt)) ? [] : [{ icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: toggling === optionsEvent.id ? 'Working…' : (optionsEvent.status === 'draft' ? (optionsEvent.salesOpenAt ? 'Publish as Coming Soon' : 'Make Live') : 'Hide as Draft'), color: C.sub, disabled: toggling === optionsEvent.id, action: () => toggleHide(optionsEvent) }]),
               ...(openCancellation(optionsEvent.id)
                 ? [{ icon: <Ban size={18} />, label: CANCELLATION_STATUS_LABEL[openCancellation(optionsEvent.id)!.status], color: C.sub, disabled: true, action: () => {} }]
                 : optionsEvent.displayStatus !== 'ended'
