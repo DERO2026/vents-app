@@ -371,10 +371,6 @@ export function EventDetailsScreen({
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
-  const aboutRef = useRef<HTMLDivElement>(null);
-  const ticketsRef = useRef<HTMLDivElement>(null);
-  const organizerRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
   // "Read more" only when the description is actually clamped.
   const descriptionRef = useRef<HTMLParagraphElement>(null);
   const [descriptionClamped, setDescriptionClamped] = useState(false);
@@ -1038,7 +1034,7 @@ export function EventDetailsScreen({
         {/* 5. TICKETS -- the only interactive containers on the page. Stays
             available after a prior purchase (more tickets, another tier). */}
         {ticketTypes.length > 0 && comingSoon && (
-          <section ref={ticketsRef} data-testid="coming-soon-tickets" style={sectionStyle}>
+          <section data-testid="coming-soon-tickets" style={sectionStyle}>
             <h2 style={sectionHeading}>Tickets</h2>
             <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, margin: '0 0 8px' }}>
               {salesOpenLabel ? `Tickets go on sale ${salesOpenLabel} (Nigeria time).` : 'Tickets are not on sale yet.'} Tap Notify me and we'll let you know the moment they are.
@@ -1052,7 +1048,7 @@ export function EventDetailsScreen({
           </section>
         )}
         {ticketTypes.length > 0 && !comingSoon && (
-          <section ref={ticketsRef} className="edt-tickets-inline" style={sectionStyle}>
+          <section className="edt-tickets-inline" style={sectionStyle}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' }}>
               <h2 style={sectionHeading}>Tickets</h2>
               {isBooked && (
@@ -1454,12 +1450,12 @@ export function EventDetailsScreen({
       {calendarError && (
         <div style={{
           position: 'absolute', top: '30px', left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(239,68,68,0.95)', backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px 16px',
+          background: ventsColors.elevated,
+          border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', padding: '8px 16px',
           zIndex: 100, color: ventsColors.white, fontSize: '13px', fontWeight: 600,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '6px',
+          display: 'flex', alignItems: 'center', gap: '6px',
         }}>
-          <AlertCircle size={14} color={ventsColors.white} />
+          <AlertCircle size={14} color={ventsColors.error} />
           Couldn't open calendar. Please try again.
         </div>
       )}
