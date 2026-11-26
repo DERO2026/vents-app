@@ -1,0 +1,42 @@
+# PR checks (H5, docs/repair-tracker.md).
+#
+# Runs on every pull request into main, and on every push to main, so a
+# change cannot reach main without TypeScript and the full test suite
+# passing. To make it binding, the owner adds the "PR checks / typecheck-and-test"
+# status check to main's branch protection (Settings -> Branches ->
+# main -> Require status checks to pass before merging). See
+# docs/release-safeguards.md.
+#
+# No secrets: the suite needs none (the preview config sets its own
+# placeholder env), and pull requests from forks get no secrets anyway.
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Tests (vitest, main and preview-build configs)
+        run: npm test
