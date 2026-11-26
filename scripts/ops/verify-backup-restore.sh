@@ -37,16 +37,26 @@ for var in DATABASE_URL BACKUP_DB_URL BACKUP_ENCRYPTION_PASSPHRASE PROJECT_ADMIN
 done
 [[ "$DB_NAME" =~ ^vents_local_pg_[a-z_]+$ ]] || die "database name '$DB_NAME' is not a local test name."
 case "$FUNCTION_CHECK" in enforce|report) ;; *) die "FUNCTION_CHECK must be enforce or report." ;; esac
-# Linux or macOS (Homebrew) local server: see _local_pg.sh.
+# Linux or macOS (Homebrew or MacPorts) local server: see _local_pg.sh.
 . "$SCRIPT_DIR/_local_pg.sh" || { echo "REFUSING TO RUN: scripts/ops/_local_pg.sh missing" >&2; exit 2; }
 vents_require_local_server
-
+echo "Local PostgreSQL only: $(pgtool pg_restore --version 2>/dev/null | head -n1) from $VENTS_PG_BIN, Unix socket $SOCKET_DIR, role ${VENTS_PG_USER:-postgres} (${VENTS_PG_FLAVOR:-$VENTS_OS})"
 TMP="$(vents_mktemp)"
 cleanup() { rm -rf "$TMP"; [ -n "${KEEP_DB:-}" ] || pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 pg -d postgres -q -c "DROP DATABASE IF EXISTS $DB_NAME;" -c "CREATE DATABASE $DB_NAME;" >/dev/null
 cp "$DUMP" "$TMP/backup"; chmod "$(vents_file_mode)" "$TMP/backup"
+# A custom-format archive can only be read by a pg_restore at least as new as
+# the pg_dump that wrote it; say so plainly instead of failing table by table.
+if head -c 5 "$TMP/backup" | grep -q "PGDMP"; then
+  DUMPED_BY=$(pgtool pg_restore -l "$TMP/backup" 2>/dev/null | sed -nE 's/^; +Dumped by pg_dump version:? +([0-9]+).*/\1/p' | head -n1)
+  HAVE=$(pgtool pg_restore --version 2>/dev/null | grep -oE '[0-9]+' | head -n1)
+  if [ -n "$DUMPED_BY" ] && [ -n "$HAVE" ] && [ "$HAVE" -lt "$DUMPED_BY" ]; then
+    die "this archive was written by pg_dump $DUMPED_BY; the local pg_restore is $HAVE. Install PostgreSQL $DUMPED_BY (or newer) locally."
+  fi
+fi
+
 if head -c 5 "$TMP/backup" | grep -q "PGDMP"; then
   pgtool pg_restore -h "$SOCKET_DIR" -p 5432 -d "$DB_NAME" --no-owner --no-privileges "$TMP/backup" >"$TMP/restore.log" 2>&1
 else

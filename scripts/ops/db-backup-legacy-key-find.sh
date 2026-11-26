@@ -29,7 +29,9 @@ set -euo pipefail
 DIR="${1:?usage: $0 <unzipped-artifact-dir> <key-out>}"
 OUT="${2:?usage: $0 <unzipped-artifact-dir> <key-out>}"
 [ "${GITHUB_ACTIONS:-}" != "true" ] || { echo "STOP: this is for your own machine, never a workflow" >&2; exit 1; }
-for t in python3 gpg; do command -v "$t" >/dev/null || { echo "STOP: $t is not installed" >&2; exit 1; }; done
+command -v python3 >/dev/null || { echo "STOP: python3 is not installed (macOS: xcode-select --install)" >&2; exit 1; }
+GPG="${VENTS_GPG:-$(command -v gpg || command -v gpg2 || true)}"
+[ -n "$GPG" ] || { echo "STOP: GnuPG (gpg or gpg2) is not installed or not on PATH" >&2; exit 1; }
 M="$DIR/manifest.txt"
 [ -f "$M" ] || { echo "STOP: $M not found (unzip the whole artifact into an empty folder)" >&2; exit 1; }
 field() { sed -n "s/^$1=//p" "$M" | head -1; }
@@ -103,7 +105,7 @@ unset SECRET
 
 FOUND=""
 while IFS=$'\t' read -r k desc; do
-  if gpg --batch --quiet --no-symkey-cache --pinentry-mode loopback --passphrase-file "$WORK/$k" \
+  if "$GPG" --batch --quiet --no-symkey-cache --pinentry-mode loopback --passphrase-file "$WORK/$k" \
          --yes -o /dev/null -d "$DIR/$FILE" 2>/dev/null; then
     FOUND="$k"; FOUND_DESC="$desc"; break
   fi
