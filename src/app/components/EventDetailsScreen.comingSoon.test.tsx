@@ -102,10 +102,10 @@ describe('Coming Soon event page', () => {
     await render(baseEvent, 'u1');
     await act(async () => { q('event-notify-me')!.click(); }); await flush();
     expect(rpc).toHaveBeenCalledWith('subscribe_event_sale_alert', { p_event_id: 'e1' });
-    expect(q('event-notify-me')!.textContent).toBe('✓ Notifying you');
+    expect(q('event-notify-me')!.textContent).toBe('Notifying you');
     await act(async () => { q('event-notify-me')!.click(); }); await flush();
     expect(rpc).toHaveBeenCalledWith('unsubscribe_event_sale_alert', { p_event_id: 'e1' });
-    expect(q('event-notify-me')!.textContent).toBe('🔔 Notify me');
+    expect(q('event-notify-me')!.textContent).toBe('Notify me');
   });
 
   it('signed out: Notify me asks to sign in and calls nothing', async () => {
