@@ -101,7 +101,8 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | G-0224, G-0225, G-0223, G-0220 | Applying each migration to production, in the apply order below | ⬜ Waiting |
 | G-0226 | Applying 0226, **before** merging #124 | ❗ #124 is merged and deployed; 0226 apply status unknown. |
 | G-0227 / G-0228 | 0227 before merging #125; 0228 straight after the web deploy (D7) | ❗ #125 is merged and deployed; **0227 apply status unknown**. Apply 0227 first (or confirm it is applied), then 0228. |
-| G-0229 | Applying 0229, before merging #127 | ❗ #127 is merged and deployed; 0229 apply status unknown. Decide on N3 first (the fallback fix may change 0229 or add 0231). |
+| G-0229 | Applying 0229, before merging #127 | ❗ #127 is merged and deployed; 0229 apply status unknown. The N3 fix is a separate migration (0231, #131); 0229 itself is unchanged. Apply 0231 together with 0229 if approved. |
+| G-0230 / G-0231 / G-0232 | Merging #129 / #131 / #130, then applying each migration. **Apply each migration before its PR is merged** (lesson from N4). | ⬜ Waiting for review |
 | **G-D5** (mandatory, separate) | A **read-only production review** before any unpaid ticket is cancelled. It must show: (1) the exact qualifying ticket ids, each with its event, tier, owner and creation date; (2) counts per event and in total; (3) the capacity impact per event (sold, unpaid and remaining, before and after); (4) every **excluded** record and why: successful payments, payment attempts still open (`pending_purchases` or payment attempts), payments charged but not reconciled (an open `payment_exceptions` row, or a Paystack charge with no confirmed ticket), and anything ambiguous. Approving the review does **not** approve the cancellation: that needs a second approval of the exact list. | ⬜ Not started (needs 0220 applied first) |
 | G-D4 | Each refund of a payment exception: two separate admin approvals in the app (built in B3c) | ⬜ Not built. The #124 panel wording still tells a single admin to refund in Paystack, which conflicts with D4. |
 | G-D6 | The production schema dump for H6 | ⏸ Waiting on decision D6 |
@@ -160,10 +161,65 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 
 | ID | Sev | Finding | Root cause | Evidence | Status | Proposed fix |
 |---|---|---|---|---|---|---|
-| N1 | High | A price (or promo) change while a buyer is mid-checkout breaks the purchase. **Paystack path:** a raise means charged with no ticket; a cut means the buyer overpays with no record or refund. **Wallet path:** a raise means the wallet is debited more than agreed. A buyer who retries within 30 minutes is stuck on "price changed". | `create_pending_purchase` stores only the total (`amount_kobo`). `finalize_pending_purchase` re-reads the **current** tier price and promo. `confirm_ticket_payment(_via_wallet)` computes the expected amount (and the wallet debit) from those values. The 30-minute reuse ignores price changes. | Code trace (`docs/n1-checkout-price-snapshot.md`) | ⏸ investigated; **not implemented, waiting for approval** | Migration 0230: immutable unit price and discount snapshot on `pending_purchases`; finalize uses it; confirm and the wallet use `amount_kobo`; reuse requires the same price. Fee model unchanged. |
-| N2 | Low | Staff exclusion from self-selecting Organizer is enforced only in the UI for **sub-admins**: `set_signup_role` refuses only `role = 'admin'`. | 0121 checks `v_current_role = 'admin'` only | Code (0121) | Reported; predates D1a, which didn't change it | Refuse `('admin', 'sub-admin')` in `set_signup_role` (one-line in-place patch), if you want staff excluded on the server. |
-| N3 | High | **0229's older-app fallback can link the wrong tier.** An older app build (no tier keys) that deletes a tier and adds or renames another in the same save makes the new tier inherit the deleted tier's identity and sales. An order already in checkout for the deleted tier then **finalizes at the other tier's price** (local test: a ₦9,000 order issued as a ₦50 ticket and confirmed). Separately, an event that already has **two tiers with the same name can no longer be edited** at all. | The fallback matches by the per-save positional `id`, which can't tell a rename from delete-plus-add. The duplicate-identity check refuses legacy duplicate names. | Local Postgres test on merged 0229 (cases a–g; see post-merge audit) | Reported; **not fixed** (outside this audit's authority) | 0231: remove the `id` fallback. Refuse an older-app save that would drop or rename a tier whose names have tickets or open pending purchases ("update the app to rename or remove ticket types with sales"). Allow unchanged legacy duplicate names. N1's price snapshot also removes the wrong-price part. |
+| N1 | High | A price (or promo) change while a buyer is mid-checkout breaks the purchase. **Paystack path:** a raise means charged with no ticket; a cut means the buyer overpays with no record or refund. **Wallet path:** a raise means the wallet is debited more than agreed. A buyer who retries within 30 minutes is stuck on "price changed". | `create_pending_purchase` stores only the total (`amount_kobo`). `finalize_pending_purchase` re-reads the **current** tier price and promo. `confirm_ticket_payment(_via_wallet)` computes the expected amount (and the wallet debit) from those values. The 30-minute reuse ignores price changes. | Code trace (`docs/n1-checkout-price-snapshot.md`); reproduced locally (9 defects) | 🔶 **Implemented, unmerged: [#129](https://github.com/DERO2026/vents-app/pull/129)**, migration **0230** | See "N1–N3 fixes" below. |
+| N2 | High (per owner brief; was Low) | Staff exclusion from self-selecting Organizer was enforced only in the UI: `set_signup_role` refused only `role = 'admin'`, so a **sub-admin**, or **root** when its role isn't `'admin'`, could make themselves an organizer by calling the RPC directly. | 0121 checks `v_current_role = 'admin'` only | Code (0121); reproduced locally | 🔶 **Implemented, unmerged: [#130](https://github.com/DERO2026/vents-app/pull/130)**, migration **0232** | See "N1–N3 fixes" below. |
+| N3 | Critical (per owner brief) | **0229's older-app fallback can link the wrong tier.** An older app build (no tier keys) that deletes a tier and adds or renames another in the same save makes the new tier inherit the deleted tier's identity and sales; an order already in checkout for the deleted tier **finalizes at the other tier's price** (₦9,000 order issued as ₦50 and confirmed). An event with **two tiers of the same name can't be edited**. Also found while fixing: an older build re-saving a tier the current app renamed drops its earlier names (sales stop counting), and the current app can delete a sold tier and add a new one with the same name, which takes over its sales. | The fallback matches by the per-save positional `id`; legacy duplicate names fail the identity check; no rule ties a sold name to its tier. | Local Postgres test (6 defects reproduced) | 🔶 **Implemented, unmerged: [#131](https://github.com/DERO2026/vents-app/pull/131)**, migration **0231** | See "N1–N3 fixes" below. |
 | N4 | High (operational) | PRs were merged and deployed before their migrations were confirmed applied (see "Production risk right now"). | Merge = deploy on Vercel; the apply-before-merge order wasn't followed | GitHub and Vercel records | Open: **owner must confirm which of 0220–0229 are applied** | Confirm the production state (owner), then apply any missing migrations in the order below. |
+
+## N1–N3 fixes (2026-11-26, owner-authorized; unmerged, nothing applied)
+
+Each fix is its own branch and PR from `main` `8663202`, with no shared files. They merge cleanly together (checked on a local throwaway merge that was not pushed). All three migrations were applied together on one local database and every suite was run there.
+
+| | N1: checkout price snapshot | N2: staff role guard | N3: safe tier identity |
+|---|---|---|---|
+| PR | [#129](https://github.com/DERO2026/vents-app/pull/129) `claude/n1-checkout-price-snapshot` | [#130](https://github.com/DERO2026/vents-app/pull/130) `claude/n2-staff-role-guard` | [#131](https://github.com/DERO2026/vents-app/pull/131) `claude/n3-tier-identity-safe` |
+| Migration / undo | `0230_checkout_price_snapshot.sql` / `undo_0230.sql` | `0232_signup_role_staff_guard.sql` / `undo_0232.sql` | `0231_ticket_tier_identity_safe.sql` / `undo_0231.sql` |
+| Depends on | 0229, 0203, 0208, 0060 | 0121, 0004 | 0229 (exact trigger function) |
+| Root cause | Only the order total was fixed at creation; after payment, tickets, confirmation, wallet debit and refunds used the tier's and promo's **current** values | `set_signup_role` refused only `role='admin'` | Positional `id` fallback for keyless (older-app) tiers; legacy duplicate names refused; no rule tied a sold name to its tier |
+| Fix | Immutable quote snapshot on `pending_purchases` (unit price, discount, quantity, face, service fee, discount amount, organizer deduction, `NGN`, tier key, time); finalize issues at the snapshot and refuses a different tier; confirm and wallet cross-check the agreed total; no new card or wallet charge starts on a stale quote (order untouched); reuse only at the same quote | Selecting Organizer refuses root, admin and sub-admin on the server; ordinary users unchanged (D1a) | Keyless tiers match by current name only (never `id`); an older-app drop of a sold or ordered tier together with an unmatched add is refused with an "update the app" message; a sold name can't move to another tier (any app version); no new duplicate names; legacy duplicates stay editable (`VIP`, `VIP#2`); `SECURITY DEFINER` so RLS can't hide sales |
+| Files | migration, undo, `undo_0229.sql` (refuses while 0230 is applied), DB suite, mutation test, `checkoutPriceSnapshot.security.test.ts` | migration, undo, DB suite, mutation test, `signupRoleStaffGuard.security.test.ts`, one new test in `ventsWork.render.test.tsx` | migration, undo, DB suite, mutation test, `ticketTierIdentitySafe.security.test.ts` |
+| App code changed | none | none | none |
+| DB suite | **69/69** (9 defects reproduced without 0230) | **51/51** (sub-admin and root escalation reproduced) | **46/46** (6 defects reproduced; saves made as the organizer under RLS) |
+| Mutation test | 5/5 caught | 2/2 caught | 4/4 caught |
+| `npm test` on branch | 3,877/3,877 + 4/4 | 3,872/3,872 + 4/4 | 3,877/3,877 + 4/4 |
+
+| Status | N1 | N2 | N3 |
+|---|---|---|---|
+| Implemented (branch) | ✅ | ✅ | ✅ |
+| Tested locally | ✅ | ✅ | ✅ |
+| Merged to `main` | ⬜ awaiting review | ⬜ awaiting review | ⬜ awaiting review |
+| Applied in production | ⬜ not authorized | ⬜ not authorized | ⬜ not authorized |
+| Verified in production | ⬜ | ⬜ | ⬜ |
+
+**Combined verification** (local merge of all three, not pushed):
+- `npm run typecheck`: clean.
+- `npm test`: see the verification log below.
+- All database suites: see the verification log below.
+- Production build: ✅ (placeholder values).
+- Native release checks: ✅ 19/19.
+- Android and iOS binary builds: skipped (no SDK here).
+
+The fixes back each other up: with 0230 alone, the N3 in-checkout order is issued at its agreed ₦9,000; with 0231, the tier-swap save behind N1's last case is refused outright.
+
+**Fee note:** the brief said to "retain the 4% attendee / 5% organizer" fees. The deployed model is 0208's `v3_15_35` (**1.5% attendee, 3.5% organizer**), which forbids 4% + 5%. Nothing changed the fee model; a static test asserts that 0230 redefines no fee helper.
+
+**Verification log (combined local merge of #129, #130 and #131)**
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm test` | ✅ 3,896/3,896 + 4/4 (was 3,865 on `main`; +31 new tests) |
+| Database suites (`scripts/local-pg-test/run-*.sh`) | ✅ **46/46**: the 40 existing ones, plus 0230 (69), 0232 (51), 0231 (46) and their 3 mutation tests (5/5, 2/2, 4/4 caught) |
+| Production build (`vite build`, placeholder values) | ✅ |
+| Native release checks | ✅ 19/19 |
+| Android and iOS binary builds | ⬜ skipped (no SDK or Xcode here) |
+| Production | Nothing run, applied, deployed or changed |
+
+**Remaining risks**
+- **N1:** orders created before 0230 that are already mid-payment when it's applied still finalize at the then-current price. A paid order refused at finalize (tier removed, capacity full, event ended) is recorded by 0226, but refunding it needs B3c (D4), which isn't built. The existing `max_uses` race on promos is unchanged. Ordinary orders still have no expiry: a stale order simply can't start a new payment.
+- **N2:** staff who self-escalated before 0232 keep `is_organizer`. Checking that needs a read-only production query, which isn't authorized.
+- **N3:** older builds are refused when they rename or replace a sold tier (the message says to update the app; consider a support-note line). Removing a sold tier outright is still allowed, so an order mid-payment for it becomes a 0226 exception. Sales made before the fix on legacy duplicate-name tiers stay shared by name.
+- **All three:** **apply each migration before merging its PR** so the N4 situation doesn't repeat. 0230 needs 0229 applied first, and 0231 needs 0229's exact function.
 
 ## Earlier audits: status of every open item
 
@@ -196,7 +252,7 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | CF-13 | Default login mode | Re-check in B7 | B7 |
 | CF-14 | Public QR images | Open | L11 |
 
-## Migration register (0218–0229)
+## Migration register (0218–0232)
 
 Dependencies are taken from each file's SQL prechecks and from what it patches. **"Applied in production" is not inferred from merging:** only 0218 and 0219 have a recorded apply (2026-11-19). Stage A (2026-11-25, read-only) listed "0221 applied but unrecorded" only as an **assumption**. Because 0229 depends on 0221's function body, that must be confirmed before 0229.
 
@@ -213,7 +269,10 @@ Dependencies are taken from each file's SQL prechecks and from what it patches. 
 | 0226 | Payment exceptions (H1) | `pending_purchases`, `admin_logs.actor_role`, `is_admin`/`is_super_admin` | ✅ | ✅ | ❓ |
 | 0227 | Auth lookup hardening | pgcrypto, `check_rate_limit`, `client_ip`; reclaim (0004) and check_user_exists (0027) bodies | ✅ | ✅ (refuses while 0228 is on) | ❓ |
 | 0228 | Revoke the old open lookups (D7) | **0227** (refuses without it) | ✅ | ✅ | ❓ |
-| 0229 | Ticket-tier rename (D2a) | **0221's** availability body; create/finalize anchors (verified to survive 0203/0208); purchase_ticket anchors (verified to survive 0220) | ✅ | ✅ (exact reverse) | ❓ |
+| 0229 | Ticket-tier rename (D2a) | **0221's** availability body; create/finalize anchors (verified to survive 0203/0208); purchase_ticket anchors (verified to survive 0220) | ✅ | ✅ (exact reverse; refuses while 0230 is applied, once #129 merges) | ❓ |
+| 0230 | N1: checkout price snapshot | **0229** (refuses without it), 0203, 0208, 0060; in-place anchors in create/finalize/confirm/wallet/initiate | ⬜ #129 open | ✅ `undo_0230` (exact reverse; keeps snapshot columns) | ⬜ not applied |
+| 0231 | N3: safe tier identity (replaces 0229's trigger function) | **0229's exact trigger function** (refuses on drift) | ⬜ #131 open | ✅ `undo_0231` (restores 0229's function verbatim) | ⬜ not applied |
+| 0232 | N2: staff guard in `set_signup_role` | 0121's `set_signup_role` body (one anchor) | ⬜ #130 open | ✅ `undo_0232` (exact reverse) | ⬜ not applied |
 
 **Required apply order** (each step needs its own approval; resolves the earlier conflicting notes):
 1. 0224 (needs 0218 and pg_cron) → 0225 (needs 0218)
@@ -223,7 +282,8 @@ Dependencies are taken from each file's SQL prechecks and from what it patches. 
 5. **0227**, and confirm web username login works
 6. **0228** immediately after (D7)
 7. **0229** (needs 0221)
-8. Backfill migration history for 0221–0229
+8. **0230, 0231, 0232** if approved (after 0229; independent of each other, any order; verified applied together locally)
+9. Backfill migration history for 0221–0232
 
 0220, 0226, 0227 and 0229 don't depend on each other. 0220 and 0229 patch disjoint text in `purchase_ticket`, and both undos reverse their own text exactly, so either rollback order works. That's verified statically, not run together.
 

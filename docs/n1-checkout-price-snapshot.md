@@ -1,6 +1,6 @@
 # N1: price changes during an open checkout (investigation and proposed fix)
 
-**Status:** investigated on `main` at `8663202` (2026-11-26). **Not implemented. Waiting for owner approval.**
+**Status:** investigated on `main` at `8663202` (2026-11-26). **Implemented in [#129](https://github.com/DERO2026/vents-app/pull/129) as migration 0230 (unmerged; not applied to production).** The implementation follows this design, plus: the snapshot also stores the fee breakdown, currency and tier key; a trigger makes it immutable; and no new card or wallet charge can start on a stale quote. The open questions below are answered by the implementation's defaults (organizer credited on the agreed price; no expiry added), and remain the owner's to change.
 **Severity:** High. Money is charged and then judged against a price the buyer never agreed to.
 
 ## How the amount flows today
