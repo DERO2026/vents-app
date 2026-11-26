@@ -14,6 +14,11 @@ BEGIN
   IF current_setting('vents.rollback_confirm', true) IS DISTINCT FROM 'undo-0229' THEN
     RAISE EXCEPTION 'Refusing: SET vents.rollback_confirm = ''undo-0229'' first';
   END IF;
+  -- 0230 (checkout price snapshot) uses ticket_tier_find and patches over
+  -- 0229's finalize_pending_purchase: undo 0230 first.
+  IF to_regprocedure('public.ticket_order_quote_problem(text)') IS NOT NULL THEN
+    RAISE EXCEPTION 'Refusing: 0230 is applied; run undo_0230.sql first';
+  END IF;
 END $$;
 
 CREATE OR REPLACE FUNCTION pg_temp.vents_undo_0229(p_sig text, p_pairs text[][])
