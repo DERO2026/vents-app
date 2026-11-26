@@ -193,7 +193,9 @@ describe('Edit Event', () => {
     expect(row.show_attendance_count).toBe(false);
     expect(row).not.toHaveProperty('status');            // the edit never unpublishes
     expect(row.ticket_goal).toBe(200);
-    expect(row.ticket_types).toEqual([{ id: 't_0', name: 'Regular', price: 5000, quantity: 200, description: 'Entry' }]);
+    // D2a (0229): the tier also carries its identity key -- for a tier saved
+    // before 0229, its own loaded name -- so a later rename keeps its sales.
+    expect(row.ticket_types).toEqual([{ id: 't_0', key: 'Regular', name: 'Regular', price: 5000, quantity: 200, description: 'Entry' }]);
   });
 
   it('turning it back ON is saved', async () => {
