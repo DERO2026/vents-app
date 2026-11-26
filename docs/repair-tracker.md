@@ -29,12 +29,12 @@ Approved decisions are binding for every batch. A decision being approved does n
 | D6 | H6 needs a schema-only `pg_dump` of production so the repo can rebuild the database from a baseline. It's read-only, but it is a production operation: will you run it, or approve me running it? | — | — | H6, M10 | ⏸ **Still open** |
 | D7 | **Revoke the old username lookups immediately, through 0228.** Older installed iOS and Android versions may lose username login and may need email login or an app update. Release and support notes are prepared. | 2026-11-26 | "Immediately" means as soon as it's safe: apply 0227 → merge #125 and deploy the web app → apply 0228 straight after. Applying 0228 before the web deploy would also break username login on the website. ⚠️ See the compatibility risk below. | H2, L4 (#125) | ✅ Decided |
 
-### Open follow-up questions raised by these decisions
+### Follow-up decisions
 
-| ID | Question | Why it matters | Blocks |
-|---|---|---|---|
-| D1a | D1 says *approved* organizers may sell, but there is currently no approval step. Anyone can make themselves an organizer at sign-up or later (`set_signup_role` is granted to every signed-in user). Does choosing "organizer" at sign-up count as approval, or should becoming an organizer need an admin's approval? | If choosing it counts as approval, M5 closes as "accepted by policy". If not, M5 needs an approval flow. Nothing changes until this is answered. | M5 |
-| D2a | Can a tier **that already has sales be renamed**? Tickets refer to their tier by name, so renaming it would detach existing tickets from that tier in the door, analytics and refund screens. Proposed default: refuse renaming a tier with sales, just as deleting it is refused. | Only renames are affected; D2 allows price changes. | M4 (renaming) |
+| ID | Decision (owner-approved) | Date | Implications | Affected work | Status |
+|---|---|---|---|---|---|
+| D1a | **Choosing the Organizer role is enough.** A user who selects it is approved to operate as an organizer. No separate admin approval before publishing events or selling paid tickets. | 2026-11-26 | Sign-up already worked this way (`set_signup_role`). After sign-up, "Become an Organizer" (VENTS Work) filed an application and waited "1–3 business days" for admin review, which is a separate approval. #126 makes it the same one-step choice as sign-up, with no database or permission change. Legacy pending or rejected applications no longer block anyone. Admins can still read old requests. Unchanged: event creation still needs the organizer capability; payouts still need a verified bank account, the PIN and two-admin approval; `promote_to_organizer` stays revoked; staff are never offered the option. | M5, OEL-04, OEL-10 | ✅ Decided; implemented in #126 |
+| D2a | **Organizers may rename a ticket tier after sales begin.** Existing tickets keep their purchase-time name; transactions, payments, receipts, refunds and reports are never rewritten; ownership, door scanning and check-in keep working; the event shows the new name. | 2026-11-26 | Tickets store the tier **name**, and capacity, availability and analytics matched by the current name. Without a fix, a rename oversold the tier, broke orders already in checkout (charged, no ticket) and split reports. Migration 0229 (additive) gives each tier a stable key and server-kept previous names, and makes purchase, capacity and reporting count every name the tier has had. No ticket or financial row is written. | M4 (renaming), #127 | ✅ Decided; implemented in #127 |
 
 ### ⚠️ D7 compatibility risk
 
@@ -54,6 +54,7 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | G-0224, G-0225, G-0223, G-0220 | Applying each migration to production, in the apply order below | ⬜ Waiting |
 | G-0226 | Applying 0226, **before** merging #124 | ⬜ Waiting |
 | G-0227 / G-0228 | 0227 before merging #125; 0228 straight after the web deploy (D7) | ⬜ Waiting |
+| G-0229 | Applying 0229, before merging #127 | ⬜ Waiting |
 | **G-D5** (mandatory, separate) | A **read-only production review** before any unpaid ticket is cancelled. It must show: (1) the exact qualifying ticket ids, each with its event, tier, owner and creation date; (2) counts per event and in total; (3) the capacity impact per event (sold, unpaid and remaining, before and after); (4) every **excluded** record and why: successful payments, payment attempts still open (`pending_purchases` or payment attempts), payments charged but not reconciled (an open `payment_exceptions` row, or a Paystack charge with no confirmed ticket), and anything ambiguous. Approving the review does **not** approve the cancellation: that needs a second approval of the exact list. | ⬜ Not started (needs 0220 applied first) |
 | G-D4 | Each refund of a payment exception: two separate admin approvals in the app (built in B3c) | ⬜ Not built |
 | G-D6 | The production schema dump for H6 | ⏸ Waiting on decision D6 |
@@ -64,11 +65,13 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 |---|---|---|
 | #124 (H1, 0226) | Change the Payment exceptions panel and its docs. They must no longer tell an admin to refund in the Paystack dashboard and then record it. "Record resolution" must no longer let a single admin close out a refund. One admin can still record a **non-refund** outcome (for example, the ticket was issued another way), or that could also move to two approvals. The two-admin refund itself is B3c. 0226's tables and the server-side recording are unaffected. | D4: one admin refunding outside the app is a single-approval refund |
 | New batch B3c | A two-admin refund action for payment exceptions, using `request_admin_action` / `approve_admin_action` and run through the existing refund engine. It comes with a local Postgres test suite proving: an admin can't approve their own request, a payment can't be refunded twice, and the refund equals the amount charged. | D4 |
+| #127 (D2a, 0229) | New. Apply 0229 before merging #127. | D2a |
+| #126 (D1a) | New. No database change. | D1a |
 | #125 (H2, 0227/0228) | Update the PR description: 0228 is now approved to apply immediately after the web deploy (D7). Link the support notes. No code change: 0227 and 0228 already match D7. | D7 |
 | 0220 / #122 | No change. The D5 cancellation is a separate, later operation behind gate G-D5, not part of 0220. | D5 |
 | 0225 | No change. It doesn't touch existing promotion rows. | D3 |
-| B5 (M4) | Keep price edits allowed. Refuse deleting a tier with sales or shrinking it below the number sold. Add the test that a price change never touches existing tickets or ledger rows. Renaming follows D2a. | D2 |
-| M5 (organizer capability) | Nothing until D1a is answered. | D1 |
+| B5 (M4) | Keep price edits allowed. Refuse deleting a tier with sales or shrinking it below the number sold, counting sales under the tier's previous names (0229). Add the test that a price change never touches existing tickets or ledger rows. Renaming is allowed (D2a, #127). | D2, D2a |
+| M5 (organizer capability) | Done in #126 (D1a): "Become an Organizer" after sign-up is now the same one-step self-selection as sign-up. | D1, D1a |
 
 ## Findings
 
@@ -84,8 +87,8 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | M1 | Medium | 1-hour reminders almost never sent | Reminder sweep only runs in the daily 08:00 UTC Vercel cron | B6 | planned: pg_cron schedule (after 0224) | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | Depends on H4 (pg_cron) |
 | M2 | Medium | Ticket email depends on the buyer's browser (CF-07) | Email only sent from the client after verify | B3 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
 | M3 | Medium | Draft and admin-hidden events readable by anyone (OEL-06) | `select_events` only filters `deleted_at` | B5 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M4 | Medium | Tier with sales can be removed or shrunk (OEL-08) | No database check for sold tiers | B5 | planned: refuse deleting a tier with sales or shrinking it below the number sold; price changes stay allowed (D2), with a test that existing tickets and ledger rows never change | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | Renaming a tier with sales: D2a |
-| M5 | Medium | Anyone can self-grant organizer (OEL-04) | `set_signup_role` | — | D1: no verification gate for paid sales. Whether choosing "organizer" counts as "approved" is D1a | — | — | ⏸ D1a | ⬜ | ⬜ | ⬜ | D1a |
+| M4 | Medium | Tier with sales can be removed or shrunk (OEL-08) | No database check for sold tiers | B5 | planned: refuse deleting a tier with sales or shrinking it below the number sold (counting sales under previous names); price changes allowed (D2); renaming allowed and made safe by 0229 (D2a, #127) | rename part: 0229 local suite 42/42; static guard 11 | #127 (rename part) | 🔶 rename ✅, delete/shrink guard ⬜ | ⬜ | ⬜ | ⬜ | Delete/shrink guard still B5 |
+| M5 | Medium | Anyone can self-grant organizer (OEL-04) | `set_signup_role` | — | Accepted by policy (D1, D1a): choosing Organizer is the approval. #126 removes the post-sign-up admin review so both paths match | workRoles, VENTS Work render, organizerCapabilityStates, promoteToOrganizerSelfEscalation (restated to D1a) | #126 | ✅ | ⬜ | ⬜ (frontend only) | ⬜ | None (policy accepted) |
 | M6 | Medium | Purchase intent lost at sign-in (CF-01) | `handleAuthSuccess` clears the stack and goes Home | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
 | M7 | Medium | "Popular" ordering counts only the viewer's own saves | `saved_events` RLS is own-row only | B5 | planned: count RPC | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
 | M8 | Medium | Anyone can wipe another person's unconfirmed sign-up | `reclaim_unverified_signup` anon, no ownership proof | B4 | 0227: reclaim only after 1 hour (email-code lifetime) + rate limit | in 0227 suite | #125 | ✅ | ⬜ | ⬜ | ⬜ | |
@@ -106,6 +109,12 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | L11 | Low | Public QR images never cleaned up (CF-14) | Stored publicly | B3 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
 | L12 | Low | Anyone can review an organizer without attending | Insert policy only checks `reviewer_id` | B5 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
 
+## Found during repairs (not in the original 31)
+
+| ID | Sev | Finding | Root cause | Status | Remaining risk |
+|---|---|---|---|---|---|
+| N1 | High | A price change while a buyer is mid-checkout breaks the purchase. A **raise** makes the payment look short, so the buyer is charged with no ticket (H1 records it). A **cut** means the buyer overpays and the difference isn't refunded. Conflicts with D2 ("preserve the original price"). | `finalize_pending_purchase` re-reads the tier's current price when issuing the ticket, and `confirm_ticket_payment` checks the charge against that price, not against the amount the buyer agreed to (`pending_purchases.amount_kobo`). | Reported only; not fixed (outside the D1a/D2a scope). Needs your go-ahead. | Present on `main` today whenever a price is changed during an open checkout. |
+
 ## Earlier audits: status of every open item
 
 | ID | Item | Status on `main` (2026-11-26) | Now tracked as |
@@ -113,7 +122,7 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | OEL-01 | Unpaid tickets usable for entry | Open (0220 never merged) | C1 |
 | OEL-02 | Orphan payments | Open | H1 |
 | OEL-03 | Desktop clipping | Open | M9 |
-| OEL-04 | Self-grant organizer | Policy: D1 decided (no verification gate); D1a open | M5 / D1a |
+| OEL-04 | Self-grant organizer | Accepted by policy (D1, D1a); app made consistent in #126 | M5 |
 | OEL-05 | Anyone can read any event's sales counts | Fixed in code by 0221: pending, cancelled, refunded counts and revenue are organizer/admin only. Production: applied but unrecorded (Stage A) | H6 (record history) |
 | OEL-06 | Drafts and hidden events readable | Open | M3 |
 | OEL-07 | Revenue stat counts gross `amount × 100` | Re-check in B5 | B5 |
@@ -147,7 +156,9 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | B3b | M2, L11: server-side ticket email, private QR hosting | — |
 | B3c | D4: two-admin refund of payment exceptions | #124 merged; 0226 applied |
 | B4 | H2, M8, L4, L5: auth and personal-data RPCs | Done without a new API route (sign-in stays on the device) |
-| B5 | M3, M4, M7, L3, L12, OEL-07: database correctness | New migrations numbered after 0228; D2 decided; D2a for renaming |
+| B5 | M3, M4, M7, L3, L12, OEL-07: database correctness | New migrations numbered after 0229; D2/D2a decided; M4's guard must count previous names (0229) |
+| D1a | M5: organizer self-selection (#126) | — |
+| D2a | M4 rename part: migration 0229 (#127) | Apply 0229 before merging #127 |
 | B6 | M1: reminder schedule | 0224 applied in production (H4) |
 | B7 | M6, M11, L9, L10, CF re-checks: checkout and sign-in flow | — |
 | B8 | M9, L1, L2, L6, L7, L8, OEL-11: UI, navigation, cleanup | — |
@@ -155,6 +166,6 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | B10 | M12 and release safeguards | You (dashboard) |
 
 **Production migration apply order** (each one needs your approval; you or an approved session runs it):
-0224 → 0225 → 0223 → 0220 → 0226 (before merging #124) → 0227 (before merging #125) → 0228 (immediately after #125 is deployed, D7) → backfill migration history.
+0224 → 0225 → 0223 → 0220 → 0226 (before merging #124) → 0227 (before merging #125) → 0228 (immediately after #125 is deployed, D7) → 0229 (before merging #127) → backfill migration history.
 After 0220: gate G-D5 (read-only review), then a separately approved cancellation.
 0224 goes before 0225 because 0225's eligibility rule treats `coming_soon` as not on sale; it is safe either way.
