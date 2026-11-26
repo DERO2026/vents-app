@@ -72,7 +72,8 @@ describe('Event Details: attendance count shown (ON)', () => {
     statsRows = [{ event_id: 'e1', sold_count: 120 }]; settingRow = { show_attendance_count: true };
     await render({ ...EVENT, showAttendanceCount: true });
     expect(byId('event-attendance-header')?.textContent).toBe('120 attending');
-    expect(byId('event-attendance-capacity')?.textContent).toBe('120 attending');
+    // One row: the count, then fill and capacity beneath it (no duplicate count).
+    expect(byId('event-attendance-capacity')?.textContent).toBe('40% filled · 300 capacity');
     expect(container.textContent).toContain('40% filled');
     expect(byId('event-capacity-only')).toBeNull();
   });

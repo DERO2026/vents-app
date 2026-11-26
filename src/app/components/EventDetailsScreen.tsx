@@ -8,13 +8,10 @@ import {
   Link as LinkIcon,
   MapPin,
   Calendar,
-  Clock,
   Users,
   ChevronDown,
   ChevronUp,
   CheckCircle,
-  Mic2,
-  Tag,
   Send,
   MessageSquarePlus,
   Phone,
@@ -28,6 +25,8 @@ import {
   LayoutDashboard,
   AlertCircle,
   Sparkles,
+  Bell,
+  Check,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
@@ -38,7 +37,6 @@ import { formatSalesOpen, isComingSoon, isSalesDue, openEventSalesIfDue, useSale
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
 import { canViewAttendanceCount, rowShowsAttendanceCount } from '../../lib/attendanceVisibility';
-import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
 import { downloadBlob } from '../../lib/ticketImage';
 import { shareLink } from '../../lib/shareLink';
@@ -192,25 +190,37 @@ function useCountdown(eventDate?: string, dateStr?: string, timeStr?: string) {
   return { d, h, m, s };
 }
 
-function CountdownUnit({ value, label }: { value: number; label: string }) {
+// ── Event Detail presentation: text sits on the page; containers only where
+// something is interactive (ticket rows, map, controls over the flyer). ──
+const hairline = 'rgba(255,255,255,0.08)';
+const infoPrimary: React.CSSProperties = { color: ventsColors.ink1, fontSize: '15px', fontWeight: 600, lineHeight: 1.35 };
+const infoSecondary: React.CSSProperties = { color: ventsColors.ink2, fontSize: '13.5px', lineHeight: 1.45, marginTop: '2px' };
+const sectionStyle: React.CSSProperties = { marginTop: '32px', paddingTop: '28px', borderTop: `1px solid ${hairline}` };
+const sectionHeading: React.CSSProperties = { color: ventsColors.white, fontSize: '18px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', letterSpacing: '-0.2px', margin: '0 0 12px' };
+const textAction: React.CSSProperties = {
+  display: 'flex', width: 'fit-content', alignItems: 'center', gap: '6px', alignSelf: 'flex-start', marginTop: '8px',
+  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+  color: ventsColors.accentSoft, fontSize: '13.5px', fontWeight: 600,
+};
+const iconAction: React.CSSProperties = {
+  width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', cursor: 'pointer', textDecoration: 'none',
+};
+const coverControl: React.CSSProperties = {
+  width: '38px', height: '38px', borderRadius: '50%', border: 'none', cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+};
+
+function InfoRow({ icon: Icon, children, trailing }: { icon: React.ComponentType<{ size?: number; color?: string }>; children: React.ReactNode; trailing?: React.ReactNode }) {
   return (
-    <div style={{ textAlign: 'center' }}>
-      <div
-        style={{
-          background: ventsColors.surface,
-          border: '1px solid rgba(168,85,247,0.2)',
-          borderRadius: '12px',
-          padding: '8px 12px',
-          minWidth: '50px',
-        }}
-      >
-        <span style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
-          {String(value).padStart(2, '0')}
-        </span>
-      </div>
-      <span style={{ color: ventsColors.ink3, fontSize: '10px', display: 'block', marginTop: '4px' }}>
-        {label}
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+      <span style={{ width: '32px', display: 'flex', justifyContent: 'center', paddingTop: '1px', flexShrink: 0 }}>
+        <Icon size={18} color={ventsColors.ink2} />
       </span>
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>{children}</div>
+      {trailing && <div style={{ display: 'flex', gap: '8px', flexShrink: 0, alignSelf: 'center' }}>{trailing}</div>}
     </div>
   );
 }
@@ -224,21 +234,11 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
 const EventCountdown = memo(function EventCountdown({ event_date, date, time }: { event_date?: string; date?: string; time?: string }) {
   const countdown = useCountdown(event_date, date, time);
   if (!countdown) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ color: ventsColors.ink2, fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
-        EVENT STARTS IN
-      </div>
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-        <CountdownUnit value={countdown.d} label="Days" />
-        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
-        <CountdownUnit value={countdown.h} label="Hours" />
-        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
-        <CountdownUnit value={countdown.m} label="Mins" />
-        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
-        <CountdownUnit value={countdown.s} label="Secs" />
-      </div>
-    </div>
+    <span data-testid="event-countdown" style={{ ...infoSecondary, fontVariantNumeric: 'tabular-nums' }}>
+      Starts in {countdown.d > 0 ? `${countdown.d}d ` : ''}{pad(countdown.h)}h {pad(countdown.m)}m {pad(countdown.s)}s
+    </span>
   );
 });
 
@@ -371,11 +371,17 @@ export function EventDetailsScreen({
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
-  const aboutRef = useRef<HTMLDivElement>(null);
-  const ticketsRef = useRef<HTMLDivElement>(null);
-  const organizerRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
-  const [activeSection, setActiveSection] = useState<'About' | 'Tickets' | 'Organizer' | 'More'>('About');
+  // "Read more" only when the description is actually clamped.
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const [descriptionClamped, setDescriptionClamped] = useState(false);
+  useEffect(() => {
+    const el = descriptionRef.current;
+    if (!el) return;
+    const check = () => { if (!expanded) setDescriptionClamped(el.scrollHeight > el.clientHeight + 1); };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, [event.description, expanded]);
   const [realAttendeeCount, setRealAttendeeCount] = useState(event.attendees);
   // The organizer's attendance-visibility choice (events.show_attendance_count,
   // 0221). The database already withholds a hidden count from everyone but the
@@ -586,6 +592,13 @@ export function EventDetailsScreen({
     openExternalUrl(webUrl);
     setShowMapDialog(false);
   };
+  // Status, where it applies: plain text, never a badge.
+  const addressLine = [event.area, event.city, event.state].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+  const statusText = hasEnded ? 'Event ended'
+    : comingSoon ? (salesOpenLabel ? `Coming soon · Tickets on sale ${salesOpenLabel}` : 'Coming soon')
+    : allSoldOut ? 'Sold out'
+    : null;
+  const statusTone: 'accent' | 'muted' = comingSoon && !hasEnded ? 'accent' : 'muted';
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);
   // Public viewers never see a hidden count; the organizer and admins do, labelled.
   const attendanceVisible = canViewAttendanceCount(showAttendanceCount, {
@@ -713,10 +726,9 @@ export function EventDetailsScreen({
             display: block;
             grid-column: 2;
             margin: 0 24px 24px;
-            background: rgba(255,255,255,0.04);
-            backdrop-filter: blur(20px) saturate(160%);
+            background: #0E0C14;
             border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 20px;
+            border-radius: 18px;
             padding: 20px;
           }
         }
@@ -740,12 +752,11 @@ export function EventDetailsScreen({
             position: sticky;
             top: 24px;
             align-self: start;
-            background: rgba(255,255,255,0.04);
-            backdrop-filter: blur(20px) saturate(160%);
+            background: #0E0C14;
             border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 20px;
+            border-radius: 18px;
             padding: 20px;
-            margin-top: calc(16px + env(safe-area-inset-top));
+            margin-top: calc(12px + env(safe-area-inset-top));
           }
         }
       `}</style>
@@ -760,16 +771,13 @@ export function EventDetailsScreen({
         />
       )}
 
-      {/* Hero — premium rounded flyer card (Sync Rwanda-style): inset card
-          with generous corner radius, cover-fit image, a solid translucent
-          bottom band for legibility, category pill + share/save/report overlaid on the
-          image, and a subtle fade-in on mount. */}
+      {/* 1. COVER -- the flyer, clean: no frame, border, shadow, pills or
+          hint badges over it. Only the back / share / save controls. */}
       <div
         className="event-details-hero"
         style={{
           padding: '0 16px',
-          marginTop: 'calc(16px + env(safe-area-inset-top))',
-          marginBottom: '16px',
+          marginTop: 'calc(12px + env(safe-area-inset-top))',
           flexShrink: 0,
         }}
       >
@@ -777,11 +785,9 @@ export function EventDetailsScreen({
           style={{
             position: 'relative',
             aspectRatio: EVENT_CARD_ASPECT_CSS,
-            borderRadius: '26px',
+            borderRadius: '20px',
             overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
-            animation: 'heroFadeIn 0.5s ease forwards',
+            background: ventsColors.surface,
           }}
         >
           <ImageCarousel
@@ -792,770 +798,267 @@ export function EventDetailsScreen({
             onImageTap={(i) => { setLightboxIndex(i); setFlyerFullScreen(true); }}
             style={{ width: '100%', height: '100%', cursor: 'zoom-in' }}
           />
+          {/* A light bottom fade so the flyer meets the black page softly. */}
+          <div data-testid="event-hero-scrim" aria-hidden style={flyerScrim(18)} />
 
-          {/* Bottom-only gradient so the category pill and tap hint stay
-              legible; the flyer above stays bright (was a flat dark band). */}
-          <div data-testid="event-hero-scrim" aria-hidden style={flyerScrim(35)} />
-
-          {/* Back button (top-left) */}
-          <button
-            onClick={(e) => { e.stopPropagation(); onBack(); }}
-            style={{
-              position: 'absolute',
-              top: '16px',
-              left: '16px',
-              background: 'rgba(255,255,255,0.1)',
-              backdropFilter: 'blur(16px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.16)',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
+          <button aria-label="Back" onClick={(e) => { e.stopPropagation(); onBack(); }} style={{ ...coverControl, position: 'absolute', top: '12px', left: '12px' }}>
             <ArrowLeft size={18} color={ventsColors.white} />
           </button>
-
-          {/* Share / Save / Report (top-right) */}
-          <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'flex', gap: '8px' }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleShare(); }}
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(16px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-                border: '1px solid rgba(255,255,255,0.16)',
-                borderRadius: '50%',
-                width: '38px',
-                height: '38px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
+          <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '8px' }}>
+            <button aria-label="Share event" onClick={(e) => { e.stopPropagation(); handleShare(); }} style={coverControl}>
               <Share2 size={17} color={ventsColors.white} />
             </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleCopyLink(); }}
-              title="Copy Link"
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(16px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-                border: '1px solid rgba(255,255,255,0.16)',
-                borderRadius: '50%',
-                width: '38px',
-                height: '38px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <LinkIcon size={17} color={ventsColors.white} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(16px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-                border: '1px solid rgba(255,255,255,0.16)',
-                borderRadius: '50%',
-                width: '38px',
-                height: '38px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : ventsColors.white} strokeWidth="2.5">
+            <button aria-label={isSaved ? 'Remove from saved' : 'Save event'} aria-pressed={isSaved} onClick={(e) => { e.stopPropagation(); onToggleSave(); }} style={coverControl}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : ventsColors.white} strokeWidth="2.2">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
-            {currentUserId && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
-                style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  backdropFilter: 'blur(16px) saturate(180%)',
-                  WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-                  border: '1px solid rgba(255,255,255,0.16)',
-                  borderRadius: '50%',
-                  width: '38px',
-                  height: '38px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <Flag size={17} color={ventsColors.white} />
-              </button>
-            )}
-          </div>
-
-          {/* Tap-to-expand hint (bottom-right) */}
-          <div style={{ position: 'absolute', bottom: '16px', right: '16px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '4px 8px', pointerEvents: 'none' }}>
-            <span style={{ color: ventsColors.white, fontSize: '10px' }}>Tap to expand</span>
-          </div>
-
-          {/* Category pill (bottom-left, inside the image) */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '16px',
-              left: '16px',
-              background: 'rgba(123,47,190,0.2)',
-              border: '1px solid #7B2FBE',
-              borderRadius: '100px',
-              padding: '4px 10px',
-              backdropFilter: 'blur(6px)',
-            }}
-          >
-            <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              {event.category.toUpperCase()}
-            </span>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="event-details-main" style={{ flex: 1, padding: '0 16px 120px' }}>
-        {/* Title + Rating */}
-        <div style={{ marginBottom: '12px' }}>
-          <h1
-            style={{
-              color: ventsColors.white,
-              fontSize: '24px',
-              fontWeight: 700,
-              fontFamily: 'Manrope, sans-serif',
-              letterSpacing: '-0.5px',
-              lineHeight: 1.25,
-              marginBottom: '8px',
-            }}
-          >
+      <div className="event-details-main" style={{ flex: 1, padding: '20px 20px 120px' }}>
+        {/* 2. EVENT INFORMATION -- typography and small icons on the page
+            itself; no card per item. */}
+        <section data-testid="event-info">
+          {event.category && (
+            <p style={{ color: ventsColors.ink3, fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+              {event.category}{(event as any).is_18_plus ? ' · 18+' : ''}
+            </p>
+          )}
+          <h1 style={{ color: ventsColors.white, fontSize: '26px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', letterSpacing: '-0.5px', lineHeight: 1.2, margin: 0 }}>
             {event.title}
-            {(event as any).is_18_plus && (
-              <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: ventsColors.error, fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
-            )}
           </h1>
-          {attendanceVisible && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Users size={13} color={ventsColors.ink2} />
-                <span data-testid="event-attendance-header" style={{ color: ventsColors.ink2, fontSize: '13px' }}>
-                  {realAttendeeCount.toLocaleString()} attending{attendanceHiddenNote}
-                </span>
-              </div>
-            </div>
+          {statusText && (
+            <p data-testid="event-status" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 0', color: statusTone === 'accent' ? ventsColors.accentSoft : ventsColors.ink2, fontSize: '14px', fontWeight: 600 }}>
+              <span aria-hidden style={{ width: '6px', height: '6px', borderRadius: '50%', background: statusTone === 'accent' ? ventsColors.accent : ventsColors.ink3, flexShrink: 0 }} />
+              {statusText}
+            </p>
           )}
-        </div>
 
-        {/* Section navigation -- moved here, directly under the title/
-            attendee row, matching the exported design's C1 layout exactly
-            (tabs sit right below the title/date, ABOVE the About-tab
-            content -- not below the Organizer card, which used to sit
-            here and made the Organizer tab scroll target appear ABOVE its
-            own nav bar, before the tab strip even rendered). About /
-            Tickets / Organizer / More scroll to the corresponding section
-            already on the page (same anchor-scroll pattern as Home's
-            Trending/Near You chips); no conditional rendering, so nothing
-            below moves or unmounts. */}
-        <div
-          className="no-scrollbar"
-          style={{
-            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
-            background: 'rgba(255,255,255,0.05)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            border: '1px solid rgba(255,255,255,0.09)',
-            borderRadius: '999px',
-            padding: '4px',
-          }}
-        >
-          {[
-            { label: 'About', ref: aboutRef },
-            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
-            { label: 'Organizer', ref: organizerRef },
-            { label: 'More', ref: moreRef },
-          ].filter((t) => t.show !== false).map((t) => {
-            const active = activeSection === t.label;
-            return (
-              <button
-                key={t.label}
-                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-                style={{
-                  flex: 1,
-                  flexShrink: 0,
-                  background: active ? '#7B2FBE' : 'transparent',
-                  border: 'none',
-                  borderRadius: '999px',
-                  padding: '9px 14px',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ color: active ? ventsColors.white : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Description -- moved here, directly under the tab strip, matching
-            the exported C1 order (description comes before the Doors/Age-
-            style info cards, not after Capacity/Countdown/Organizer Tools
-            at the very bottom of the page where it used to sit). */}
-        <div style={{ marginBottom: '16px' }}>
-          <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
-            About
-          </span>
-          <p
-            style={{
-              color: ventsColors.ink3,
-              fontSize: '14px',
-              lineHeight: 1.5,
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitLineClamp: expanded ? 'unset' : 3,
-              WebkitBoxOrient: 'vertical',
-            }}
-          >
-            {event.description}
-          </p>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: ventsColors.accentSoft,
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              padding: '6px 0 0',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-            }}
-          >
-            {expanded ? 'Show less' : 'Show more'}
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          {/* Approved prototype's "Ask VENTS AI to plan this night" row --
-              hands the event off as real context (see onAskVentsAi /
-              App.tsx's openVentsAiForEvent), not a floating button. */}
-          {onAskVentsAi && (
-            <button
-              onClick={() => onAskVentsAi(event)}
-              style={{
-                marginTop: '12px', width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                background: 'rgba(139,92,246,0.16)',
-                border: '1px solid rgba(139,92,246,0.3)', borderRadius: '16px', padding: '12px 14px',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={{
-                flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
-                background: '#8E5CF7',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Sparkles size={14} color={ventsColors.white} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '22px' }}>
+            <InfoRow icon={Calendar}>
+              <span style={infoPrimary}>{event.date}</span>
+              <span style={infoSecondary}>
+                {event.endTime ? `${event.time} – ${event.endTime}` : (event.time || 'Time to be confirmed')}
               </span>
-              <span style={{ color: ventsColors.white, fontSize: '13.5px', fontWeight: 600 }}>
-                Ask VENTS AI to plan this night
-              </span>
-            </button>
-          )}
-        </div>
+              <EventCountdown event_date={event.event_date} date={event.date} time={event.time} />
+              {icsContent && (
+                <button type="button" onClick={handleAddToCalendar} disabled={addingToCalendar} style={textAction}>
+                  <CalendarPlus size={14} /> {addingToCalendar ? 'Opening…' : 'Add to calendar'}
+                </button>
+              )}
+            </InfoRow>
 
-        {/* Info cards */}
-        <div ref={aboutRef} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-          {[
-            {
-              icon: Calendar,
-              label: 'Date',
-              value: event.date.replace(/^[A-Za-z]+, /, ''),
-            },
-            { icon: Clock, label: 'Time', value: event.endTime ? `${event.time} – ${event.endTime}` : (event.time || 'TBC') },
-          ].map(({ icon: Icon, label, value }) => (
-            <div
-              key={label}
-              style={{
-                flex: 1,
-                background: 'rgba(255,255,255,0.04)',
-                backdropFilter: 'blur(20px) saturate(160%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '20px',
-                padding: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-              }}
-            >
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '10px',
-                  background: 'rgba(168,85,247,0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Icon size={16} color={ventsColors.accent} />
-              </div>
-              <div>
-                <div style={{ color: ventsColors.ink2, fontSize: '10px', fontWeight: 500 }}>{label}</div>
-                <div style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 600 }}>{value}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Location -- a pure online event has no real venue/address, so it
-            never shows a fake address or the map, just a clear "Online
-            Event" marker (the private access link itself only ever comes
-            from get_event_online_access, gated on ticket ownership --
-            see the ticket-detail screen, never this public details view). */}
-        <div
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '20px',
-            padding: '16px',
-            marginBottom: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: event.locationType === 'online' ? 0 : '12px' }}>
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'rgba(168,85,247,0.12)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <MapPin size={16} color={ventsColors.accent} />
-            </div>
-            <div>
+            <InfoRow icon={MapPin}>
               {event.locationType === 'online' ? (
-                <>
-                  <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
-                    🌐 Online Event
-                  </div>
-                  <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
-                    Join online — access details are sent after you register or purchase a ticket.
-                  </div>
-                </>
+                <span style={infoPrimary}>Online event</span>
               ) : (
                 <>
-                  <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
-                    {event.locationType === 'hybrid' ? '🔀 Hybrid — ' : ''}{event.venue}
-                  </div>
-                  <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
-                    {event.area}, {event.city}, {event.state}
-                  </div>
-                  {event.locationType === 'hybrid' && (
-                    <div style={{ color: ventsColors.ink3, fontSize: '11px', marginTop: '2px' }}>
-                      Also available online — access details are sent after you register or purchase a ticket.
-                    </div>
-                  )}
+                  <span style={infoPrimary}>{event.venue}</span>
+                  <span style={infoSecondary}>{addressLine}</span>
                 </>
               )}
-            </div>
-          </div>
-          {event.locationType !== 'online' && (
-            <EventMap
-              latitude={event.latitude}
-              longitude={event.longitude}
-              venue={event.venue}
-              address={`${event.area}, ${event.city}, ${event.state}`}
-              onGetDirections={() => setShowMapDialog(true)}
-            />
-          )}
-        </div>
+            </InfoRow>
 
-        {/* Organizer -- moved here, after Date/Time and Location/Map,
-            matching the exported design's C1 order (About-tab content:
-            description → info cards → Organizer row → Map is roughly the
-            export's order; Organizer/Map both sit inside About, below the
-            tab strip, never above it). Still serves as the "Organizer"
-            tab's scroll target. */}
-        <div
-          ref={organizerRef}
-          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '16px',
-            padding: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px',
-            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
-          }}
-        >
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: '#7B2FBE',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>
-              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
-            </span>
-            {organizerProfile?.avatar_url && (
-              <img
-                src={organizerProfile.avatar_url}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
+            {attendanceVisible ? (
+              <InfoRow icon={Users}>
+                <span data-testid="event-attendance-header" style={infoPrimary}>
+                  {realAttendeeCount.toLocaleString()} attending{attendanceHiddenNote}
+                </span>
+                <span data-testid="event-attendance-capacity" style={infoSecondary}>
+                  {capacityPct}% filled · {(event.capacity ?? 0).toLocaleString()} capacity
+                </span>
+              </InfoRow>
+            ) : (
+              <InfoRow icon={Users}>
+                <span data-testid="event-capacity-only" style={infoPrimary}>
+                  {(event.capacity ?? 0).toLocaleString()} total capacity
+                </span>
+              </InfoRow>
+            )}
+
+            {/* Organizer -- tapping opens their profile. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default' }}
+              >
+                <span style={{ width: '32px', height: '32px', borderRadius: '50%', background: ventsColors.elevated, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+                  <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>
+                    {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
+                  </span>
+                  {organizerProfile?.avatar_url && (
+                    <img src={organizerProfile.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  )}
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ ...infoSecondary, marginTop: 0 }}>Hosted by</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                    <span style={{ ...infoPrimary, overflow: 'hidden', textOverflow: 'ellipsis' }}>{organizerProfile?.full_name || event.organizer}</span>
+                    {(event.organizerVerified || organizerProfile?.is_verified) && (
+                      <CheckCircle size={14} fill={ventsColors.accent} color={ventsColors.white} />
+                    )}
+                    <BadgeChip tier={organizerProfile?.vc_badge} />
+                  </span>
+                </span>
+              </button>
+              {event.organizer_id && onMessageOrganizer && currentUserId && currentUserId !== event.organizer_id && (
+                <button type="button" onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)} style={{ ...textAction, marginTop: 0 }}>
+                  <MessageCircle size={14} /> Message
+                </button>
+              )}
+            </div>
+
+            {/* Contact number (if the organizer chose to show it). Nigerian
+                numbers show locally (0XXXXXXXXXX); call and WhatsApp always
+                use +234 (src/lib/contactPhone.ts). */}
+            {contactPhone && (
+              <InfoRow
+                icon={Phone}
+                trailing={
+                  <>
+                    {contactPhone.telHref && (
+                      <a href={contactPhone.telHref} data-testid="organizer-contact-call" aria-label={`Call organiser on ${contactPhone.display}`} style={iconAction}>
+                        <Phone size={16} color={ventsColors.accentSoft} />
+                      </a>
+                    )}
+                    {contactPhone.whatsappNumber && (
+                      <button type="button" data-testid="organizer-contact-whatsapp" aria-label="Message organiser on WhatsApp" onClick={() => openExternalUrl(`https://wa.me/${contactPhone.whatsappNumber}`)} style={iconAction}>
+                        <MessageCircle size={16} color={ventsColors.accentSoft} />
+                      </button>
+                    )}
+                  </>
+                }
+              >
+                <span data-testid="organizer-contact-phone" style={{ ...infoPrimary, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+                  {contactPhone.display}
+                </span>
+                <span style={infoSecondary}>Organizer contact, for event enquiries only</span>
+              </InfoRow>
+            )}
+
+            {/* Door tools -- only the event's organizer, a Sub-Admin or an admin. */}
+            {canManageDoor && onOpenDoorScanner && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <Shield size={18} color={ventsColors.ink2} style={{ flexShrink: 0, width: '32px' }} />
+                <button type="button" onClick={onOpenDoorScanner} style={{ ...textAction, marginTop: 0 }}>
+                  <ScanLine size={14} /> Open door scanner
+                </button>
+                {onOpenDoorManager && (
+                  <button type="button" onClick={onOpenDoorManager} style={{ ...textAction, marginTop: 0 }}>
+                    <LayoutDashboard size={14} /> Door manager
+                  </button>
+                )}
+              </div>
             )}
           </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
-                {organizerProfile?.full_name || event.organizer}
-              </span>
-              {(event.organizerVerified || organizerProfile?.is_verified) && (
-                <CheckCircle size={14} fill={ventsColors.accent} color={ventsColors.white} />
-              )}
-              <BadgeChip tier={organizerProfile?.vc_badge} />
-            </div>
-            <span style={{ color: ventsColors.ink2, fontSize: '12px', textTransform: 'capitalize' }}>
-              {organizerProfile?.role || 'Event Organizer'}
-            </span>
-          </div>
-        </div>
+        </section>
 
-        {/* Organizer Tools — door-staff scanner access. Only ever visible to
-            the event's own organizer, a Sub-Admin, or Root/platform admin;
-            regular attendees never see this section at all. Now placed
-            below the segmented nav (with the rest of the organizer-facing
-            content) instead of dominating the very top of every attendee's
-            view of their own event. */}
-        {canManageDoor && onOpenDoorScanner && (
-          <div
-            style={{
-              background: 'rgba(142,92,247,0.15)',
-              border: '1px solid rgba(167,139,250,0.35)',
-              borderRadius: '18px',
-              padding: '14px',
-              marginBottom: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-              <Shield size={13} color={ventsColors.accentSoft} />
-              <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Organizer Tools
-              </span>
-            </div>
-            <button
-              onClick={onOpenDoorScanner}
+        {/* 3. ABOUT THIS EVENT -- directly on the page. */}
+        {(event.description || '').trim() && (
+          <section style={sectionStyle}>
+            <h2 style={sectionHeading}>About this event</h2>
+            <p
+              ref={descriptionRef}
+              data-testid="event-description"
               style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                background: '#7B2FBE',
-                border: 'none',
-                borderRadius: '14px',
-                padding: '16px',
-                cursor: 'pointer',
-                boxShadow: '0 4px 20px rgba(123,47,190,0.4)',
+                color: ventsColors.ink2,
+                fontSize: '15px',
+                lineHeight: 1.65,
+                margin: 0,
+                whiteSpace: 'pre-line',
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: expanded ? 'unset' : 4,
+                WebkitBoxOrient: 'vertical',
               }}
             >
-              <ScanLine size={20} color={ventsColors.white} />
-              <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
-            </button>
-            {onOpenDoorManager && (
-              <button
-                onClick={onOpenDoorManager}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(167,139,250,0.3)',
-                  borderRadius: '14px',
-                  padding: '14px',
-                  cursor: 'pointer',
-                  marginTop: '10px',
-                }}
-              >
-                <LayoutDashboard size={18} color={ventsColors.accentSoft} />
-                <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
+              {event.description}
+            </p>
+            {(descriptionClamped || expanded) && (
+              <button type="button" onClick={() => setExpanded(!expanded)} style={textAction}>
+                {expanded ? 'Show less' : 'Read more'}
+                {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
             )}
-          </div>
-        )}
-
-        {/* Add to Calendar — <a download> is a browser-only mechanism that
-            silently no-ops inside a Capacitor WebView release build (no
-            download manager to hand it to). downloadBlob() (ticketImage.ts)
-            already solves exactly this: native writes to cache + opens the
-            OS share sheet (which offers "Add to Calendar"/opens the
-            Calendar app directly for a .ics), web keeps the plain
-            blob-download anchor. */}
-        {icsContent && (
-          <SecondaryButton
-            onClick={handleAddToCalendar}
-            disabled={addingToCalendar}
-            icon={<CalendarPlus size={16} color={ventsColors.success} />}
-            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: ventsColors.success, marginBottom: '16px' }}
-          >
-            {addingToCalendar ? 'Opening…' : 'Add to Calendar'}
-          </SecondaryButton>
-        )}
-
-        {/* Countdown — isolated into its own memoized component so the
-            1-second tick doesn't re-render this whole screen (see
-            EventCountdown above). */}
-        <EventCountdown event_date={event.event_date} date={event.date} time={event.time} />
-
-        {/* Capacity */}
-        <div
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '20px',
-            padding: '16px',
-            marginBottom: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: attendanceVisible ? '8px' : 0 }}>
-            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>Capacity</span>
-            {attendanceVisible ? (
-              <span style={{ color: capacityPct > 80 ? ventsColors.error : ventsColors.success, fontSize: '13px', fontWeight: 600 }}>
-                {capacityPct}% filled
-              </span>
-            ) : (
-              // Hidden count: capacity only -- a fill bar or % would reveal the count.
-              <span data-testid="event-capacity-only" style={{ color: ventsColors.ink2, fontSize: '13px' }}>
-                {(event.capacity ?? 0).toLocaleString()} total capacity
-              </span>
+            {event.lineup && event.lineup.length > 0 && (
+              <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, margin: '14px 0 0' }}>
+                <span style={{ color: ventsColors.ink1, fontWeight: 600 }}>Lineup: </span>{event.lineup.join(', ')}
+              </p>
             )}
-          </div>
-          {attendanceVisible && (<>
-          <div
-            style={{
-              height: '6px',
-              background: 'rgba(255,255,255,0.07)',
-              borderRadius: '3px',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                height: '100%',
-                width: `${capacityPct}%`,
-                borderRadius: '3px',
-                background:
-                  capacityPct > 80
-                    ? '#FBBF24'
-                    : '#8E5CF7',
-                transition: 'width 0.5s ease',
-              }}
-            />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-            <span data-testid="event-attendance-capacity" style={{ color: ventsColors.ink2, fontSize: '11px' }}>
-              {realAttendeeCount.toLocaleString()} attending{attendanceHiddenNote}
-            </span>
-            <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
-              {(event.capacity ?? 0).toLocaleString()} total capacity
-            </span>
-          </div>
-          </>)}
-        </div>
-
-        {/* Contact number (if organizer chose to show it). Nigerian numbers show in
-            local format (0XXXXXXXXXX); call and WhatsApp always use +234 (see
-            src/lib/contactPhone.ts). */}
-        {contactPhone && (
-          <div
-            style={{
-              background: 'rgba(168,85,247,0.06)',
-              border: '1px solid rgba(168,85,247,0.2)',
-              borderRadius: '14px',
-              padding: '14px 16px',
-              marginBottom: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Phone size={14} color={ventsColors.accent} />
-              <span style={{ color: ventsColors.accent, fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>
-                ORGANISER CONTACT
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-              <div style={{ minWidth: 0 }}>
-                <p data-testid="organizer-contact-phone" style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
-                  {contactPhone.display}
-                </p>
-                <p style={{ color: ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
-                  For event enquiries only
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                {contactPhone.telHref && (
-                <a
-                  href={contactPhone.telHref}
-                  data-testid="organizer-contact-call"
-                  aria-label={`Call organiser on ${contactPhone.display}`}
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '12px',
-                    background: 'rgba(168,85,247,0.15)',
-                    border: '1px solid rgba(168,85,247,0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <Phone size={16} color={ventsColors.accent} />
-                </a>
-                )}
-                {contactPhone.whatsappNumber && (
-                <button
-                  type="button"
-                  data-testid="organizer-contact-whatsapp"
-                  aria-label="Message organiser on WhatsApp"
-                  onClick={() => openExternalUrl(`https://wa.me/${contactPhone.whatsappNumber}`)}
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '12px',
-                    background: 'rgba(37,211,102,0.12)',
-                    border: '1px solid rgba(37,211,102,0.25)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <MessageCircle size={16} color="#25D366" />
-                </button>
-                )}
-              </div>
-            </div>
-          </div>
+            {event.tags && event.tags.length > 0 && (
+              <p style={{ color: ventsColors.ink3, fontSize: '13px', margin: '10px 0 0' }}>
+                {event.tags.map((tag) => `#${tag.replace(' ', '')}`).join('  ')}
+              </p>
+            )}
+            {onAskVentsAi && (
+              <button type="button" onClick={() => onAskVentsAi(event)} style={textAction}>
+                <Sparkles size={14} /> Ask VENTS AI to plan this night
+              </button>
+            )}
+          </section>
         )}
 
-        {/* Lineup */}
-        {event.lineup && event.lineup.length > 0 && (
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Mic2 size={16} color={ventsColors.accent} />
-              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700 }}>Lineup</span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {event.lineup.map((artist) => (
-                <div
-                  key={artist}
-                  style={{
-                    background: ventsColors.surface,
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '50px',
-                    padding: '7px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '22px',
-                      height: '22px',
-                      borderRadius: '50%',
-                      background: `hsl(${artist.charCodeAt(0) * 37}deg 60% 50%)`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '10px',
-                      color: ventsColors.white,
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {artist[0]}
-                  </div>
-                  <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>
-                    {artist}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* 4. LOCATION -- a pure online event has no venue, so no map (the
+            private access link only ever comes from get_event_online_access,
+            gated on ticket ownership). */}
+        <section style={sectionStyle}>
+          <h2 style={sectionHeading}>Location</h2>
+          {event.locationType === 'online' ? (
+            <>
+              <p style={{ ...infoPrimary, margin: 0 }}>Online event</p>
+              <p style={{ ...infoSecondary, margin: '4px 0 0' }}>Join online. Access details are sent after you register or purchase a ticket.</p>
+            </>
+          ) : (
+            <>
+              <p style={{ ...infoPrimary, margin: 0 }}>{event.venue}</p>
+              <p style={{ ...infoSecondary, margin: '4px 0 0' }}>{addressLine}</p>
+              {event.locationType === 'hybrid' && (
+                <p style={{ ...infoSecondary, margin: '4px 0 0' }}>Also available online. Access details are sent after you register or purchase a ticket.</p>
+              )}
+              <div style={{ marginTop: '14px' }}>
+                <EventMap
+                  latitude={event.latitude}
+                  longitude={event.longitude}
+                  venue={event.venue}
+                  address={`${event.area}, ${event.city}, ${event.state}`}
+                  onGetDirections={() => setShowMapDialog(true)}
+                />
+              </div>
+            </>
+          )}
+        </section>
 
-        {/* Ticket Options — stays available even after a prior purchase, so
-            an attendee who already has a ticket can still buy more (extra
-            tickets for friends, a different tier, etc). */}
+        {/* 5. TICKETS -- the only interactive containers on the page. Stays
+            available after a prior purchase (more tickets, another tier). */}
         {ticketTypes.length > 0 && comingSoon && (
-          <div ref={ticketsRef} data-testid="coming-soon-tickets" style={{ marginBottom: '24px' }}>
-            <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>Tickets</span>
-            <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.5, margin: '8px 0 12px' }}>
+          <section data-testid="coming-soon-tickets" style={sectionStyle}>
+            <h2 style={sectionHeading}>Tickets</h2>
+            <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, margin: '0 0 8px' }}>
               {salesOpenLabel ? `Tickets go on sale ${salesOpenLabel} (Nigeria time).` : 'Tickets are not on sale yet.'} Tap Notify me and we'll let you know the moment they are.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {ticketTypes.map((t) => (
-                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '14px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{t.name}</span>
-                  <span style={{ color: ventsColors.ink2, fontSize: '14px', fontVariantNumeric: 'tabular-nums lining-nums' }}>{Number(t.price) > 0 ? formatKobo(Math.round(Number(t.price) * 100)) : 'Free'}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+            {ticketTypes.map((t) => (
+              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '12px 0', borderTop: `1px solid ${hairline}` }}>
+                <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 600 }}>{t.name}</span>
+                <span style={{ color: ventsColors.ink2, fontSize: '15px', fontVariantNumeric: 'tabular-nums lining-nums' }}>{Number(t.price) > 0 ? formatKobo(Math.round(Number(t.price) * 100)) : 'Free'}</span>
+              </div>
+            ))}
+          </section>
         )}
         {ticketTypes.length > 0 && !comingSoon && (
-          <div ref={ticketsRef} className="edt-tickets-inline" style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
-                Select Tickets
-              </span>
+          <section className="edt-tickets-inline" style={sectionStyle}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' }}>
+              <h2 style={sectionHeading}>Tickets</h2>
               {isBooked && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '20px', padding: '4px 10px', width: 'fit-content' }}>
-                  <CheckCircle size={12} color={ventsColors.success} />
-                  <span style={{ color: ventsColors.success, fontSize: '11px', fontWeight: 700 }}>You have a ticket</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>
+                  <CheckCircle size={13} color={ventsColors.accentSoft} /> You have a ticket
                 </span>
               )}
             </div>
             {ticketTypes.length > 1 && (
-              <p data-testid="one-category-note" style={{ color: ventsColors.ink3, fontSize: '11.5px', margin: '-4px 0 10px' }}>{ONE_CATEGORY_PER_ORDER_NOTE}</p>
+              <p data-testid="one-category-note" style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: '-6px 0 12px' }}>{ONE_CATEGORY_PER_ORDER_NOTE}</p>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {ticketTypes.map((t) => {
@@ -1565,37 +1068,40 @@ export function EventDetailsScreen({
                 return (
                   <div
                     key={t.id}
+                    role="radio"
+                    aria-checked={isSelected}
+                    aria-disabled={soldOut}
                     onClick={() => { if (!soldOut) { haptics.light(); selectTicket(t.id); } }}
                     style={{
-                      background: isSelected ? 'rgba(124,58,237,0.08)' : ventsColors.elevated,
-                      border: isSelected ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.06)',
-                      borderRadius: '16px',
+                      background: isSelected ? 'rgba(142,92,247,0.08)' : 'transparent',
+                      border: `1px solid ${isSelected ? ventsColors.accent : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '14px',
                       padding: '14px 16px',
                       cursor: soldOut ? 'not-allowed' : 'pointer',
                       opacity: soldOut ? 0.5 : 1,
-                      transition: 'all 0.2s',
+                      transition: 'border-color 0.15s, background 0.15s',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
-                        <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '2px 0 0' }}>{t.description || 'General Admission'}</p>
-                        {!soldOut && <span style={{ color: ventsColors.ink3, fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
-                        {soldOut && <span style={{ color: ventsColors.error, fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
+                        <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 600, margin: 0 }}>{t.name}</p>
+                        <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '3px 0 0' }}>
+                          {t.description || 'General Admission'}{soldOut ? ' · Sold out' : ` · ${t.available} left`}
+                        </p>
                       </div>
-                      <span style={{ color: ventsColors.pending, fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginLeft: '8px' }}>
+                      <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {formatPrice(t.price)}
                       </span>
                     </div>
                     {isSelected && !soldOut && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
                         <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>Quantity</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <button onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? ventsColors.elevated : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
-                            <Minus size={14} color={ventsColors.ink2} />
+                          <button aria-label="Decrease quantity" onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.4 : 1 }}>
+                            <Minus size={14} color={ventsColors.ink1} />
                           </button>
-                          <span key={qty} style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
-                          <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#8E5CF7', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <span key={qty} style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', fontVariantNumeric: 'tabular-nums' }}>{qty}</span>
+                          <button aria-label="Increase quantity" onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#7B2FBE', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                             <Plus size={14} color={ventsColors.white} />
                           </button>
                         </div>
@@ -1605,90 +1111,41 @@ export function EventDetailsScreen({
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Tags */}
-        {event.tags && event.tags.length > 0 && (
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Tag size={15} color={ventsColors.accent} />
-              <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Tags</span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {event.tags.map((tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    background: 'rgba(167,139,250,0.08)',
-                    border: '1px solid rgba(167,139,250,0.15)',
-                    borderRadius: '8px',
-                    padding: '5px 12px',
-                    color: ventsColors.accentSoft,
-                    fontSize: '12px',
-                    fontWeight: 500,
-                  }}
-                >
-                  #{tag.replace(' ', '')}
-                </span>
+        {/* Related events (existing) -- plain list, no boxed empty state. */}
+        <section style={sectionStyle}>
+          <h2 style={sectionHeading}>Related events</h2>
+          {loadingRelated ? (
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} style={{ width: '140px', height: '120px', background: ventsColors.surface, borderRadius: '14px', opacity: 0.6, flexShrink: 0 }} />
               ))}
             </div>
-          </div>
-        )}
+          ) : relatedEvents.length === 0 ? (
+            <p style={{ ...infoSecondary, margin: 0 }}>No related events in this category.</p>
+          ) : (
+            <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+              {relatedEvents.map((evt) => (
+                <HorizontalEventCard key={evt.id} event={evt} onPress={() => onEventPress && onEventPress(evt)} isSaved={false} onToggleSave={() => {}} />
+              ))}
+            </div>
+          )}
+        </section>
 
-        {/* Organizer actions */}
-        {event.organizer_id && onMessageOrganizer && (
-          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {onMessageOrganizer && currentUserId && currentUserId !== event.organizer_id && (
-              <button
-                onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)}
-                style={{
-                  width: '100%', background: ventsColors.surface,
-                  border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px',
-                  padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-                }}
-              >
-                <MessageCircle size={16} color={ventsColors.accentSoft} />
-                <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
-                  Message organizer
-                </span>
-                <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600 }}>Chat →</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Related Events Section */}
-        <div ref={moreRef} style={{ marginTop: '24px', marginBottom: '16px' }}>
-            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Manrope, sans-serif' }}>
-              Related Events
-            </p>
-            {loadingRelated ? (
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ width: '140px', height: '120px', background: ventsColors.surface, borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
-                ))}
-              </div>
-            ) : relatedEvents.length === 0 ? (
-              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={ventsColors.ink2} strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>No related events in this category</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                {relatedEvents.map((evt) => (
-                  <HorizontalEventCard
-                    key={evt.id}
-                    event={evt}
-                    onPress={() => onEventPress && onEventPress(evt)}
-                    isSaved={false}
-                    onToggleSave={() => {}}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+        {/* Quiet page-end actions (existing): copy the link, report. */}
+        <div style={{ display: 'flex', gap: '20px', marginTop: '28px', paddingTop: '18px', borderTop: `1px solid ${hairline}` }}>
+          <button type="button" onClick={handleCopyLink} style={{ ...textAction, marginTop: 0, color: ventsColors.ink2 }}>
+            <LinkIcon size={14} /> Copy link
+          </button>
+          {currentUserId && (
+            <button type="button" onClick={() => setShowReport(true)} style={{ ...textAction, marginTop: 0, color: ventsColors.ink2 }}>
+              <Flag size={14} /> Report event
+            </button>
+          )}
         </div>
+      </div>
 
       {/* Desktop sticky purchase panel (handoff DT2/TB2: Event Detail splits
           media-left / sticky-purchase-panel-right at >=1200px). Hidden below
@@ -1761,7 +1218,6 @@ export function EventDetailsScreen({
               fontWeight: 700,
               fontFamily: 'Manrope, sans-serif',
               cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
-              boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
             }}
           >
             {payButtonText(purchasesDisabled)}
@@ -1777,7 +1233,6 @@ export function EventDetailsScreen({
             position: 'absolute',
             inset: 0,
             background: 'rgba(0,0,0,0.65)',
-            backdropFilter: 'blur(6px)',
             display: 'flex',
             alignItems: 'flex-end',
             zIndex: 50,
@@ -1815,9 +1270,9 @@ export function EventDetailsScreen({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '14px',
-                  background: 'rgba(66,133,244,0.1)',
-                  border: '1px solid rgba(66,133,244,0.25)',
-                  borderRadius: '16px',
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '14px',
                   padding: '14px 16px',
                   cursor: 'pointer',
                   width: '100%',
@@ -1842,9 +1297,9 @@ export function EventDetailsScreen({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '14px',
-                  background: 'rgba(255,255,255,0.05)',
+                  background: 'transparent',
                   border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '16px',
+                  borderRadius: '14px',
                   padding: '14px 16px',
                   cursor: 'pointer',
                   width: '100%',
@@ -1880,11 +1335,9 @@ export function EventDetailsScreen({
           bottom: 0,
           left: 0,
           right: 0,
-          background: 'rgba(10,6,18,0.88)',
-          backdropFilter: 'blur(24px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-          borderTop: '1px solid rgba(255,255,255,0.09)',
-          padding: '14px 16px 24px',
+          background: '#020005',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          padding: '12px 20px calc(16px + env(safe-area-inset-bottom))',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
@@ -1901,7 +1354,7 @@ export function EventDetailsScreen({
               <div style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {salesOpenLabel ? `Tickets on sale ${salesOpenLabel}` : 'Tickets not on sale yet'}
               </div>
-              {notifyNotice && <div role="status" style={{ color: ventsColors.pending, fontSize: '11px', fontWeight: 700 }}>{notifyNotice}</div>}
+              {notifyNotice && <div role="status" style={{ color: ventsColors.ink1, fontSize: '12px', fontWeight: 600 }}>{notifyNotice}</div>}
             </div>
             <button
               type="button"
@@ -1910,13 +1363,15 @@ export function EventDetailsScreen({
               disabled={saleAlerts.isPending(event.id)}
               onClick={toggleNotify}
               style={{
-                flex: 1, borderRadius: '16px', padding: '14px 18px', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer',
-                color: saleAlerts.isSubscribed(event.id) ? ventsColors.success : ventsColors.white,
-                background: saleAlerts.isSubscribed(event.id) ? 'rgba(6,214,160,0.15)' : '#7B2FBE',
-                border: saleAlerts.isSubscribed(event.id) ? '1px solid rgba(6,214,160,0.4)' : 'none',
+                flex: 1, borderRadius: '14px', padding: '14px 18px', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                color: saleAlerts.isSubscribed(event.id) ? ventsColors.accentSoft : ventsColors.white,
+                background: saleAlerts.isSubscribed(event.id) ? 'transparent' : '#7B2FBE',
+                border: saleAlerts.isSubscribed(event.id) ? `1px solid ${ventsColors.accent}` : 'none',
               }}
             >
-              {saleAlerts.isSubscribed(event.id) ? '✓ Notifying you' : '🔔 Notify me'}
+              {saleAlerts.isSubscribed(event.id) ? <Check size={16} /> : <Bell size={16} />}
+              {saleAlerts.isSubscribed(event.id) ? 'Notifying you' : 'Notify me'}
             </button>
           </>
         ) : (
@@ -1924,7 +1379,7 @@ export function EventDetailsScreen({
             {/* The SELECTED category and quantity ("Guys × 1"). Never the
                 cheapest category's "Buy from ₦X": that read as the price of
                 what the attendee had chosen. The amount is on the button. */}
-            <div data-testid="event-bottom-selection" style={{ color: freeSelection ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div data-testid="event-bottom-selection" style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {orderLabel}
             </div>
             <button
@@ -1950,14 +1405,13 @@ export function EventDetailsScreen({
                   ? '#7B2FBE'
                   : ventsColors.elevated,
                 border: 'none',
-                borderRadius: '16px',
-                padding: '14px 28px',
+                borderRadius: '14px',
+                padding: '14px 24px',
                 color: purchasesDisabled ? ventsColors.ink3 : canBook ? ventsColors.white : ventsColors.ink2,
                 fontSize: '16px',
                 fontWeight: 700,
                 fontFamily: 'Manrope, sans-serif',
                 cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
-                boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1976,34 +1430,32 @@ export function EventDetailsScreen({
           top: '30px',
           left: '50%',
           transform: 'translateX(-50%)',
-          background: 'rgba(16,185,129,0.95)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(16,185,129,0.3)',
+          background: ventsColors.elevated,
+          border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: '10px',
           padding: '8px 16px',
           zIndex: 100,
           color: ventsColors.white,
           fontSize: '13px',
           fontWeight: 600,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
         }}>
-          <CheckCircle size={14} color={ventsColors.white} />
-          Link copied to clipboard!
+          <Check size={14} color={ventsColors.accentSoft} />
+          Link copied
         </div>
       )}
 
       {calendarError && (
         <div style={{
           position: 'absolute', top: '30px', left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(239,68,68,0.95)', backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px 16px',
+          background: ventsColors.elevated,
+          border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', padding: '8px 16px',
           zIndex: 100, color: ventsColors.white, fontSize: '13px', fontWeight: 600,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '6px',
+          display: 'flex', alignItems: 'center', gap: '6px',
         }}>
-          <AlertCircle size={14} color={ventsColors.white} />
+          <AlertCircle size={14} color={ventsColors.error} />
           Couldn't open calendar. Please try again.
         </div>
       )}
