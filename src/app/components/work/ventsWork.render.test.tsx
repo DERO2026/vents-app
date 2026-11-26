@@ -117,6 +117,20 @@ describe('VENTS Work hub', () => {
     expect(byTestId('organizer-request-sheet')?.textContent).toContain("You're an Organizer");
   });
 
+  it('N2: when the server refuses a staff account, the sheet shows the refusal and never claims success', async () => {
+    tables.organizer_requests = null;
+    await render(<VentsWorkScreen currentUser={user} onBack={() => {}} onNavigate={() => {}} onOpenCreatorStudio={() => {}} />);
+    await click(byTestId('work-role-organizer')!);
+    // The exact message 0232 raises for root / admin / sub-admin.
+    rpcs.set_signup_role = { data: null, error: { message: 'Staff accounts cannot turn on organizer tools here. A Super Admin can grant organizer access.' } };
+    await click(byTestId('org-sheet-become-organizer')!);
+    expect(rpcMock).toHaveBeenCalledWith('set_signup_role', { p_role: 'organizer' });
+    const sheet = byTestId('organizer-request-sheet')?.textContent ?? '';
+    expect(sheet).toContain('Staff accounts cannot turn on organizer tools here');
+    expect(sheet).not.toContain("You're an Organizer");
+    expect(byTestId('org-sheet-become-organizer')).not.toBeNull();
+  });
+
   it('an organizer can confirm a representative referral from the hub', async () => {
     rpcs.get_my_referral_confirmations = { data: [{ id: 'c1', status: 'pending_organizer', representative_name: 'Ada', event_title: 'Lagos Jam' }], error: null };
     rpcs.respond_to_representative_reward_claim = { data: { status: 'pending_review' }, error: null };
