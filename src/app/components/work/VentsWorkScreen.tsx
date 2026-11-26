@@ -30,7 +30,7 @@ export function VentsWorkScreen({ currentUser, onBack, onNavigate, onOpenCreator
   // Opens the caller's own provider bookings (resolves their provider id).
   onOpenProviderBookings?: () => void;
   // Bumped by App when a non-organizer selects Creator Studio: open the
-  // organizer application straight away instead of leaving them to find it.
+  // one-step "Become an Organizer" sheet straight away (D1a: no review).
   openOrganizerApplicationSignal?: number;
 }) {
   const status = useWorkStatus(currentUser);

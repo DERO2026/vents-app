@@ -55,12 +55,10 @@ export function organizerRole({ isOrganizer, isStaff, isVerified, request }: Org
     // here. CAC verification is offered separately (VENTS Work shortcut).
     return { ...base, subtitle: 'Creator Studio · get verified with CAC', pill: { label: 'Active', tone: 'on' }, chip: { label: 'Organizer', tone: 'on' }, action: 'organizer-studio' };
   }
-  if (request === 'pending') {
-    return { ...base, subtitle: 'Application submitted', pill: { label: 'In review', tone: 'wait' }, chip: { label: 'Organizer · in review', tone: 'wait' }, action: 'organizer-apply' };
-  }
-  if (request === 'rejected') {
-    return { ...base, subtitle: 'Apply again', pill: { label: 'Retry', tone: 'off' }, chip: { label: 'Organizer · apply again', tone: 'off' }, action: 'organizer-apply' };
-  }
+  // D1a (owner, 2026-11-26): choosing Organizer is enough -- no review. A
+  // legacy pending or rejected organizer_requests row from before D1a no
+  // longer means "in review": everyone who isn't an organizer gets the same
+  // one-step "Become an Organizer".
   return { ...base, subtitle: 'Become an Organizer', pill: { label: 'Start', tone: 'off' }, chip: { label: 'Organizer · start', tone: 'off' }, action: 'organizer-apply' };
 }
 

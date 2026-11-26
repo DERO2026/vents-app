@@ -8,8 +8,9 @@ describe('organizer role row', () => {
     organizerRole({ isOrganizer: false, isStaff: false, isVerified: false, request: 'none', ...x });
   it.each([
     [{}, 'Become an Organizer', 'Start', 'off'],
-    [{ request: 'pending' as const }, 'Application submitted', 'In review', 'wait'],
-    [{ request: 'rejected' as const }, 'Apply again', 'Retry', 'off'],
+    // D1a (2026-11-26): no review -- a legacy pending/rejected request is just "start".
+    [{ request: 'pending' as const }, 'Become an Organizer', 'Start', 'off'],
+    [{ request: 'rejected' as const }, 'Become an Organizer', 'Start', 'off'],
     [{ isOrganizer: true }, 'Creator Studio · get verified with CAC', 'Active', 'on'],
     [{ isOrganizer: true, isVerified: true }, 'Verified Organizer', 'Verified', 'on'],
   ])('%o -> %s / %s', (input, subtitle, pill, tone) => {

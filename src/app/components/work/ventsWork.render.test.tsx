@@ -99,7 +99,8 @@ describe('VENTS Work hub', () => {
     tables.service_provider_requests = { status: 'approved' };
     const onNavigate = vi.fn();
     await render(<VentsWorkScreen currentUser={user} onBack={() => {}} onNavigate={onNavigate} onOpenCreatorStudio={() => {}} />);
-    expect(byTestId('work-role-organizer')?.textContent).toContain('In review');
+    // D1a: a legacy pending request no longer means "in review".
+    expect(byTestId('work-role-organizer')?.textContent).toContain('Become an Organizer');
     expect(byTestId('work-role-provider')?.textContent).toContain('Set up your service profile');
     expect(byTestId('work-role-representative')?.textContent).toContain('Join');
 
@@ -107,9 +108,13 @@ describe('VENTS Work hub', () => {
     expect(onNavigate).toHaveBeenCalledWith('service-provider-setup');
     await click(byTestId('work-role-representative')!);
     expect(onNavigate).toHaveBeenCalledWith('representatives');
-    // Pending organizer application is never a dead end: the sheet opens on its status view.
+    // D1a: the sheet is a one-step self-selection (set_signup_role), never a review wait.
     await click(byTestId('work-role-organizer')!);
-    expect(byTestId('organizer-request-sheet')?.textContent).toContain('Your organizer request is under review');
+    expect(byTestId('organizer-request-sheet')?.textContent).toContain('Organizer tools turn on as soon as you continue');
+    rpcs.set_signup_role = { data: null, error: null };
+    await click(byTestId('org-sheet-become-organizer')!);
+    expect(rpcMock).toHaveBeenCalledWith('set_signup_role', { p_role: 'organizer' });
+    expect(byTestId('organizer-request-sheet')?.textContent).toContain("You're an Organizer");
   });
 
   it('an organizer can confirm a representative referral from the hub', async () => {

@@ -3,80 +3,49 @@ import { supabase } from '../../../lib/supabase';
 import { ventsColors } from '../../../lib/ventsDesignTokens';
 import type { RequestStatus } from '../../../lib/workRoles';
 
-// "Become an Organizer" application sheet, moved here from ProfileScreen
-// unchanged so VENTS Work can open it. Always openable (never a dead end):
-// idle/rejected shows the form, pending shows a read-only status view.
-// Inserting into organizer_requests is the only client step; a Super Admin
-// decides it through admin_decide_organizer_request, which is the only
-// path that grants organizer capability.
-export function OrganizerRequestSheet({ userId, status, adminNote, submittedReason, onClose, onSubmitted, onOpenCreatorStudio }: {
+// "Become an Organizer" (VENTS Work / Creator Studio).
+//
+// Decision D1a (owner, 2026-11-26, docs/repair-tracker.md): selecting the
+// Organizer role is sufficient -- there is no separate admin approval before
+// publishing events or selling paid tickets. So this is a one-step choice,
+// the same as choosing "Organizer" at sign-up: it calls set_signup_role
+// ('organizer') (0121), which sets only the caller's own is_organizer flag
+// (staff accounts are refused server-side). It never calls
+// promote_to_organizer (revoked from clients by 0116) and never touches
+// role, verification or any other account field.
+//
+// Legacy organizer_requests rows (pending/rejected from before D1a) no
+// longer block anyone: those users see the same one-step choice. Admins can
+// still view old requests in the admin console.
+export function OrganizerRequestSheet({ status, onClose, onSubmitted, onOpenCreatorStudio }: {
   userId: string;
   status: RequestStatus;
-  adminNote: string | null;
-  submittedReason: string | null;
+  // Kept for the existing call site; unused since D1a (no application).
+  adminNote?: string | null;
+  submittedReason?: string | null;
   onClose: () => void;
   onSubmitted: () => void;
-  // Shown once the application is approved, so the person goes straight
-  // into Creator Studio instead of seeing the application form again.
   onOpenCreatorStudio?: () => void;
 }) {
-  const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'pending' | 'rejected' | 'approved'>(
-    status === 'none' ? 'idle' : status,
-  );
-  const [orgRequestReason, setOrgRequestReason] = useState(status === 'pending' ? submittedReason ?? '' : '');
-  const [orgRequestError, setOrgRequestError] = useState('');
+  const [state, setState] = useState<'idle' | 'sending' | 'active'>(status === 'approved' ? 'active' : 'idle');
+  const [error, setError] = useState('');
 
-  // The sheet can open before the request status has loaded (Creator
-  // Studio opens it straight away for non-organizers). Follow the loaded
-  // status so an approved or pending application is never shown the
-  // blank form.
   useEffect(() => {
-    setOrgRequestStatus((cur) => (cur === 'sending' ? cur : status === 'none' ? (cur === 'pending' ? cur : 'idle') : status));
-    if (status === 'pending' && submittedReason) setOrgRequestReason(submittedReason);
-  }, [status, submittedReason]);
+    if (status === 'approved') setState('active');
+  }, [status]);
 
-  // Draft persistence: unsent text survives closing the sheet (per-user
-  // key). Nothing reaches the database until Submit.
-  const orgDraftKey = `vents_org_request_draft_${userId}`;
-  useEffect(() => {
-    if (status === 'pending') return;
-    try {
-      const saved = localStorage.getItem(orgDraftKey);
-      if (saved) setOrgRequestReason(saved);
-    } catch { /* ignore */ }
-  }, [orgDraftKey, status]);
-
-  const handleOrgReasonChange = (value: string) => {
-    setOrgRequestReason(value);
-    try {
-      if (value.trim()) localStorage.setItem(orgDraftKey, value);
-      else localStorage.removeItem(orgDraftKey);
-    } catch { /* ignore */ }
-  };
-
-  const submitOrgRequest = async () => {
-    if (orgRequestStatus === 'sending') return;
-    setOrgRequestStatus('sending');
-    setOrgRequestError('');
-    try {
-      const { error } = await supabase
-        .from('organizer_requests')
-        .insert([{ user_id: userId, reason: orgRequestReason.trim() || null }]);
-      if (error) throw error;
-      try { localStorage.removeItem(orgDraftKey); } catch { /* ignore */ }
-      setOrgRequestStatus('pending');
-      onSubmitted();
-    } catch (err: any) {
-      // A duplicate-submit race hits organizer_requests_one_pending_per_user:
-      // that means "you already have one pending", not a failure.
-      if (err?.code === '23505') {
-        setOrgRequestStatus('pending');
-        onSubmitted();
-        return;
-      }
-      setOrgRequestError(err?.message || 'Failed to submit request.');
-      setOrgRequestStatus(status === 'rejected' ? 'rejected' : 'idle');
+  const becomeOrganizer = async () => {
+    if (state === 'sending') return;
+    setState('sending');
+    setError('');
+    const { error: rpcError } = await supabase.rpc('set_signup_role' as any, { p_role: 'organizer' });
+    if (rpcError) {
+      setError(rpcError.message || 'Could not turn on organizer tools. Please try again.');
+      setState('idle');
+      return;
     }
+    setState('active');
+    onSubmitted();
   };
 
   return (
@@ -84,11 +53,11 @@ export function OrganizerRequestSheet({ userId, status, adminNote, submittedReas
       onClick={onClose}>
       <div role="dialog" aria-modal="true" style={{ background: ventsColors.surface, borderRadius: '24px 24px 0 0', padding: '24px 20px calc(32px + env(safe-area-inset-bottom))', width: '100%', maxWidth: '430px', boxSizing: 'border-box' }}
         onClick={(e) => e.stopPropagation()}>
-        {orgRequestStatus === 'approved' ? (
+        {state === 'active' ? (
           <>
-            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>You&apos;re an approved Organizer</h3>
+            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>You&apos;re an Organizer</h3>
             <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
-              Your application was approved. Create and manage your events in Creator Studio.
+              Create events and sell tickets in Creator Studio.
             </p>
             {onOpenCreatorStudio && (
               <button
@@ -100,47 +69,20 @@ export function OrganizerRequestSheet({ userId, status, adminNote, submittedReas
               </button>
             )}
           </>
-        ) : orgRequestStatus === 'pending' ? (
-          <>
-            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Application Submitted</h3>
-            <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
-              Your organizer request is under review. Our team typically responds within 1–3 business days.
-            </p>
-            {orgRequestReason && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '12px', color: ventsColors.ink1, fontSize: '13px', lineHeight: 1.5 }}>
-                {orgRequestReason}
-              </div>
-            )}
-          </>
         ) : (
           <>
-            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>
-              {orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
-            </h3>
+            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Become an Organizer</h3>
             <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
-              Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
+              Create events and sell tickets on VENTS. Organizer tools turn on as soon as you continue.
             </p>
-            {orgRequestStatus === 'rejected' && adminNote && (
-              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
-                <p style={{ color: ventsColors.error, fontSize: '12px', fontWeight: 700, margin: '0 0 4px' }}>Your previous application wasn&apos;t approved</p>
-                <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>{adminNote}</p>
-              </div>
-            )}
-            <textarea
-              value={orgRequestReason}
-              onChange={(e) => handleOrgReasonChange(e.target.value)}
-              placeholder="e.g. I want to host tech meetups in Lagos..."
-              rows={4}
-              aria-label="Why do you want to become an organizer?"
-              style={{ width: '100%', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: ventsColors.ink1, fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-            />
-            {orgRequestError && <p style={{ color: ventsColors.error, fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
+            {error && <p role="alert" style={{ color: ventsColors.error, fontSize: '12px', margin: '0 0 8px' }}>{error}</p>}
             <button
-              onClick={submitOrgRequest}
-              disabled={orgRequestStatus === 'sending'}
-              style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: ventsColors.accentStrong, border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
+              data-testid="org-sheet-become-organizer"
+              onClick={becomeOrganizer}
+              disabled={state === 'sending'}
+              style={{ width: '100%', height: '48px', borderRadius: '14px', background: ventsColors.accentStrong, border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: state === 'sending' ? 'wait' : 'pointer', opacity: state === 'sending' ? 0.7 : 1 }}
             >
-              {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
+              {state === 'sending' ? 'Turning on…' : 'Become an Organizer'}
             </button>
           </>
         )}
