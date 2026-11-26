@@ -225,6 +225,12 @@ describe('webhook retry semantics: already-known terminal outcomes stay 200 (ret
   it('amount_mismatch stays 200', async () => {
     const rawBody = JSON.stringify({ event: 'charge.success', data: { reference: 'pay_mm_1', amount: 999 } });
     mockCallProjectAdminTableRpc.mockResolvedValue([{ payment_ref: 'pay_mm_1' }]);
+    // 0226 (H1): the mismatch is now also recorded as a payment exception.
+    // vi.clearAllMocks() keeps an earlier test's rejected implementation, so
+    // give the database a working mock here: with the record written, the
+    // outcome is terminal and stays 200 (a failed record answers 500 so
+    // Paystack retries -- covered in paymentExceptions.security.test.ts).
+    mockCallProjectAdminRpc.mockResolvedValue('exception-id');
     mockFinalizeAndConfirmPurchase.mockResolvedValue({ status: 'amount_mismatch', expectedKobo: 1000, gotKobo: 999 });
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -233,6 +239,8 @@ describe('webhook retry semantics: already-known terminal outcomes stay 200 (ret
     await handler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockCallProjectAdminRpc).toHaveBeenCalledWith('record_payment_exception',
+      ['pay_mm_1', 'pay_mm_1', 'amount_mismatch', null, 999, 1000, 'webhook']);
     errSpy.mockRestore();
   });
 

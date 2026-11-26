@@ -36,6 +36,7 @@
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
+import { recordPaymentException, markPaymentExceptionTicketed, buyerMessageForException, isTicketPurchaseReference } from '../_lib/paymentExceptions.js';
 import { callProjectAdminTableRpc, callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 import { finalizeAndConfirmPurchase, finalizeAndConfirmServiceBooking } from '../_lib/finalizePaystackPayment.js';
 import { verifyInsforgeSession, enforceRateLimit } from '../_lib/verifyAuth.js';
@@ -315,6 +316,7 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
   // stable payment_ref that finalize_pending_purchase/confirm_ticket_
   // payment/get_tickets_for_payment_ref all still key off, unchanged.
   let ticketPurchasePaymentRef = reference;
+  let ticketPurchaseHasPendingRow = false;
 
   try {
     // Ownership check: confirm the caller actually owns the payment this
@@ -369,6 +371,7 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
         return res.status(403).json({ error: 'Not authorized for this payment reference' });
       }
       ticketPurchasePaymentRef = row?.payment_ref || reference;
+      ticketPurchaseHasPendingRow = !!row;
     }
 
     const pRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
@@ -508,13 +511,24 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
 
     const result = await finalizeAndConfirmPurchase(ticketPurchasePaymentRef, amountKobo);
 
-    if (result.status === 'amount_mismatch') {
-      console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', ticketPurchasePaymentRef, '-', result.expectedKobo, 'vs', result.gotKobo);
-      return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected order amount.' });
+    if (result.status === 'amount_mismatch' || result.status === 'not_found') {
+      // H1: the payment was captured but no ticket could be issued. Record
+      // it (idempotent per reference) so an admin sees it, and tell the
+      // buyer the truth. A recording failure is logged and does not change
+      // the buyer's answer; the signed webhook records it on its own retry.
+      if (result.status === 'amount_mismatch') {
+        console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', ticketPurchasePaymentRef, '-', result.expectedKobo, 'vs', result.gotKobo);
+      }
+      try {
+        if (isTicketPurchaseReference(reference, ticketPurchaseHasPendingRow)) {
+          await recordPaymentException({ reference, paymentRef: ticketPurchasePaymentRef, result, amountKobo, source: 'verify' });
+        }
+      } catch (recErr: any) {
+        console.error('[webhook/paystack?action=verify] could not record payment exception for', reference, '-', recErr?.message || recErr);
+      }
+      return res.status(200).json({ status: 'error', error: buyerMessageForException(result, reference) });
     }
-    if (result.status === 'not_found') {
-      return res.status(200).json({ status: 'error', error: 'No matching order was found for this payment.' });
-    }
+    await markPaymentExceptionTicketed(reference);
     if (result.status === 'confirmed_lookup_failed') {
       // Payment IS confirmed at this point (payment_status='paid', wallet
       // already credited) -- only the ticket-id readback failed. Still
@@ -728,11 +742,23 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       const resolvedPaymentRef = ownerRows[0]?.payment_ref || reference;
 
       const result = await finalizeAndConfirmPurchase(resolvedPaymentRef, amountKobo);
+      if (result.status === 'confirmed' || result.status === 'already_paid' || result.status === 'confirmed_lookup_failed') {
+        await markPaymentExceptionTicketed(reference);
+      }
 
-      if (result.status === 'amount_mismatch') {
-        console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
-      } else if (result.status === 'not_found') {
-        console.warn('[Paystack webhook] No ticket found for reference', reference);
+      if (result.status === 'amount_mismatch' || result.status === 'not_found') {
+        if (result.status === 'amount_mismatch') {
+          console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
+        } else {
+          console.warn('[Paystack webhook] No ticket found for reference', reference, result.finalizeError ? `- ${result.finalizeError}` : '');
+        }
+        // H1: captured, no ticket. Recorded idempotently; a recording
+        // failure throws into the catch below (500), so Paystack retries.
+        // Only for references that are provably ticket purchases: other
+        // charges that fall through here (e.g. event promotions) are not.
+        if (isTicketPurchaseReference(reference, ownerRows.length > 0)) {
+          await recordPaymentException({ reference, paymentRef: ownerRows[0]?.payment_ref ?? null, result, amountKobo, source: 'webhook' });
+        }
       } else if (result.status === 'already_paid') {
         console.log('[Paystack webhook] Ticket already paid, no-op for reference', reference);
       } else if (result.status === 'confirmed') {

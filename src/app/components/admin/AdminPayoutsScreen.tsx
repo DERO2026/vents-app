@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { EarningsAdjustmentForm } from './EarningsAdjustmentForm';
 import { PayoutRequestsPanel } from './PayoutRequestsPanel';
+import { PaymentExceptionsPanel } from './PaymentExceptionsPanel';
 import { apiUrl } from '../../../lib/apiBase';
 import { withTimeoutFallback } from '../../../lib/withTimeoutFallback';
 import { Sentry } from '../../../lib/sentry';
@@ -29,7 +30,7 @@ export function AdminPayoutsScreen({ isSuperAdmin = true }: { isSuperAdmin?: boo
     supabase.from('app_config').select('disable_payouts').maybeSingle()
       .then(({ data }) => setPayoutsDisabled(!!data?.disable_payouts), () => {});
   }, []);
-  const [activeSection, setActiveSection] = useState<'requests' | 'wallets' | 'member-wallets'>('requests');
+  const [activeSection, setActiveSection] = useState<'requests' | 'wallets' | 'member-wallets' | 'payment-exceptions'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
   // Bumped after a Reconcile so the request list re-reads (it used to reload
@@ -92,7 +93,7 @@ export function AdminPayoutsScreen({ isSuperAdmin = true }: { isSuperAdmin?: boo
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (activeSection !== 'requests') load(); }, [activeSection]);
+  useEffect(() => { if (activeSection === 'wallets' || activeSection === 'member-wallets') load(); }, [activeSection]);
 
   // 0203: open customer disputes of completed bookings. Each is decided by
   // two admins (request here, approve in Admin Actions); until then the
@@ -205,9 +206,9 @@ export function AdminPayoutsScreen({ isSuperAdmin = true }: { isSuperAdmin?: boo
       {msg && <div style={{ fontSize: 12.5, color: adminTheme.text }}>{msg}</div>}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {(['requests', 'wallets', 'member-wallets'] as const).map((s) => (
-          <button key={s} onClick={() => setActiveSection(s)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12, background: activeSection === s ? adminTheme.accentSoftBg : adminTheme.panel, color: activeSection === s ? adminTheme.accentText : adminTheme.textMuted }}>
-            {s === 'requests' ? 'Requests' : s === 'wallets' ? 'Organizer Wallets' : 'User Wallets'}
+        {(['requests', 'wallets', 'member-wallets', 'payment-exceptions'] as const).map((s) => (
+          <button key={s} data-testid={`payouts-section-${s}`} onClick={() => setActiveSection(s)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12, background: activeSection === s ? adminTheme.accentSoftBg : adminTheme.panel, color: activeSection === s ? adminTheme.accentText : adminTheme.textMuted }}>
+            {s === 'requests' ? 'Requests' : s === 'wallets' ? 'Organizer Wallets' : s === 'member-wallets' ? 'User Wallets' : 'Payment exceptions'}
           </button>
         ))}
         {isSuperAdmin && <button data-testid="payout-reconcile-all" onClick={handleReconcile} disabled={reconciling} title="Poll Paystack directly for any payout stuck in Processing and resolve it" style={{ padding: '6px 14px', minHeight: 36, borderRadius: 8, border: '1px solid rgba(96,165,250,.3)', cursor: reconciling ? 'wait' : 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(96,165,250,.1)', color: adminTheme.blue, opacity: reconciling ? 0.6 : 1 }}>
@@ -270,7 +271,9 @@ export function AdminPayoutsScreen({ isSuperAdmin = true }: { isSuperAdmin?: boo
       )}
       {loadError && <div style={{ background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: '10px 14px', color: adminTheme.red, fontSize: 12 }}>{loadError}</div>}
 
-      {activeSection !== 'requests' && loading ? (
+      {activeSection === 'payment-exceptions' ? (
+        <PaymentExceptionsPanel isSuperAdmin={isSuperAdmin} />
+      ) : activeSection !== 'requests' && loading ? (
         <p style={{ color: adminTheme.textFaint, fontSize: 13 }}>Loading…</p>
       ) : activeSection === 'member-wallets' ? (
         memberWallets.length === 0 ? <p style={{ color: adminTheme.textFaint, fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No user wallets yet</p> : memberWallets.map((w: any) => (

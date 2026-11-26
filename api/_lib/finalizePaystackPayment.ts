@@ -22,7 +22,15 @@ export type FinalizeResult =
   // former must never be presented to the customer as a failed payment.
   | { status: 'confirmed_lookup_failed' }
   | { status: 'amount_mismatch'; expectedKobo: number; gotKobo: number }
-  | { status: 'not_found' };
+  // finalizeError: why finalize_pending_purchase refused (e.g. "Only 0 VIP
+  // ticket(s) remaining", "This event has already ended"), when it did.
+  // Absent when there was simply no pending purchase for the reference.
+  | { status: 'not_found'; finalizeError?: string };
+
+// finalize_pending_purchase's own message when the reference has no pending
+// purchase at all (free ticket, or a reference from another flow). Expected
+// and not a refusal, so it is not reported as finalizeError.
+const NO_PENDING_PURCHASE = /^Pending purchase not found for reference /;
 
 export async function finalizeAndConfirmPurchase(reference: string, amountKobo: number): Promise<FinalizeResult> {
   // Recovery path: creates the ticket row(s) from the payment intent
@@ -32,10 +40,13 @@ export async function finalizeAndConfirmPurchase(reference: string, amountKobo: 
   // reference that never went through create_pending_purchase (free
   // ticket, or some other path) has no pending_purchases row and this
   // RAISEs "not found", which is expected and non-fatal here.
+  let finalizeError: string | undefined;
   try {
     await callProjectAdminRpc('finalize_pending_purchase', [reference]);
   } catch (err: any) {
-    console.warn('[finalizeAndConfirmPurchase] finalize_pending_purchase no-op/failed for', reference, '-', err?.message || err);
+    const message = String(err?.message || err);
+    if (!NO_PENDING_PURCHASE.test(message)) finalizeError = message.slice(0, 300);
+    console.warn('[finalizeAndConfirmPurchase] finalize_pending_purchase no-op/failed for', reference, '-', message);
   }
 
   // The actual payment-confirmed marker: verifies the amount matches, no-ops
@@ -47,7 +58,7 @@ export async function finalizeAndConfirmPurchase(reference: string, amountKobo: 
     const [, expected, got] = status.split(':');
     return { status: 'amount_mismatch', expectedKobo: Number(expected), gotKobo: Number(got) };
   }
-  if (status === 'not_found') return { status: 'not_found' };
+  if (status === 'not_found') return finalizeError ? { status: 'not_found', finalizeError } : { status: 'not_found' };
 
   // Deliberately NOT swallowed into an empty ticketIds array on failure --
   // that would make a genuinely successful, already-confirmed payment look
