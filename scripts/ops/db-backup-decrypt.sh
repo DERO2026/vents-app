@@ -23,8 +23,13 @@ M="$DIR/manifest.txt"
 field() { sed -n "s/^$1=//p" "$M" | head -1; }
 FILE="$(field file)"; SUM="$(field sha256)"; SRC="$(field key_source)"; WANT_FP="$(field key_fingerprint)"
 [ -n "$FILE" ] && [ -f "$DIR/$FILE" ] && [ -f "$DIR/$FILE.sha256" ] || { echo "STOP: the manifest's file= is missing from $DIR" >&2; exit 1; }
-( cd "$DIR" && sha256sum -c --quiet "$FILE.sha256" ) || { echo "STOP: checksum mismatch: the file is damaged or not the one that was backed up" >&2; exit 1; }
-GOT="$(sha256sum "$DIR/$FILE" | cut -d' ' -f1)"
+# sha256sum (Linux, GNU coreutils) or shasum -a 256 (built into macOS).
+if command -v sha256sum >/dev/null 2>&1; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
+GPG="${VENTS_GPG:-$(command -v gpg || command -v gpg2 || true)}"
+[ -n "$GPG" ] || { echo "STOP: GnuPG (gpg or gpg2) is not installed or not on PATH" >&2; exit 1; }
+GOT="$("${SHA256[@]}" "$DIR/$FILE" | cut -d' ' -f1)"
+WANT_FILE_SUM="$(cut -d' ' -f1 "$DIR/$FILE.sha256" | head -n1)"
+[ "$GOT" = "$WANT_FILE_SUM" ] || { echo "STOP: checksum mismatch: the file is damaged or not the one that was backed up" >&2; exit 1; }
 [ "$GOT" = "$SUM" ] || { echo "STOP: the file's sha256 differs from the manifest's" >&2; exit 1; }
 echo "ok: sha256 $GOT matches the .sha256 file and the manifest"
 HAVE_FP="$(bash "$SCRIPT_DIR/db-backup-key-fingerprint.sh" "$KEY")"
@@ -36,6 +41,6 @@ else
 fi
 GNUPGHOME="$(mktemp -d)"; export GNUPGHOME
 trap 'rm -rf "$GNUPGHOME"' EXIT
-gpg --batch --quiet --no-symkey-cache --pinentry-mode loopback --passphrase-file "$KEY" -o "$OUT" -d "$DIR/$FILE" \
+"$GPG" --batch --quiet --no-symkey-cache --pinentry-mode loopback --passphrase-file "$KEY" -o "$OUT" -d "$DIR/$FILE" \
   || { rm -f "$OUT"; echo "STOP: decryption failed (wrong key or damaged file)" >&2; exit 1; }
 echo "ok: decrypted to $OUT. Restore it only into a new, empty database (docs/db-backup.md)."

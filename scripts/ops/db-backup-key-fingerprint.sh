@@ -20,4 +20,6 @@ KEY="${1:?usage: $0 <key-file>}"
 if [ "$(tail -c 1 "$KEY" | od -An -c | tr -d ' ')" = '\n' ]; then
   echo "STOP: $KEY ends with a newline; the workflow's key has none. Recreate it with printf '%s'" >&2; exit 1
 fi
-{ printf '%s' 'vents-db-backup-key-check-v1:'; cat "$KEY"; } | sha256sum | cut -c1-16
+# sha256sum (Linux, GNU coreutils) or shasum -a 256 (built into macOS).
+if command -v sha256sum >/dev/null 2>&1; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
+{ printf '%s' 'vents-db-backup-key-check-v1:'; cat "$KEY"; } | "${SHA256[@]}" | cut -c1-16
