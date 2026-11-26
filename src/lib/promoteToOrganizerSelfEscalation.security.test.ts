@@ -62,13 +62,18 @@ describe('Become an Organizer: no instant self-promotion path', () => {
     expect(studio).toMatch(/if \(decision\.confirmedOrganizer\) \{\s*setCurrentUser\(prev => prev \? \{ \.\.\.prev, isOrganizer: true \} : prev\);/);
   });
 
-  it('"Become an Organizer" (VENTS Work) submits an application to organizer_requests, reviewed elsewhere', () => {
+  it('"Become an Organizer" (VENTS Work) is the same self-selection as sign-up (D1a), never promote_to_organizer', () => {
     const components = join(__dirname, '..', 'app', 'components', 'work');
     const hub = readFileSync(join(components, 'VentsWorkScreen.tsx'), 'utf8');
     const sheet = readFileSync(join(components, 'OrganizerRequestSheet.tsx'), 'utf8');
     expect(hub).toMatch(/case 'organizer-apply': setShowOrgSheet\(true\); break;/);
-    expect(sheet).toMatch(/\.from\('organizer_requests'\)\s*\n\s*\.insert\(\[\{ user_id: userId/);
-    expect(hub + sheet).not.toMatch(/promote_to_organizer/);
+    // D1a (owner, 2026-11-26): choosing Organizer is enough. The sheet calls
+    // set_signup_role('organizer') -- only the caller's own is_organizer flag,
+    // staff refused server-side (0121) -- and writes nothing else.
+    expect(sheet).toMatch(/supabase\.rpc\('set_signup_role' as any, \{ p_role: 'organizer' \}\)/);
+    const code = (t: string) => t.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(code(sheet)).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.from\(/);
+    expect(code(hub) + code(sheet)).not.toMatch(/promote_to_organizer/);
   });
 });
 

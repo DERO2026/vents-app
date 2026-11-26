@@ -43,22 +43,15 @@ describe('Become an Organizer: capability state machine', () => {
     expect(r.action).toBe('organizer-apply');
   });
 
-  it('a pending applicant sees an accessible (clickable, non-dead-end) "Application submitted" state', () => {
-    const r = organizerRole(user({ request: 'pending' }));
-    expect(r.subtitle).toBe('Application submitted');
-    expect(r.pill.label).toBe('In review');
-    // Still opens the sheet, whose pending view shows the submitted application.
-    expect(r.action).toBe('organizer-apply');
+  it('D1a: a legacy pending or rejected request is not a review state -- the same one-step "Become an Organizer"', () => {
+    for (const request of ['pending', 'rejected'] as const) {
+      const r = organizerRole(user({ request }));
+      expect(r.subtitle).toBe('Become an Organizer');
+      expect(r.action).toBe('organizer-apply');
+    }
     expect(hubSrc).toMatch(/case 'organizer-apply': setShowOrgSheet\(true\); break;/);
-    expect(sheetSrc).toMatch(/orgRequestStatus === 'pending' \? \(/);
-    expect(sheetSrc).toMatch(/Your organizer request is under review/);
-  });
-
-  it('a rejected applicant can review the admin note and resubmit', () => {
-    expect(organizerRole(user({ request: 'rejected' })).action).toBe('organizer-apply');
-    expect(sheetSrc).toMatch(/orgRequestStatus === 'rejected' && adminNote/);
-    expect(sheetSrc).toMatch(/wasn&apos;t approved/);
-    expect(sheetSrc).toMatch(/onClick=\{submitOrgRequest\}/);
+    expect(sheetSrc).not.toMatch(/under review|1–3 business days|wasn&apos;t approved/);
+    expect(sheetSrc).toMatch(/onClick=\{becomeOrganizer\}/);
   });
 
   it('an approved request is trusted immediately, before the role-sync poll flips isOrganizer', () => {
@@ -85,15 +78,17 @@ describe('Become an Organizer: capability state machine', () => {
   });
 });
 
-describe('No duplicate organizer applications', () => {
-  it('a partial unique index enforces at most one pending organizer_requests row per user, server-side', () => {
-    const migration = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0052_organizer_requests_no_duplicate_pending.sql'), 'utf8');
-    expect(migration).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS organizer_requests_one_pending_per_user/);
-    expect(migration).toMatch(/ON public\.organizer_requests \(user_id\)/);
-    expect(migration).toMatch(/WHERE status = 'pending';/);
+describe('D1a: becoming an organizer is self-selection, nothing else', () => {
+  it('the sheet only calls set_signup_role(organizer), the same call sign-up makes, and writes no table', () => {
+    expect(sheetSrc).toMatch(/supabase\.rpc\('set_signup_role' as any, \{ p_role: 'organizer' \}\)/);
+    const code = sheetSrc.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(code).not.toMatch(/organizer_requests|promote_to_organizer|\.insert\(|\.update\(/);
   });
-
-  it('the client treats a duplicate-submit race (23505) as "already pending", not a generic error', () => {
-    expect(sheetSrc).toMatch(/if \(err\?\.code === '23505'\) \{/);
+  it('set_signup_role (0121) only sets the caller\'s own is_organizer flag and refuses admins', () => {
+    const m = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0121_organizer_capability_independent_of_role.sql'), 'utf8');
+    const fn = m.slice(m.indexOf('CREATE OR REPLACE FUNCTION public.set_signup_role'), m.indexOf('$function$;', m.indexOf('CREATE OR REPLACE FUNCTION public.set_signup_role')));
+    expect(fn).toContain('UPDATE public.users SET is_organizer = true WHERE id = v_id;');
+    expect(fn).toContain("RAISE EXCEPTION 'Admin role cannot be changed';");
+    expect(fn).not.toMatch(/SET role|is_verified/);
   });
 });
