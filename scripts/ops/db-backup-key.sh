@@ -42,6 +42,16 @@ else
     echo "      Backups are only encrypted with that independently stored passphrase. See docs/db-backup.md." >&2
     exit 1; }
   [ "${#BACKUP_ENCRYPTION_PASSPHRASE}" -ge 32 ] || { echo "STOP: BACKUP_ENCRYPTION_PASSPHRASE is shorter than 32 characters (generate one with: openssl rand -base64 32)" >&2; exit 1; }
+  # A secret pasted with a stray newline or space at either end would either
+  # stop every run later (the fingerprint refuses a trailing newline) or,
+  # worse, be accepted and silently differ from the owner's own copy. Refuse
+  # both here, with a message that says what to fix (never the value).
+  case "$BACKUP_ENCRYPTION_PASSPHRASE" in
+    [[:space:]]*|*[[:space:]])
+      echo "STOP: BACKUP_ENCRYPTION_PASSPHRASE starts or ends with a space or newline." >&2
+      echo "      Re-enter the secret in GitHub exactly as generated (openssl rand -base64 32), with nothing before or after it." >&2
+      exit 1 ;;
+  esac
   printf '%s' "$BACKUP_ENCRYPTION_PASSPHRASE" >"$KEY"
   MODE="passphrase-secret"
 fi

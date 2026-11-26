@@ -34,13 +34,13 @@ Each manifest records `key_source=passphrase-secret` and `key_fingerprint=<16 he
 ### Setting it up (owner, once)
 
 1. On your own machine, generate the passphrase: `openssl rand -base64 32` (44 characters). Save it in your password manager first, then make an offline copy.
-2. Repository → Settings → Environments → `o4-backup` → Environment secrets → Add secret. Name: `BACKUP_ENCRYPTION_PASSPHRASE`; value: the passphrase, with no spaces or newline. Use the environment, not a repository secret.
+2. Repository → Settings → Environments → `o4-backup` → Environment secrets → Add secret. Name: `BACKUP_ENCRYPTION_PASSPHRASE`; value: the passphrase, with nothing before or after it (no space, tab or newline: the key step refuses those, because the secret would no longer match your copy). Use the environment, not a repository secret.
 3. To check it without revealing it, run a backup (Actions → Database backup → Run workflow). Its manifest must show `key_source=passphrase-secret`. Then compare `key_fingerprint` with your copy:
    ```sh
-   umask 077; printf '%s' 'PASTE-PASSPHRASE' > key.txt   # or paste it from your password manager into the file, no trailing newline
+   bash -c 'umask 077; IFS= read -rs -p "Passphrase (hidden): " P && printf "%s" "$P" > key.txt; echo'
    bash scripts/ops/db-backup-key-fingerprint.sh key.txt
    ```
-   The two values must match. If they don't, the secret and your copy differ: fix that before you rely on any backup. (`printf` in an interactive shell may record the passphrase in your shell history. Prefix the command with a space if your shell ignores those, or write the file from your password manager.)
+   (Run from bash or zsh: `bash -c` makes the prompt work in both.) `read -rs` takes the passphrase at a hidden prompt: it is not shown, and it is never part of a command line, so it is not saved in your shell history. Never put the passphrase itself in a command. The two values must match. If they don't, the secret and your copy differ: fix that before you rely on any backup.
 
 Never rotate the passphrase without keeping the old one: older artifacts stay encrypted with it until they expire (30 days).
 
@@ -53,8 +53,10 @@ Runs from before this rule have `key_source=derived-from-DATABASE_URL` and no `k
 
 So these artifacts can be decrypted only by someone holding that exact secret value, or inside a workflow run that still has it. After a database password change, nobody can decrypt them. They expire on 2026-12-10 and 2026-12-11. To rebuild the key on your own machine:
 ```sh
-umask 077; BACKUP_DB_URL='EXACT-SECRET-VALUE' bash scripts/ops/db-backup-key.sh --legacy-derived key.txt key-mode.txt
+bash -c 'umask 077; IFS= read -rs -p "Exact secret value (hidden): " BACKUP_DB_URL && export BACKUP_DB_URL && echo \
+  && bash scripts/ops/db-backup-key.sh --legacy-derived key.txt key-mode.txt'
 ```
+(The hidden prompt keeps the value out of your shell history. It reads one line, so it cannot reproduce a secret that was stored with a trailing newline; if decryption then fails, that may be why.)
 `--legacy-derived` refuses to run on a GitHub runner, so no backup can be encrypted this way.
 
 ## Taking a fresh backup and checking it yourself
