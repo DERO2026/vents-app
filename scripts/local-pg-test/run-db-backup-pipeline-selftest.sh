@@ -99,6 +99,16 @@ for short in "short" "twenty-four-characters!!" "thirty-one-characters-long-xxxx
   [ $RC -ne 0 ] || { fail "a ${#short}-character passphrase was accepted"; SHORT_OK=0; }
 done
 [ "$SHORT_OK" = 1 ] && pass "passphrases shorter than 32 characters are refused (5, 24 and 31 tried)"
+WS_OK=1
+for ws in "${PP}
+" " ${PP}" "${PP} " "	${PP}"; do
+  rm -f "$W/key4"
+  OUT=$(env BACKUP_ENCRYPTION_PASSPHRASE="$ws" bash "$OPS/db-backup-key.sh" "$W/key4" "$W/mode4" 2>&1); RC=$?
+  if [ $RC -eq 0 ] || [ -s "$W/key4" ] || ! printf '%s' "$OUT" | grep -q "starts or ends with a space or newline"; then
+    fail "a passphrase with surrounding whitespace was not refused clearly (rc=$RC)"; WS_OK=0; fi
+  printf '%s' "$OUT" | grep -qF "$PP" && { fail "the whitespace refusal printed the passphrase"; WS_OK=0; }
+done
+[ "$WS_OK" = 1 ] && pass "a passphrase with a leading or trailing space, tab or newline is refused with a clear message, before any key file is written"
 OUT=$(env BACKUP_DB_URL="$URL" bash "$OPS/db-backup-key.sh" --legacy-derived "$W/lkey" "$W/lmode" 2>&1); RC=$?
 if [ $RC -eq 0 ] && [ "$(cat "$W/lmode")" = "derived-from-DATABASE_URL" ] \
    && [ "$(cat "$W/lkey")" = "$(printf '%s' "$URL" | openssl dgst -sha256 -hmac vents-db-backup-v1 -r | cut -d' ' -f1)" ]; then
