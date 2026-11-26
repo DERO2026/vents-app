@@ -1186,9 +1186,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           // (LOGIN_LOOKUP_FAILED, checked in the catch block below) so this
           // now surfaces an honest "couldn't verify your login" message
           // instead of accusing the user of a wrong password.
-          const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
+          //
+          // 0227 (H2): resolve_login_email returns the account's login email
+          // ONLY when the password is also correct, so it never reveals
+          // anyone's email (the old resolve_username_to_email did, to
+          // anyone). No account and wrong password both return null and
+          // reach the same generic "Incorrect" message.
+          const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email' as any, { p_username: loginEmail.toLowerCase(), p_password: password });
+          if (resolveError && /rate_limited/i.test(resolveError.message || '')) throw new Error('Too many attempts. Please wait a few minutes and try again.');
           if (resolveError) throw new Error(`LOGIN_LOOKUP_FAILED: ${resolveError.message || 'username lookup failed'}`);
-          if (!resolvedEmail) throw new Error('No account found with this username.');
+          if (!resolvedEmail) throw new Error('Invalid login credentials');
           loginEmail = resolvedEmail;
         }
 
@@ -1428,15 +1435,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           return;
         }
         try {
-          let checkEmail = email.trim();
-          if (!isValidEmail(checkEmail)) {
-            // Try to resolve username to email for the status check
-            const { data: resolved } = await supabase.rpc('resolve_username_to_email', { p_username: checkEmail.toLowerCase() });
-            if (resolved) checkEmail = resolved;
-          }
-          if (checkEmail && isValidEmail(checkEmail)) {
-            const { data: statusRows } = await supabase.rpc('get_account_status', { p_email: checkEmail });
-            const row = Array.isArray(statusRows) ? statusRows[0] : statusRows;
+          // 0227 (L4): get_login_account_status answers only for the
+          // account's owner (correct password), by email or username, and
+          // only says suspended/deleted -- nobody else learns an account's
+          // status (the old get_account_status told anyone, by email).
+          const checkIdentifier = email.trim();
+          if (checkIdentifier && password) {
+            const { data: statusRows } = await supabase.rpc('get_login_account_status' as any, { p_identifier: checkIdentifier, p_password: password });
+            const row: any = Array.isArray(statusRows) ? statusRows[0] : statusRows;
             if (row?.status === 'suspended' || row?.status === 'deleted') {
               setBanInfo({ status: row.status, until: row.banned_until ?? null });
               return;

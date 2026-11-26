@@ -28,13 +28,18 @@ export const PREVIEW_READ_ONLY_MESSAGE =
  * VENTS Cents and debits the balance), heartbeat_presence (last_active_at),
  * and check_auth_rate_limit, get_nearby_service_providers,
  * search_users_for_request, validate_promo_code (rate-limit rows).
+ * 0227: resolve_login_email, get_login_account_status and check_user_exists
+ * also write rate-limit rows, so they are not allowed either (username login
+ * and sign-up are unavailable in a read-only Preview; use an email address);
+ * resolve_username_to_email and get_account_status are no longer callable
+ * by clients at all.
  */
 export const PREVIEW_ALLOWED_RPCS: ReadonlySet<string> = new Set([
   // STABLE in production, no writes in the call graph.
   'admin_get_new_user_stats', 'admin_get_user_vc_summary', 'admin_get_vc_aggregates',
   'admin_get_vc_pool_status', 'admin_get_verification_stats', 'admin_list_service_bookings',
   'admin_pending_request_count', 'ai_entitlement_enforced', 'check_signups_enabled',
-  'get_account_status', 'get_ai_plans_public', 'get_door_stats', 'get_event_analytics',
+  'get_ai_plans_public', 'get_door_stats', 'get_event_analytics',
   'get_event_attendees', 'get_event_ticket_stats', 'get_event_ticket_type_availability',
   'get_event_trending_scores', 'get_my_ai_entitlement', 'get_my_payment_requests',
   'get_my_wallet_transactions', 'get_organizer_events_overview', 'get_payment_request_details',
@@ -43,9 +48,9 @@ export const PREVIEW_ALLOWED_RPCS: ReadonlySet<string> = new Set([
   'search_events_fuzzy', 'search_services_fuzzy_filtered', 'vc_tier_and_multiplier_for_user',
   // VOLATILE in production but read-only by inspection (same transitive check).
   'admin_health_ping', 'admin_list_action_requests', 'admin_list_organizer_verifications',
-  'check_user_exists', 'generate_ticket_token',
+  'generate_ticket_token',
   'get_event_online_access', 'is_email_verified', 'my_latest_organizer_verification',
-  'my_latest_service_provider_verification', 'resolve_username_to_email', 'search_direct_messages',
+  'my_latest_service_provider_verification', 'search_direct_messages',
   // Migration 0201 (not in production yet): STABLE, no writes, helpers STABLE.
   'admin_get_event_profit_candidate', 'admin_get_vents_earn_overview',
   'get_my_referral_confirmations', 'get_my_representative_history', 'get_my_representative_performance',

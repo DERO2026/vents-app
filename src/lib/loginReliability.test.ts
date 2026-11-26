@@ -60,9 +60,10 @@ beforeAll(() => {
 });
 
 describe('login: username-lookup failures are never shown as "wrong password"', () => {
-  it('a resolve_username_to_email RPC error is tagged distinctly, not thrown raw', () => {
+  it('a username-lookup RPC error (resolve_login_email since 0227) is tagged distinctly, not thrown raw', () => {
     const loginBlock = authScreenSrc.match(/if \(!isValidEmail\(loginEmail\)\) \{[\s\S]*?loginEmail = resolvedEmail;\s*\n\s*\}/)?.[0] ?? '';
     expect(loginBlock).toMatch(/if \(resolveError\) throw new Error\(`LOGIN_LOOKUP_FAILED: /);
+    expect(loginBlock).toContain("supabase.rpc('resolve_login_email' as any, { p_username: loginEmail.toLowerCase(), p_password: password })");
   });
 
   it('the catch block shows an honest lookup-failure message, checked before the generic wrong-password fallback', () => {
@@ -79,8 +80,11 @@ describe('login: username-lookup failures are never shown as "wrong password"', 
     expect(block).not.toMatch(/incorrect|wrong password/i);
   });
 
-  it('a genuine "no account found" (username really does not exist) is a distinct, separate error from a lookup failure', () => {
-    expect(authScreenSrc).toMatch(/if \(!resolvedEmail\) throw new Error\('No account found with this username\.'\);/);
+  it('a genuine "no account found" (or a wrong password) is a distinct, separate error from a lookup failure', () => {
+    // 0227 (H2): no account and wrong password now return the same null on
+    // purpose (no account enumeration); both reach Supabase's own
+    // "Invalid login credentials" path, never the LOOKUP_FAILED message.
+    expect(authScreenSrc).toMatch(/if \(!resolvedEmail\) throw new Error\('Invalid login credentials'\);/);
   });
 });
 
