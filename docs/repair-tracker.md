@@ -2,18 +2,52 @@
 
 Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open items from the earlier lifecycle audit (OEL) and checkout audit (CF).
 
+## Verified state (post-merge audit, 2026-11-26)
+
+Verified from the repository, GitHub and Vercel deployment records. **No production database was queried.**
+
+**`main` is at `86632029516288510f12201bf83524b8eaf2915c`** ("Merge pull request #123"). Since #121 (`815ec94`), only these six PRs were merged; no other commits.
+
+| PR | Scope | Merged (UTC) | Merge commit | Merged head = reviewed head | CI on the PR | Deployed to production |
+|---|---|---|---|---|---|---|
+| #122 | C1 (0220) + tracker | 11:07:52 | `bae3858` | ✅ `d6b3adc` | none (the workflow didn't exist yet) | ✅ superseded by later deploys |
+| #127 | D2a (0229) | 11:08:11 | `3d71e8c` | ✅ `08a9ef6` | none | ✅ |
+| #126 | D1a | 11:08:35 | `a17772b` | ✅ `b09e345` | none | ✅ |
+| #125 | H2/L4/M8/L5 (0227, 0228) | 11:09:13 | `2b51a0b` | ✅ `c419c72` | none | ✅ (its own build was cancelled; the code is in later builds) |
+| #124 | H1 (0226) | 11:09:41 | `7dc64e6` | ✅ `22dbc9d` | none | ✅ |
+| #123 | H5 (PR checks) | 11:10:01 | `8663202` | ✅ `48b36c3` | ✅ green (run 45760298118) | ✅ **production = `8663202`** (`dpl_JwBzcwgAWhZG4NBbg4Qce2b3mgjB`, READY) |
+
+- **CI:** `PR checks` passed on the `main` push at `8663202` (run 45808079181). PRs #122 and #124–#127 had **no** CI run before merge.
+- **Branch protection:** not verifiable with this access; still an owner action (`docs/release-safeguards.md`).
+
+### ⚠️ Production risk right now: code merged and deployed before its migrations
+
+The PRs required each migration to be applied **before** merging. All six merged within about 2 minutes and were deployed. Whether 0220 to 0229 are applied in production is **unknown** here (no production query was made). If they aren't:
+
+| Missing in production | Effect on the live app (`8663202`) |
+|---|---|
+| **0227** | **Username login on the website fails** ("We couldn't verify your login right now"): the web client calls `resolve_login_email`, and the failed-login status check calls `get_login_account_status`. Email login is unaffected. |
+| **0226** | A captured payment that can't become a ticket makes the signed webhook answer 500 (Paystack retries; nothing is lost once 0226 exists). Successful payments log a warning. Admin → Payouts → Payment exceptions shows an error. |
+| **0229** | Ticket-tier renames are as unsafe as before #127 (oversell, broken in-flight orders). The editor's `key` field is ignored harmlessly. |
+| 0220 | C1 remains open (unpaid tickets usable for entry). |
+| 0224 | "Publish as Coming Soon" fails (H4). |
+| 0225 | The free-promotion hole remains (H3). |
+
+Vercel runtime logs (Hobby keeps 1 hour) showed no `payment_exception` messages and no runtime errors in the last 24 hours. That is **not** evidence either way.
+
 ## Status columns
 
-The four status columns are separate on purpose. A finding is only **Resolved** when all four are ✅ and nothing in "Remaining risk" is open.
+Each finding has five separate status columns. A finding is **Resolved** only when all five are ✅ and nothing in "Remaining risk" is open.
 
-| Column | Meaning |
-|---|---|
-| **Code** | The fix exists on a branch, with regression tests, and the tests pass. |
-| **Main** | The PR is merged into `main`, with owner approval. |
-| **Prod** | The frontend is deployed to production, or the migration is applied to production. The owner does both. |
-| **Verified** | The behaviour has been checked in production after deployment. |
+| Column | Meaning | Evidence required |
+|---|---|---|
+| **Local** | Implemented on a branch | Commit |
+| **Main** | Merged into `main` | Merge commit on `main` |
+| **Tests** | Proven by automated tests on `main` | The named suite passes on the current `main` |
+| **Prod applied** | Live in production: the frontend is deployed, **and** the migration is applied | Deployment record **and** an owner-confirmed migration apply. A merged PR or a migration file is **not** evidence of an apply. |
+| **Prod verified** | Behaviour checked in production after release | An explicit post-release check |
 
-**Symbols:** ✅ done · 🔶 in progress · ⏸ waiting on an owner decision · ⬜ not started · — not applicable.
+**Symbols:** ✅ done (with evidence) · 🔶 partly · ❓ unknown (no evidence available here) · ⏸ waiting on an owner decision · ⬜ not started · — not applicable.
 
 ## Decision register
 
@@ -26,7 +60,7 @@ Approved decisions are binding for every batch. A decision being approved does n
 | D3 | **Leave existing promotions untouched.** Don't investigate, expire, delete or modify them. | 2026-11-26 | No production query for promotions organizers may have given themselves, and no cleanup. 0225 is compatible as written: it only stops new writes from the app (it drops the write policies and revokes the grants) and doesn't touch existing rows. | H3 | ✅ Decided. No further work. |
 | D4 | **Every refund of a payment charged without a ticket needs two separate authorized admin approvals. No automatic refunds.** | 2026-11-26 | The refund is built as a two-admin action (`request_admin_action` → `approve_admin_action`): one admin requests it, a different admin approves it, and an admin can't approve their own request. It runs through the existing refund engine only after the second approval. Nothing refunds automatically. | H1 (#124, new batch B3c) | ✅ Decided. #124 needs an adjustment (below). |
 | D5 | **Cancel all existing confirmed unpaid tickets after 0220 is applied**, and only after a separate production review (gate G-D5) is approved. Exclude successful payments, pending payment attempts, charged-but-unreconciled payments and ambiguous records. **Nothing is cancelled yet.** | 2026-11-26 | Two steps, each needing its own approval. Step 1 is a read-only production review listing the exact qualifying tickets, counts, capacity impact per event, and every excluded record with the reason. Step 2 is the cancellation itself, as a reviewed, single-transaction, reversible operation covering only the records approved in step 1. | C1 follow-up | ✅ Decided. Blocked on gate G-D5. |
-| D6 | H6 needs a schema-only `pg_dump` of production so the repo can rebuild the database from a baseline. It's read-only, but it is a production operation: will you run it, or approve me running it? | — | — | H6, M10 | ⏸ **Still open** |
+| D6 | H6 needs a schema-only `pg_dump` of production so the repo can rebuild the database from a baseline. It's read-only, but it is a production operation: will you run it, or approve me running it? | — | — | H6, M10 | ⏸ **Still open** (unchanged at the 2026-11-26 post-merge audit) |
 | D7 | **Revoke the old username lookups immediately, through 0228.** Older installed iOS and Android versions may lose username login and may need email login or an app update. Release and support notes are prepared. | 2026-11-26 | "Immediately" means as soon as it's safe: apply 0227 → merge #125 and deploy the web app → apply 0228 straight after. Applying 0228 before the web deploy would also break username login on the website. ⚠️ See the compatibility risk below. | H2, L4 (#125) | ✅ Decided |
 
 ### Follow-up decisions
@@ -45,6 +79,19 @@ Once 0228 is applied, **installed iOS and Android builds from before #125** can 
 
 The website is unaffected once #125 is deployed. Old builds can't be given a better message, because they show that same text for any lookup failure. Support guidance and a release-note line are in `docs/support-username-login-0228.md`.
 
+## Verification on `main` at `8663202` (2026-11-26)
+
+| Command | Result |
+|---|---|
+| `npm ci` (lockfile) | ✅ (the container restart had removed `node_modules`) |
+| `npx tsc --noEmit` (TypeScript 5.9.3, as locked) | ✅ exit 0 |
+| `npm test` (vitest, both configs) | ✅ **3,865/3,865** + 4/4. 3,811 before the repairs + 11 (0220) + 4 (B2) + 19 (B3) + 10 (B4) + 11 (D2a) − 1 (D1a) |
+| `scripts/local-pg-test/run-*.sh` (40 suites) | ✅ **40/40**, including 0220 141/141 + mutation, 0226 59/59, 0227/0228 57/57, 0229 42/42, Coming Soon 195/195, payouts, withdrawals, wallet transfers, fees, cancellation. Two suites first failed for environment reasons only (pg_cron and `node_modules` missing after the restart); after restoring local pg_cron (background workers) and `npm ci`, both pass. No code or test was changed. |
+| Production build (`vite build`, placeholder environment values) | ✅ |
+| Native-release checks (`nativeReleaseVersion`, `WalletScreen.withdrawalPin`) | ✅ 19/19 |
+| Android/iOS binary builds | ⬜ skipped: no Android SDK or Xcode in this environment |
+| GitHub `PR checks` on `main` push | ✅ run 45808079181 |
+
 ## Approval gates
 
 Each gate needs its own explicit approval, recorded here, before anything behind it runs.
@@ -52,11 +99,11 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | Gate | What must be approved | Status |
 |---|---|---|
 | G-0224, G-0225, G-0223, G-0220 | Applying each migration to production, in the apply order below | ⬜ Waiting |
-| G-0226 | Applying 0226, **before** merging #124 | ⬜ Waiting |
-| G-0227 / G-0228 | 0227 before merging #125; 0228 straight after the web deploy (D7) | ⬜ Waiting |
-| G-0229 | Applying 0229, before merging #127 | ⬜ Waiting |
+| G-0226 | Applying 0226, **before** merging #124 | ❗ #124 is merged and deployed; 0226 apply status unknown. |
+| G-0227 / G-0228 | 0227 before merging #125; 0228 straight after the web deploy (D7) | ❗ #125 is merged and deployed; **0227 apply status unknown**. Apply 0227 first (or confirm it is applied), then 0228. |
+| G-0229 | Applying 0229, before merging #127 | ❗ #127 is merged and deployed; 0229 apply status unknown. Decide on N3 first (the fallback fix may change 0229 or add 0231). |
 | **G-D5** (mandatory, separate) | A **read-only production review** before any unpaid ticket is cancelled. It must show: (1) the exact qualifying ticket ids, each with its event, tier, owner and creation date; (2) counts per event and in total; (3) the capacity impact per event (sold, unpaid and remaining, before and after); (4) every **excluded** record and why: successful payments, payment attempts still open (`pending_purchases` or payment attempts), payments charged but not reconciled (an open `payment_exceptions` row, or a Paystack charge with no confirmed ticket), and anything ambiguous. Approving the review does **not** approve the cancellation: that needs a second approval of the exact list. | ⬜ Not started (needs 0220 applied first) |
-| G-D4 | Each refund of a payment exception: two separate admin approvals in the app (built in B3c) | ⬜ Not built |
+| G-D4 | Each refund of a payment exception: two separate admin approvals in the app (built in B3c) | ⬜ Not built. The #124 panel wording still tells a single admin to refund in Paystack, which conflicts with D4. |
 | G-D6 | The production schema dump for H6 | ⏸ Waiting on decision D6 |
 
 ## PRs and migrations affected by these decisions
@@ -75,45 +122,48 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 
 ## Findings
 
-| ID | Sev | Finding | Root cause | Batch | Fix | Tests | PR | Code | Main | Prod | Verified | Remaining risk |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| C1 | Critical | Unpaid tickets can be used for entry; inventory lock-up (OEL-01) | `purchase_ticket` (anon/auth) issues paid-tier tickets as `pending`+`active`; signing and check-in never read `payment_status` | B1 | 0220: `purchase_ticket` free tiers only; sign only `paid`; `verify_entry_pass` and `manual_check_in` refuse `not_paid`. Plus `undo_0220`. | 141-check local suite; mutation test (without 0220, exactly 18 checks fail); verbatim check; vitest guard (11) | #122 | ✅ | ⬜ | ⬜ (apply 0220) | ⬜ | Existing unpaid tickets: cancel per D5, only after gate G-D5. The production pre-apply body check is in the 0220 runbook. |
-| H1 | High | Captured payment with no ticket, refund or record (OEL-02) | Finalize failure only logged; verify/webhook return "not found" | B3 | 0226 `payment_exceptions` + record/close (server only, idempotent) + admin list/resolve; both payment paths record (provable ticket refs only); truthful buyer message; Admin → Payouts → Payment exceptions | 0226 local suite 59/59 + 3 mutations caught; webhook/verify behaviour tests 12; panel tests 7 | #124 | 🔶 (D4 adjustment) | ⬜ | ⬜ (apply 0226 **before** merging) | ⬜ | Two-admin refund (D4) not built: B3c. #124 panel wording needs the D4 change. |
-| H2 | High | Username → email lookup open to anyone | `resolve_username_to_email` is anon `SECURITY DEFINER` and returns the email | B4 | 0227 `resolve_login_email(username, password)` (email only with the right password, rate limited); client switched; 0228 revokes the old lookup | 0227+0228 local suite 57/57 + 3 mutations caught; static guard 10 | #125 | ✅ | ⬜ | ⬜ (0227 → deploy → 0228 immediately, D7) | ⬜ | ⚠️ D7: installed native builds from before #125 lose username login (email login still works). Support notes prepared. |
-| H3 | High | Organizers can self-promote for free | 0008 write policies on `event_promotions` | — | 0225 (merged in #119/#120) | `promotionEligibility.security.test.ts`; local suite | #119, #120 | ✅ | ✅ | ⬜ (apply 0225) | ⬜ | Existing rows left untouched by decision (D3). |
-| H4 | High | "Publish as Coming Soon" fails in production | UI shipped (#119) before 0224 was applied | — | 0224 (merged in #119) | Coming Soon local suite | #119 | ✅ | ✅ | ⬜ (apply 0224) | ⬜ | Applying 0224 also turns on pg_cron |
-| H5 | High | No tests run before merging | No PR workflow | B2 | `.github/workflows/pr-checks.yml` (typecheck + vitest) + guard test | Clean-checkout replay; first GitHub run green on #123 | #123 | ✅ | ⬜ | — | ⬜ | Branch protection is your setting (docs/release-safeguards.md) |
-| H6 | High | Database can't be rebuilt from the repo | Tables created outside migrations; unrecorded history; production-only seeds | B9 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | D6 |
-| M1 | Medium | 1-hour reminders almost never sent | Reminder sweep only runs in the daily 08:00 UTC Vercel cron | B6 | planned: pg_cron schedule (after 0224) | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | Depends on H4 (pg_cron) |
-| M2 | Medium | Ticket email depends on the buyer's browser (CF-07) | Email only sent from the client after verify | B3 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M3 | Medium | Draft and admin-hidden events readable by anyone (OEL-06) | `select_events` only filters `deleted_at` | B5 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M4 | Medium | Tier with sales can be removed or shrunk (OEL-08) | No database check for sold tiers | B5 | planned: refuse deleting a tier with sales or shrinking it below the number sold (counting sales under previous names); price changes allowed (D2); renaming allowed and made safe by 0229 (D2a, #127) | rename part: 0229 local suite 42/42; static guard 11 | #127 (rename part) | 🔶 rename ✅, delete/shrink guard ⬜ | ⬜ | ⬜ | ⬜ | Delete/shrink guard still B5 |
-| M5 | Medium | Anyone can self-grant organizer (OEL-04) | `set_signup_role` | — | Accepted by policy (D1, D1a): choosing Organizer is the approval. #126 removes the post-sign-up admin review so both paths match | workRoles, VENTS Work render, organizerCapabilityStates, promoteToOrganizerSelfEscalation (restated to D1a) | #126 | ✅ | ⬜ | ⬜ (frontend only) | ⬜ | None (policy accepted) |
-| M6 | Medium | Purchase intent lost at sign-in (CF-01) | `handleAuthSuccess` clears the stack and goes Home | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M7 | Medium | "Popular" ordering counts only the viewer's own saves | `saved_events` RLS is own-row only | B5 | planned: count RPC | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M8 | Medium | Anyone can wipe another person's unconfirmed sign-up | `reclaim_unverified_signup` anon, no ownership proof | B4 | 0227: reclaim only after 1 hour (email-code lifetime) + rate limit | in 0227 suite | #125 | ✅ | ⬜ | ⬜ | ⬜ | |
-| M9 | Medium | Desktop layout clipped (OEL-03) | `.phone-frame` capped at 560px | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M10 | Medium | Seeded production IDs and drift in migrations (part of H6) | See H6 | B9 | with H6 | — | — | ⬜ | ⬜ | ⬜ | ⬜ | D6 |
-| M11 | Medium | Payment link loses intent; payer needs an account (CF-04) | As M6 | B7 | planned (intent resume; account requirement unchanged unless you decide) | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| M12 | Medium | Push, email and SMS configuration in production unverified | Env vars not readable from here | B10 | planned: health check in `prod-smoke`; you confirm in the Vercel dashboard | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | Needs you |
-| L1 | Low | Representative Rewards screen unreachable | No navigation path | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L2 | Low | Dead screen types `search`, `ticket-detail` | Leftover | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L3 | Low | `boost_event_vc` charges VC for nothing | Feature never wired up | B5 | planned: revoke | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L4 | Low | Anonymous account-status and existence lookups | Anon grants on helper RPCs | B4 | 0227: owner-only `get_login_account_status`; `email_exists` revoked; `check_user_exists` rate limited; 0228 revokes `get_account_status` | in 0227 suite | #125 | ✅ | ⬜ | ⬜ | ⬜ | Rate limit per IP may affect shared mobile IPs (60/5 min) |
-| L5 | Low | `users.email` editable, drifts from login email | No column guard | B4 | 0227 trigger: client roles can't change `email`/`original_email` | in 0227 suite | #125 | ✅ | ⬜ | ⬜ | ⬜ | |
-| L6 | Low | Leftover glows and gradients | Older styles | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L7 | Low | InsForge leftovers; 33 root screenshot scripts | Not cleaned up | B8 | planned | — | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L8 | Low | Placeholder features (AI tabs, booking, Work, non-NGN) | Not built | B8 | planned: mark clearly unavailable; no new features | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L9 | Low | Phone not pre-filled at checkout (CF-05) | Not wired | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L10 | Low | Extra attendees need email and phone (CF-06) | Validation | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | Check door/transfer use of those fields first |
-| L11 | Low | Public QR images never cleaned up (CF-14) | Stored publicly | B3 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
-| L12 | Low | Anyone can review an organizer without attending | Insert policy only checks `reviewer_id` | B5 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | |
+| ID | Sev | Finding | Root cause | Batch | Fix | Tests | PR | Local | Main | Tests on main | Prod applied | Prod verified | Remaining risk |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| C1 | Critical | Unpaid tickets can be used for entry; inventory lock-up (OEL-01) | `purchase_ticket` (anon/auth) issues paid-tier tickets as `pending`+`active`; signing and check-in never read `payment_status` | B1 | 0220: `purchase_ticket` free tiers only; sign only `paid`; `verify_entry_pass` and `manual_check_in` refuse `not_paid`. Plus `undo_0220`. | 141-check local suite; mutation test (without 0220, exactly 18 checks fail); verbatim check; vitest guard (11) | #122 | ✅ | ✅ #122 `bae3858` | ✅ 141/141 + mutation; static 11 | ❓ 0220 not confirmed | ⬜ | D5: existing unpaid tickets, cancel only after gate G-D5. 0220 apply needs owner approval. |
+| H1 | High | Captured payment with no ticket, refund or record (OEL-02) | Finalize failure only logged; verify/webhook return "not found" | B3 | 0226 `payment_exceptions` + record/close (server only, idempotent) + admin list/resolve; both payment paths record (provable ticket refs only); truthful buyer message; Admin → Payouts → Payment exceptions | 0226 local suite 59/59 + 3 mutations caught; webhook/verify behaviour tests 12; panel tests 7 | #124 | ✅ | ✅ #124 `7dc64e6` | ✅ 59/59 + 19 vitest | 🔶 API deployed; ❓ 0226 not confirmed | ⬜ | **D4 adjustment not done:** the panel still says "refund in Paystack, then record it here", which is single-admin. Two-admin refund (B3c) not built. |
+| H2 | High | Username → email lookup open to anyone | `resolve_username_to_email` is anon `SECURITY DEFINER` and returns the email | B4 | 0227 `resolve_login_email(username, password)` (email only with the right password, rate limited); client switched; 0228 revokes the old lookup | 0227+0228 local suite 57/57 + 3 mutations caught; static guard 10 | #125 | ✅ | ✅ #125 `2b51a0b` | ✅ 57/57 + 10 vitest | 🔶 web client deployed; ❓ 0227/0228 not confirmed | ⬜ | If 0227 is not applied, web username login is broken now. D7: 0228 immediately after 0227. Old native builds lose username login. |
+| H3 | High | Organizers can self-promote for free | 0008 write policies on `event_promotions` | — | 0225 (merged in #119/#120) | `promotionEligibility.security.test.ts`; local suite | #119, #120 | ✅ | ✅ #119/#120 | ✅ 0225 suite (in Coming Soon suite) | ❓ 0225 not confirmed | ⬜ | Existing rows left untouched by decision (D3). |
+| H4 | High | "Publish as Coming Soon" fails in production | UI shipped (#119) before 0224 was applied | — | 0224 (merged in #119) | Coming Soon local suite | #119 | ✅ | ✅ #119 | ✅ 195/195 | 🔶 UI deployed; ❓ 0224 not confirmed | ⬜ | Applying 0224 also turns on pg_cron |
+| H5 | High | No tests run before merging | No PR workflow | B2 | `.github/workflows/pr-checks.yml` (typecheck + vitest) + guard test | Clean-checkout replay; first GitHub run green on #123 | #123 | ✅ | ✅ #123 `8663202` | ✅ CI green on `main` | — | ⬜ branch protection unverified | Branch protection is your setting (docs/release-safeguards.md) |
+| H6 | High | Database can't be rebuilt from the repo | Tables created outside migrations; unrecorded history; production-only seeds | B9 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | D6 |
+| M1 | Medium | 1-hour reminders almost never sent | Reminder sweep only runs in the daily 08:00 UTC Vercel cron | B6 | planned: pg_cron schedule (after 0224) | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | Depends on H4 (pg_cron) |
+| M2 | Medium | Ticket email depends on the buyer's browser (CF-07) | Email only sent from the client after verify | B3 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| M3 | Medium | Draft and admin-hidden events readable by anyone (OEL-06) | `select_events` only filters `deleted_at` | B5 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| M4 | Medium | Tier with sales can be removed or shrunk (OEL-08) | No database check for sold tiers | B5 | planned: refuse deleting a tier with sales or shrinking it below the number sold (counting sales under previous names); price changes allowed (D2); renaming allowed and made safe by 0229 (D2a, #127) | rename part: 0229 local suite 42/42; static guard 11 | #127 (rename part) | 🔶 rename only | 🔶 #127 `3d71e8c` | ✅ 42/42 (rename); ⬜ delete/shrink guard | ❓ 0229 not confirmed | ⬜ | Delete/shrink guard (B5) not built. **N3:** the 0229 older-app fallback can mis-link tiers. |
+| M5 | Medium | Anyone can self-grant organizer (OEL-04) | `set_signup_role` | — | Accepted by policy (D1, D1a): choosing Organizer is the approval. #126 removes the post-sign-up admin review so both paths match | workRoles, VENTS Work render, organizerCapabilityStates, promoteToOrganizerSelfEscalation (restated to D1a) | #126 | ✅ | ✅ #126 `a17772b` | ✅ vitest (restated tests) | ✅ frontend deployed (`8663202`); no migration needed | ⬜ | None (policy accepted) |
+| M6 | Medium | Purchase intent lost at sign-in (CF-01) | `handleAuthSuccess` clears the stack and goes Home | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| M7 | Medium | "Popular" ordering counts only the viewer's own saves | `saved_events` RLS is own-row only | B5 | planned: count RPC | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| M8 | Medium | Anyone can wipe another person's unconfirmed sign-up | `reclaim_unverified_signup` anon, no ownership proof | B4 | 0227: reclaim only after 1 hour (email-code lifetime) + rate limit | in 0227 suite | #125 | ✅ | ✅ #125 | ✅ in 0227 suite | ❓ 0227 not confirmed | ⬜ | |
+| M9 | Medium | Desktop layout clipped (OEL-03) | `.phone-frame` capped at 560px | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| M10 | Medium | Seeded production IDs and drift in migrations (part of H6) | See H6 | B9 | with H6 | — | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | D6 |
+| M11 | Medium | Payment link loses intent; payer needs an account (CF-04) | As M6 | B7 | planned (intent resume; account requirement unchanged unless you decide) | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| M12 | Medium | Push, email and SMS configuration in production unverified | Env vars not readable from here | B10 | planned: health check in `prod-smoke`; you confirm in the Vercel dashboard | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | Needs you |
+| L1 | Low | Representative Rewards screen unreachable | No navigation path | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L2 | Low | Dead screen types `search`, `ticket-detail` | Leftover | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L3 | Low | `boost_event_vc` charges VC for nothing | Feature never wired up | B5 | planned: revoke | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L4 | Low | Anonymous account-status and existence lookups | Anon grants on helper RPCs | B4 | 0227: owner-only `get_login_account_status`; `email_exists` revoked; `check_user_exists` rate limited; 0228 revokes `get_account_status` | in 0227 suite | #125 | ✅ | ✅ #125 | ✅ in 0227 suite | ❓ 0227/0228 not confirmed | ⬜ | Rate limit per IP may affect shared mobile IPs (60/5 min) |
+| L5 | Low | `users.email` editable, drifts from login email | No column guard | B4 | 0227 trigger: client roles can't change `email`/`original_email` | in 0227 suite | #125 | ✅ | ✅ #125 | ✅ in 0227 suite | ❓ 0227 not confirmed | ⬜ | |
+| L6 | Low | Leftover glows and gradients | Older styles | B8 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L7 | Low | InsForge leftovers; 33 root screenshot scripts | Not cleaned up | B8 | planned | — | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L8 | Low | Placeholder features (AI tabs, booking, Work, non-NGN) | Not built | B8 | planned: mark clearly unavailable; no new features | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L9 | Low | Phone not pre-filled at checkout (CF-05) | Not wired | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L10 | Low | Extra attendees need email and phone (CF-06) | Validation | B7 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | Check door/transfer use of those fields first |
+| L11 | Low | Public QR images never cleaned up (CF-14) | Stored publicly | B3 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| L12 | Low | Anyone can review an organizer without attending | Insert policy only checks `reviewer_id` | B5 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 
 ## Found during repairs (not in the original 31)
 
-| ID | Sev | Finding | Root cause | Status | Remaining risk |
-|---|---|---|---|---|---|
-| N1 | High | A price change while a buyer is mid-checkout breaks the purchase. A **raise** makes the payment look short, so the buyer is charged with no ticket (H1 records it). A **cut** means the buyer overpays and the difference isn't refunded. Conflicts with D2 ("preserve the original price"). | `finalize_pending_purchase` re-reads the tier's current price when issuing the ticket, and `confirm_ticket_payment` checks the charge against that price, not against the amount the buyer agreed to (`pending_purchases.amount_kobo`). | Reported only; not fixed (outside the D1a/D2a scope). Needs your go-ahead. | Present on `main` today whenever a price is changed during an open checkout. |
+| ID | Sev | Finding | Root cause | Evidence | Status | Proposed fix |
+|---|---|---|---|---|---|---|
+| N1 | High | A price (or promo) change while a buyer is mid-checkout breaks the purchase. **Paystack path:** a raise means charged with no ticket; a cut means the buyer overpays with no record or refund. **Wallet path:** a raise means the wallet is debited more than agreed. A buyer who retries within 30 minutes is stuck on "price changed". | `create_pending_purchase` stores only the total (`amount_kobo`). `finalize_pending_purchase` re-reads the **current** tier price and promo. `confirm_ticket_payment(_via_wallet)` computes the expected amount (and the wallet debit) from those values. The 30-minute reuse ignores price changes. | Code trace (`docs/n1-checkout-price-snapshot.md`) | ⏸ investigated; **not implemented, waiting for approval** | Migration 0230: immutable unit price and discount snapshot on `pending_purchases`; finalize uses it; confirm and the wallet use `amount_kobo`; reuse requires the same price. Fee model unchanged. |
+| N2 | Low | Staff exclusion from self-selecting Organizer is enforced only in the UI for **sub-admins**: `set_signup_role` refuses only `role = 'admin'`. | 0121 checks `v_current_role = 'admin'` only | Code (0121) | Reported; predates D1a, which didn't change it | Refuse `('admin', 'sub-admin')` in `set_signup_role` (one-line in-place patch), if you want staff excluded on the server. |
+| N3 | High | **0229's older-app fallback can link the wrong tier.** An older app build (no tier keys) that deletes a tier and adds or renames another in the same save makes the new tier inherit the deleted tier's identity and sales. An order already in checkout for the deleted tier then **finalizes at the other tier's price** (local test: a ₦9,000 order issued as a ₦50 ticket and confirmed). Separately, an event that already has **two tiers with the same name can no longer be edited** at all. | The fallback matches by the per-save positional `id`, which can't tell a rename from delete-plus-add. The duplicate-identity check refuses legacy duplicate names. | Local Postgres test on merged 0229 (cases a–g; see post-merge audit) | Reported; **not fixed** (outside this audit's authority) | 0231: remove the `id` fallback. Refuse an older-app save that would drop or rename a tier whose names have tickets or open pending purchases ("update the app to rename or remove ticket types with sales"). Allow unchanged legacy duplicate names. N1's price snapshot also removes the wrong-price part. |
+| N4 | High (operational) | PRs were merged and deployed before their migrations were confirmed applied (see "Production risk right now"). | Merge = deploy on Vercel; the apply-before-merge order wasn't followed | GitHub and Vercel records | Open: **owner must confirm which of 0220–0229 are applied** | Confirm the production state (owner), then apply any missing migrations in the order below. |
 
 ## Earlier audits: status of every open item
 
@@ -145,6 +195,37 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | CF-12 | Typed promo must be applied by hand | Re-check in B7 | B7 |
 | CF-13 | Default login mode | Re-check in B7 | B7 |
 | CF-14 | Public QR images | Open | L11 |
+
+## Migration register (0218–0229)
+
+Dependencies are taken from each file's SQL prechecks and from what it patches. **"Applied in production" is not inferred from merging:** only 0218 and 0219 have a recorded apply (2026-11-19). Stage A (2026-11-25, read-only) listed "0221 applied but unrecorded" only as an **assumption**. Because 0229 depends on 0221's function body, that must be confirmed before 0229.
+
+| # | Purpose | Depends on (from the SQL) | In `main` | Undo | Applied in production |
+|---|---|---|---|---|---|
+| 0218 | Event cancellation workflow | 0208 (`ticket_fee_buyer_charge_kobo`), `refund_ticket` | ✅ | ✅ | ✅ recorded 2026-11-19 |
+| 0219 | Cancellation safety fixes | 0218 | ✅ | ✅ | ✅ recorded 2026-11-19 |
+| 0220 | Ticket payment integrity (C1) | purchase/sign/check-in functions at their 0124/0024/0147 bodies (in-place anchors) | ✅ | ✅ (exact-reverse anchors) | ❓ not confirmed |
+| 0221 | Attendance visibility | md5-pinned function bodies | ✅ | ✅ | ❓ **assumed** applied but unrecorded (listed as an assumption, not a finding, in Stage A on 2026-11-25) |
+| 0222 | Announcements drafts/publish | — | ✅ | ✅ | 🔶 functions matched the repo (Stage A); history ❓ |
+| 0223 | Internal-test announcement audience | 0222 | ✅ | ✅ | ❓ |
+| 0224 | Coming Soon + scheduler | 0218; pg_cron available | ✅ | ✅ | ❓ |
+| 0225 | Promotion eligibility (H3) | 0218, `event_effective_end_at` (0051); md5 pins (#120) | ✅ | ✅ | ❓ |
+| 0226 | Payment exceptions (H1) | `pending_purchases`, `admin_logs.actor_role`, `is_admin`/`is_super_admin` | ✅ | ✅ | ❓ |
+| 0227 | Auth lookup hardening | pgcrypto, `check_rate_limit`, `client_ip`; reclaim (0004) and check_user_exists (0027) bodies | ✅ | ✅ (refuses while 0228 is on) | ❓ |
+| 0228 | Revoke the old open lookups (D7) | **0227** (refuses without it) | ✅ | ✅ | ❓ |
+| 0229 | Ticket-tier rename (D2a) | **0221's** availability body; create/finalize anchors (verified to survive 0203/0208); purchase_ticket anchors (verified to survive 0220) | ✅ | ✅ (exact reverse) | ❓ |
+
+**Required apply order** (each step needs its own approval; resolves the earlier conflicting notes):
+1. 0224 (needs 0218 and pg_cron) → 0225 (needs 0218)
+2. 0223 (needs 0222)
+3. 0220
+4. 0226
+5. **0227**, and confirm web username login works
+6. **0228** immediately after (D7)
+7. **0229** (needs 0221)
+8. Backfill migration history for 0221–0229
+
+0220, 0226, 0227 and 0229 don't depend on each other. 0220 and 0229 patch disjoint text in `purchase_ticket`, and both undos reverse their own text exactly, so either rollback order works. That's verified statically, not run together.
 
 ## Batches and dependencies
 
