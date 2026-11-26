@@ -69,6 +69,12 @@ function Label({ children }: { children: React.ReactNode }) {
   );
 }
 
+// D2a: a stable identity for a tier created in this editor (0229 keeps it
+// across renames). Never shown to anyone.
+function newTierKey(): string {
+  return `k_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId, onUpdated }: CreateEventScreenProps) {
   const [step, setStep] = useState<Step>(1);
   const [title, setTitle] = useState('');
@@ -123,6 +129,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     price: string;
     quantity: string;
     description: string;
+    // D2a (migration 0229): a tier's stable identity, kept across renames,
+    // and the names it had before (server-maintained, read-only here).
+    key?: string;
+    previousNames?: string[];
   }
   const [ticketTypes, setTicketTypes] = useState<TicketFormType[]>([
     { name: '', price: '', quantity: '', description: '' }
@@ -313,6 +323,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               price: t.price != null ? String(t.price) : '',
               quantity: t.quantity != null ? String(t.quantity) : '',
               description: t.description || '',
+              // A tier saved before 0229 has no key: its loaded name is its
+              // identity, so renaming it keeps its sales (D2a).
+              key: (typeof t.key === 'string' && t.key) || t.name || undefined,
+              previousNames: Array.isArray(t.previous_names) ? t.previous_names.filter((n: unknown) => typeof n === 'string') : [],
             }))
           : [{ name: '', price: row.price != null ? String(row.price) : '', quantity: row.ticket_goal != null ? String(row.ticket_goal) : '', description: '' }];
         setTicketTypes(tts);
@@ -690,6 +704,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         show_attendance_count: showAttendanceCount,
         ticket_types: ticketTypes.map((t, idx) => ({
           id: `t_${idx}`,
+          ...(t.key ? { key: t.key } : {}),
           name: t.name.trim(),
           price: Number(t.price),
           quantity: Number(t.quantity),
@@ -832,7 +847,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           .from('tickets')
           .select('id', { count: 'exact', head: true })
           .eq('event_id', editEventId)
-          .eq('ticket_type', t.name.trim())
+          // D2a: tickets keep the name they were bought under, so a renamed
+          // tier's sales include its earlier names.
+          .in('ticket_type', Array.from(new Set([t.name.trim(), ...(t.previousNames || [])])))
           .eq('status', 'active');
         if (typeSoldErr) throw typeSoldErr;
         if ((typeSold || 0) > newQty) {
@@ -892,6 +909,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         show_attendance_count: showAttendanceCount,
         ticket_types: ticketTypes.map((t, idx) => ({
           id: `t_${idx}`,
+          ...(t.key ? { key: t.key } : {}),
           name: t.name.trim(),
           price: Number(t.price),
           quantity: Number(t.quantity),
@@ -1824,7 +1842,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             <button
               type="button"
               onClick={() => {
-                setTicketTypes(prev => [...prev, { name: '', price: '', quantity: '', description: '' }]);
+                setTicketTypes(prev => [...prev, { name: '', price: '', quantity: '', description: '', key: newTierKey() }]);
               }}
               style={{
                 width: '100%',
