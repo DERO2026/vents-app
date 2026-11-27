@@ -19,6 +19,24 @@ Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open item
   - The H2 test now allows the old lookups only behind that guard.
 - **Permanent fix (needs approval):** apply 0227 after the read-only state check. The fallback then never runs. Apply 0228 (D7) only after 0227 **and** after the store apps are updated, or installed apps lose username login.
 
+## Financial safety follow-up: transfer fees (2026-11-27)
+
+Found by the read-only production investigation (owner-authorized):
+- Live `confirm_transfer_fee_payment` is 0043's version with one untracked edit, `p_amount_kobo < fee_kobo` instead of strict equality. The owner keeps that rule.
+- **0064 was never applied** (none of its four refund functions exist).
+
+**Code fixes (no migration):**
+- **False refund promise (P0, user-facing).** When a paid fee couldn't complete the transfer, the verify path told the payer "a refund has been started automatically and should appear on your statement shortly". In production nothing was started or recorded.
+  - Every outcome now states only what the database recorded: `not_recorded` means "No refund has been started yet", with the payment reference and a pointer to support; `pending_review` is used only when a payment exception exists.
+  - The response also returns `reference` and `refundState`.
+  - The message helper defines six states (`api/_lib/transferFeeRefundMessages.ts`): not recorded, pending review, approved, submitted to Paystack, succeeded, failed. None promises a date.
+- **Unrecognised answers are no longer successes.** The verify path used to report any unrecognised answer as a success. Now only `confirmed` and `already_paid` succeed.
+- **No automatic transfer-fee refunds.** Two administrators are required. The webhook's automatic Paystack refund for 0064's `:refund_claimed` answer is removed; it never ran in production.
+- **Refund-event chain (pre-existing bug).** With 0064 absent, `finalize_/fail_transfer_fee_refund` raised 42883 and the webhook answered 500 for every refund event that wasn't a ticket refund. Service-booking refunds could therefore never be finalized. A missing function now counts as `not_found` and the chain continues; any other error still returns 500.
+- **0239's overpayment answer.** The parser understands `:excess_refund_queued`. My Tickets shows "transfer complete, extra amount recorded for refund".
+
+**Tests:** `transferFeeRefundPolicy.security.test.ts` covers expired, cancelled, declined, not-pending, ineligible, not-found, underpaid and duplicate payments, on both entry points, plus unknown answers, overpayment and the refund-event chain. 20 of the new tests fail on the old webhook. `transferFeeRefundMessages.test.ts` covers the messages.
+
 ## P0 incident: Coming Soon publish, `sales_open_at` schema error (2026-11-27)
 
 This is audit finding **H4**, now observed live.

@@ -171,6 +171,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   const [transfersError, setTransfersError] = useState('');
   const [transferActionBusy, setTransferActionBusy] = useState<string | null>(null);
   const [transferActionError, setTransferActionError] = useState('');
+  // A non-error note from the server (e.g. an overpaid fee recorded for refund).
+  const [transferActionNotice, setTransferActionNotice] = useState('');
   const [transferSubTab, setTransferSubTab] = useState<'incoming' | 'outgoing' | 'history'>('incoming');
 
   const loadTransfers = useCallback(async () => {
@@ -257,7 +259,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     // happens. `transferActionBusy` flips synchronously, before any await.
     if (transferActionBusy) return;
     setTransferActionBusy(transfer.id);
-    setTransferActionError('');
+    setTransferActionError(''); setTransferActionNotice('');
     try {
       const { data, error } = await supabase.rpc('initiate_transfer_fee_payment', { p_transfer_id: transfer.id });
       if (error) throw new Error(error.message);
@@ -284,6 +286,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               throw new Error(verifyJson?.error || 'Could not verify the transfer fee payment. If you were charged, contact support with your reference.');
             }
             haptics.success();
+            setTransferActionNotice(typeof verifyJson?.notice === 'string' ? verifyJson.notice : '');
             await loadTransfers();
             if (onRefresh) await onRefresh();
           } catch (e: any) {
@@ -657,6 +660,11 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
                 <AlertCircle size={14} color={ventsColors.error} style={{ flexShrink: 0 }} />
                 <span style={{ color: ventsColors.error, fontSize: '12px' }}>{transferActionError}</span>
+              </div>
+            )}
+            {transferActionNotice && (
+              <div data-testid="transfer-action-notice" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
+                <span style={{ color: ventsColors.ink1, fontSize: '12px' }}>{transferActionNotice}</span>
               </div>
             )}
 
