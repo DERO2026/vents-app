@@ -19,6 +19,47 @@ Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open item
   - The H2 test now allows the old lookups only behind that guard.
 - **Permanent fix (needs approval):** apply 0227 after the read-only state check. The fallback then never runs. Apply 0228 (D7) only after 0227 **and** after the store apps are updated, or installed apps lose username login.
 
+## P0 incident: Coming Soon publish, `sales_open_at` schema error (2026-11-27)
+
+This is audit finding **H4**, now observed live.
+
+- **Symptom:** on Create Event → Preview, "Could not find the 'sales_open_at' column of 'events' in the schema cache" appeared under a green "Ready to publish!", and the button still offered "Publish as Coming Soon".
+- **Root cause:** migration **0224 is not applied in production**. It is a missing column, not a stale schema cache.
+  - 0224 is the only migration that adds `events.sales_open_at`. It also adds:
+    - the `coming_soon` status,
+    - `open_event_sales` / `open_due_event_sales`,
+    - the sale-alert functions,
+    - pg_cron.
+  - Production API logs (27 Nov):
+    - Coming Soon inserts: 400.
+    - `get_my_event_sale_alert_counts` (a 0224 function): **404**. A stale cache would not make a function disappear.
+    - Normal publishes: 201.
+    - 0221's `show_attendance_count` is accepted, so 0221 is applied and the gap starts at 0224.
+- **Who was affected:**
+  - Coming Soon / scheduled sales only. "Open now" publishing never sends `sales_open_at` and was unaffected.
+  - The Home "Coming Soon" rail and the dashboard's sale schedule read the column too. Both already fail quietly (empty list), but they add 400s to the logs.
+- **No partial records:** the insert is a single statement, so each rejected publish created nothing (no event row and no ticket tiers). Nothing needs cleaning up.
+- **Fix (code only, no migration):** `src/lib/comingSoonSupport.ts` and `CreateEventScreen.tsx`.
+  - On Preview, a one-row read of `sales_open_at` checks whether the database supports Coming Soon (once per session). If it doesn't, Coming Soon is not offered and the organizer sees "Scheduling ticket sales for later (Coming Soon) isn't available yet".
+  - If a publish is rejected for the missing 0224 schema:
+    - the banner says **"Not published"** (never "Ready to publish!");
+    - the message is plain language ("Coming Soon isn't available yet, so your event was not published…"), never the raw schema text;
+    - Coming Soon is withdrawn and the form returns to "Open now".
+  - Any other failure also shows "Not published" with its own message. Other schema-cache errors get a generic "needs an update on our side; nothing was published".
+- **Tests:**
+  - `CreateEventScreen.comingSoonUnavailable.test.tsx` (6 tests) runs the real wizard, flyer gate included, against a mock that answers as production does. It covers:
+    - normal publish;
+    - the probe hiding the option;
+    - the rejected Coming Soon publish;
+    - re-publishing as "Open now";
+    - Coming Soon on a 0224 database (status `coming_soon` plus the UTC sales time);
+    - a non-schema failure.
+  - Four of the six fail on the unfixed screen.
+  - `comingSoonSupport.test.ts` covers error detection, message mapping and probe caching.
+- **Permanent fix (needs approval):** apply **0224** after the read-only migration-state check. Once it is applied, the probe succeeds and Coming Soon reappears with no further deploy.
+  - 0224 also enables **pg_cron** and schedules `open_due_event_sales` to run every minute. That is part of the approval.
+  - 0225 (H3) is **not** needed for this bug and does not depend on 0224: its rule only accepts `live` / `published`, with or without the `coming_soon` status. It stays a separate approval.
+
 ## Batch 1: financial integrity and access hardening (2026-11-27)
 
 - **Policy update (owner, 2026-11-27):** transfer-fee refunds also need two admins.
@@ -89,7 +130,7 @@ The PRs required each migration to be applied **before** merging. All six merged
 | **0226** | A captured payment that can't become a ticket makes the signed webhook answer 500 (Paystack retries; nothing is lost once 0226 exists). Successful payments log a warning. Admin → Payouts → Payment exceptions shows an error. |
 | **0229** | Ticket-tier renames are as unsafe as before #127 (oversell, broken in-flight orders). The editor's `key` field is ignored harmlessly. |
 | 0220 | C1 remains open (unpaid tickets usable for entry). |
-| 0224 | "Publish as Coming Soon" fails (H4). |
+| 0224 | "Publish as Coming Soon" fails (H4). **Confirmed missing, 27 Nov** (P0 above); the UI now hides the option. |
 | 0225 | The free-promotion hole remains (H3). |
 
 Vercel runtime logs (Hobby keeps 1 hour) showed no `payment_exception` messages and no runtime errors in the last 24 hours. That is **not** evidence either way.
@@ -201,7 +242,7 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 | H1 | High | Captured payment with no ticket, refund or record (OEL-02) | Finalize failure only logged; verify/webhook return "not found" | B3 | 0226 `payment_exceptions` + record/close (server only, idempotent) + admin list/resolve; both payment paths record (provable ticket refs only); truthful buyer message; Admin → Payouts → Payment exceptions | 0226 local suite 59/59 + 3 mutations caught; webhook/verify behaviour tests 12; panel tests 7 | #124 | ✅ | ✅ #124 `7dc64e6` | ✅ 59/59 + 19 vitest | 🔶 API deployed; ❓ 0226 not confirmed | ⬜ | **D4 adjustment not done:** the panel still says "refund in Paystack, then record it here", which is single-admin. Two-admin refund (B3c) not built. |
 | H2 | High | Username → email lookup open to anyone | `resolve_username_to_email` is anon `SECURITY DEFINER` and returns the email | B4 | 0227 `resolve_login_email(username, password)` (email only with the right password, rate limited); client switched; 0228 revokes the old lookup | 0227+0228 local suite 57/57 + 3 mutations caught; static guard 10 | #125 | ✅ | ✅ #125 `2b51a0b` | ✅ 57/57 + 10 vitest | 🔶 web client deployed; ❓ 0227/0228 not confirmed | ⬜ | If 0227 is not applied, web username login is broken now. D7: 0228 immediately after 0227. Old native builds lose username login. |
 | H3 | High | Organizers can self-promote for free | 0008 write policies on `event_promotions` | — | 0225 (merged in #119/#120) | `promotionEligibility.security.test.ts`; local suite | #119, #120 | ✅ | ✅ #119/#120 | ✅ 0225 suite (in Coming Soon suite) | ❓ 0225 not confirmed | ⬜ | Existing rows left untouched by decision (D3). |
-| H4 | High | "Publish as Coming Soon" fails in production | UI shipped (#119) before 0224 was applied | — | 0224 (merged in #119) | Coming Soon local suite | #119 | ✅ | ✅ #119 | ✅ 195/195 | 🔶 UI deployed; ❓ 0224 not confirmed | ⬜ | Applying 0224 also turns on pg_cron |
+| H4 | High | "Publish as Coming Soon" fails in production | UI shipped (#119) before 0224 was applied | — | 0224 (merged in #119) | Coming Soon local suite | #119 | ✅ | ✅ #119 | ✅ 195/195 | 🔶 UI deployed; ❌ 0224 confirmed missing (P0, 27 Nov; prod logs) | ⬜ | Applying 0224 also turns on pg_cron. Until then, the UI hides Coming Soon (P0 fix) |
 | H5 | High | No tests run before merging | No PR workflow | B2 | `.github/workflows/pr-checks.yml` (typecheck + vitest) + guard test | Clean-checkout replay; first GitHub run green on #123 | #123 | ✅ | ✅ #123 `8663202` | ✅ CI green on `main` | — | ⬜ branch protection unverified | Branch protection is your setting (docs/release-safeguards.md) |
 | H6 | High | Database can't be rebuilt from the repo | Tables created outside migrations; unrecorded history; production-only seeds | B9 | planned | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | D6 |
 | M1 | Medium | 1-hour reminders almost never sent | Reminder sweep only runs in the daily 08:00 UTC Vercel cron | B6 | planned: pg_cron schedule (after 0224) | planned | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | Depends on H4 (pg_cron) |
