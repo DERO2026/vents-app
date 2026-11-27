@@ -21,7 +21,7 @@ type RefundStatus = 'requested' | 'approved' | 'refund_pending' | 'refund_failed
 export interface PaymentExceptionRow {
   id: string;
   reference: string;
-  reason: 'not_found' | 'amount_mismatch' | 'duplicate_payment' | 'transfer_not_completed';
+  reason: 'not_found' | 'amount_mismatch' | 'duplicate_payment' | 'transfer_not_completed' | 'overpayment';
   detail: string | null;
   amount_kobo: number;
   expected_kobo: number | null;
@@ -52,6 +52,11 @@ export function reasonText(r: PaymentExceptionRow): string {
   const fee = r.kind === 'ticket_transfer_fee';
   if (r.reason === 'transfer_not_completed') {
     return 'Transfer fee paid, but the ticket transfer could not complete (cancelled, expired or ticket no longer eligible)';
+  }
+  if (r.reason === 'overpayment') {
+    // 0239: the transfer completed; amount_kobo is ONLY the excess (the cap
+    // on any refund), expected_kobo the fee.
+    return `Transfer fee overpaid: the transfer completed; only the extra ${fmt(r.amount_kobo)} is refundable${r.expected_kobo != null ? ` (fee ${fmt(r.expected_kobo)})` : ''}`;
   }
   if (r.reason === 'duplicate_payment') {
     return fee ? 'Second payment of a ticket-transfer fee that was already paid' : 'Second payment for an order that was already paid';

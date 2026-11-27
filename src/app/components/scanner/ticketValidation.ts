@@ -75,6 +75,9 @@ function deniedInfo(result: any): { headline: string; detail: string } {
   switch (reason) {
     case 'expired':
       return { headline: 'EXPIRED TICKET', detail: msg || 'This pass has expired.' };
+    case 'not_paid':
+      // Migration 0220: a ticket without a confirmed payment never checks in.
+      return { headline: 'NOT PAID', detail: 'This ticket has no confirmed payment. Do not admit.' };
     case 'wrong_organizer':
     case 'payload_mismatch':
       return { headline: 'WRONG EVENT', detail: msg || 'This ticket is for a different event.' };

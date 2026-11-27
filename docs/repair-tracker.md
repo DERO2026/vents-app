@@ -19,6 +19,65 @@ Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open item
   - The H2 test now allows the old lookups only behind that guard.
 - **Permanent fix (needs approval):** apply 0227 after the read-only state check. The fallback then never runs. Apply 0228 (D7) only after 0227 **and** after the store apps are updated, or installed apps lose username login.
 
+## Production read-only findings and migrations 0239/0240 (2026-11-27)
+
+All queries below were owner-authorized, read-only, run in `BEGIN … READ ONLY … ROLLBACK`, VENTS project only.
+
+**Verified migration state:**
+- **Applied:** 0201, 0202 (its trigger replaced by 0205), 0203, 0205, 0208, 0211, 0213.
+  - The payout functions are byte-identical to a local replay of 0201–0214.
+  - The fee functions are byte-identical to 0208.
+- **Missing:** 0064, 0220, 0224, 0225, 0226, 0227, 0228, 0233–0238.
+- **pg_cron:** not installed (1.6.4 available), so there are no cron jobs. 0203's hourly earnings job was never scheduled, and enabling pg_cron (0224) schedules only 0224's own two jobs.
+
+**Confirmed policy values (live):**
+
+| Policy | Live value |
+|---|---|
+| Attendee service fee | 1.5% (`ticket_fee_buyer_multiplier('v3_15_35')` = 1.015) |
+| Organizer commission | 3.5% (35,000 kobo on 1,000,000 kobo) |
+| Fee models allowed | `legacy_5` and `v3_15_35` only (112 legacy tickets, 2 `v3_15_35`) |
+| Payout approval | Super Admin only. `admin_payout_pin_policy` length 10; `admin_approve_withdrawal_for_payment` / `admin_authorize_and_claim_payout` live; 0211's two-admin first-approval functions closed to clients |
+| Representative reward hold | 7 days (`earn_settings.settlement_hold_days`, one row) |
+
+**Transfer-fee reconciliation (25 transfers, read-only):**
+- **No database inconsistency.** No duplicate reference, no paid-but-not-accepted, no accepted-without-fee.
+- **Paid:** 4 accepted transfers, 50,000 kobo each.
+- **Needs Paystack (owner action).** 3 **declined** transfers had a payment reference issued and no payment recorded. Look each one up in Paystack; if it shows success, the money was kept with no record:
+  - `txf_303175e81ffc49de86b46aab0c88bad9` (transfer `29c1a6b9`, 5 Sep)
+  - `txf_0e637fd9996a4757b3ab05b8e658fb07` (`602f9526`, 6 Sep)
+  - `txf_fc15bd82359747ae91648bd210c8456c` (`426f1698`, 9 Sep)
+- **Not visible in the database:**
+  - *Replaced references:* initiate overwrote `fee_payment_ref`, so a Paystack export of all `txf_` successes must be compared with the 4 paid references above.
+  - *Overpayments:* the amount was never stored, so they're visible only in Paystack.
+
+**Migration 0239** (`0239_transfer_fee_payment_safety_live.sql`, NOT applied).
+- **What it replaces:** 0064 + 0233 + 0238 for production. Do not apply those as written.
+- **Live baseline:** it is fingerprinted to the live `confirm_transfer_fee_payment` (`5baaac00…`) and 0043's initiate/owner functions, keeps the live order and the `<` rule, and records every payment that bought nothing or too much.
+  - Recording: one payment exception per Paystack reference, idempotent.
+  - Outcomes recorded: overpayment (excess only), underpayment or no amount, duplicate, late (expired / cancelled / declined / ineligible), unknown reference.
+- **Replays:** every answer carries `:refund_queued` / `:excess_refund_queued`, and replays return the stored first answer while writing nothing.
+- **Evidence:** attempts are immutable, so every original reference is kept.
+- **Refunds:** none automatic. They go through 0234 (two different administrators, the second a Super Admin; capped at the recorded amount, so the excess only for an overpayment; sent to Paystack once).
+- **Live gap closed:** a NULL amount completes a transfer on the live function. 0239 refuses it. Unreachable from the app, but real at the database level.
+
+**Migration 0240:** 0238's reviewed refund-outcome bodies, byte for byte, applied after 0234.
+
+**Correction to the earlier order:** 0234 requires `payment_exceptions.transfer_id`, which only 0233 created, so "0226 → 0234" would fail. Order: **0226 → 0239 → 0234 → 0240**.
+
+**Tests and tooling:**
+- `run-transfer-fee-live-0239-verification.sh` (95 checks):
+  - reproduces production's gaps on the exact live body first;
+  - covers webhook/verify concurrency and two references at once;
+  - covers two-admin refunds and undo that restores the live functions byte for byte and never deletes records.
+- Read-only precheck: `scripts/ops/0239-precheck.sql`. `undo_0234` now also refuses while 0240 is applied.
+
+**0220 (P0, unpaid tickets admitted):** still not applied.
+- **No code-only mitigation:** `verify_entry_pass` checks a ticket in atomically, so the scanner can't intercept it.
+- **Precheck:** `scripts/ops/0220-precheck.sql` is read-only and generated from 0220's own text anchors (`run-0220-precheck-verification.sh`, 19 checks). It predicts whether 0220 would patch or refuse production's functions. It needs approval to run.
+- **Suites:** 0220 suite 142/142; its mutation test shows exactly the 18 `[0220]` checks fail without it.
+- **Scanner:** shows "NOT PAID — Do not admit" for 0220's `not_paid` denial.
+
 ## Financial safety follow-up: transfer fees (2026-11-27)
 
 Found by the read-only production investigation (owner-authorized):

@@ -22,6 +22,11 @@ BEGIN
               AND position('[0238]' IN prosrc) > 0) THEN
     RAISE EXCEPTION 'undo_0234: 0238 is still applied; undo in reverse order (0238 first)';
   END IF;
+  -- 0240 (production path) patches 0234's refund-outcome functions with 0238's text.
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE oid = to_regprocedure('public.finalize_payment_exception_refund(text)')
+              AND position('[0238]' IN prosrc) > 0) THEN
+    RAISE EXCEPTION 'undo_0234: 0240 (or 0238) is still applied; undo in reverse order (0240 first)';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.payment_exceptions WHERE refund_status IN ('approved', 'refund_pending')) THEN
     RAISE EXCEPTION 'undo_0234: a refund is approved or in flight; finish it before undoing';
   END IF;

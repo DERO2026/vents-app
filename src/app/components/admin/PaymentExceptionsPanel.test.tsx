@@ -93,4 +93,9 @@ describe('PaymentExceptionsPanel', () => {
     expect(reasonText({ ...ROW, reason: 'amount_mismatch', detail: null, amount_kobo: 100, expected_kobo: 4567500 } as any))
       .toBe('Amount paid (₦1.00) did not match the order (₦45,675.00)');
   });
+
+  it('reason text for an overpaid transfer fee (0239): only the excess is refundable', () => {
+    expect(reasonText({ ...ROW, kind: 'ticket_transfer_fee', reason: 'overpayment', detail: null, amount_kobo: 7000, expected_kobo: 50000 } as any))
+      .toBe('Transfer fee overpaid: the transfer completed; only the extra ₦70.00 is refundable (fee ₦500.00)');
+  });
 });
