@@ -117,18 +117,22 @@ describe('api/wallet/refund-ticket.ts: extended, not duplicated, to stay within 
 describe('api/webhook/paystack.ts: refund.processed/refund.failed fallback chain gets one more link', () => {
   it('tries finalize_service_booking_refund only after both finalize_ticket_refund and finalize_transfer_fee_refund report not_found', () => {
     expect(webhookSrc).toMatch(/finalize_service_booking_refund/);
-    const idx1 = webhookSrc.indexOf('finalize_ticket_refund');
-    const idx2 = webhookSrc.indexOf('finalize_transfer_fee_refund');
-    const idx3 = webhookSrc.indexOf('finalize_service_booking_refund');
+    // Within the refund-event handler (the transfer-fee link is a helper,
+    // transferFeeRefundOutcome, that tolerates 0064 being absent).
+    const chain = webhookSrc.slice(webhookSrc.indexOf("if (event?.event === 'refund.processed'"));
+    const idx1 = chain.indexOf('finalize_ticket_refund');
+    const idx2 = chain.indexOf("transferFeeRefundOutcome('processed'");
+    const idx3 = chain.indexOf('finalize_service_booking_refund');
     expect(idx1).toBeGreaterThan(-1);
     expect(idx2).toBeGreaterThan(idx1);
     expect(idx3).toBeGreaterThan(idx2);
   });
 
   it('the same three-deep fallback exists for the failed-refund path', () => {
-    const idx1 = webhookSrc.indexOf('fail_ticket_refund');
-    const idx2 = webhookSrc.indexOf('fail_transfer_fee_refund');
-    const idx3 = webhookSrc.indexOf('fail_service_booking_refund');
+    const chain = webhookSrc.slice(webhookSrc.indexOf("if (event?.event === 'refund.processed'"));
+    const idx1 = chain.indexOf('fail_ticket_refund');
+    const idx2 = chain.indexOf("transferFeeRefundOutcome('failed'");
+    const idx3 = chain.indexOf('fail_service_booking_refund');
     expect(idx3).toBeGreaterThan(idx2);
     expect(idx2).toBeGreaterThan(idx1);
   });

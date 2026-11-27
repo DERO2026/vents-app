@@ -98,10 +98,10 @@ describe('0238: transfer-fee refunds need two admins (owner decision 2026-11-27)
     expect(confirm.match(/'transfer_not_completed'/g)?.length).toBe(4);
     expect(confirm).not.toMatch(/fee_refund_status = 'needed'/);
   });
-  it('the webhook only refunds automatically on the old answer, never on the queued one', () => {
+  it('the webhook never refunds a transfer fee automatically (two admins, 2026-11-27); a queued answer is never "claimed"', () => {
     const hook = readFileSync(join(root, 'api', 'webhook', 'paystack.ts'), 'utf8');
-    expect(hook).toMatch(/if \(raw\.endsWith\(':refund_queued'\)\) return \{ feeStatus: [^}]*refundClaimed: false/);
-    expect(hook.match(/if \(refundClaimed\) await attemptTransferFeeRefund|else if \(refundClaimed\) \{/g)?.length).toBe(2);
+    expect(hook).toMatch(/if \(raw\.endsWith\(':refund_queued'\)\) return \{ \.\.\.none, feeStatus: [^}]*refundQueued: true \}/);
+    expect(hook).not.toMatch(/attemptTransferFeeRefund|attach_transfer_fee_refund_id|mark_transfer_fee_refund_initiation_failed/);
   });
   it('refunds already in flight are left alone; owed ones are backfilled; gated undo; suite exists', () => {
     expect(m).toMatch(/t\.fee_refund_status = 'needed' AND t\.fee_refund_id IS NULL\) OR t\.fee_refund_status = 'failed'/);
