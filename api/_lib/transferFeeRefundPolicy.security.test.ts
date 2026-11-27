@@ -234,3 +234,47 @@ describe('refund events when 0064 is absent (production)', () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });
+
+// 0239 (not yet applied) answers: every literal answer the migration can
+// return must reach the payer as "recorded, waiting for approval" (or, for
+// an overpayment, as a success with that notice) -- never as "not recorded",
+// and never as a plain success that hides money owed back.
+describe('0239 answers, end to end through the verify path', () => {
+  const failed = ['not_found:refund_queued', 'amount_mismatch:50000:1000:refund_queued', 'amount_mismatch:50000:null:refund_queued',
+    'duplicate_payment:refund_queued', 'expired:refund_queued', 'transfer_not_pending:declined:refund_queued',
+    'transfer_not_pending:cancelled:refund_queued', 'ticket_ineligible:refund_queued'];
+  for (const answer of failed) {
+    it(`${answer}: error, pending_review, reference kept`, async () => {
+      confirmAnswers(answer);
+      const res = makeRes();
+      await handler(verifyReq('txf_0239'), res);
+      const body = res.json.mock.calls.at(-1)[0];
+      expect(body.status).toBe('error');
+      expect(body.refundState).toBe('pending_review');
+      expect(body.error).toContain('txf_0239');
+      expect(refundCalls()).toHaveLength(0);
+    });
+  }
+  for (const answer of ['confirmed:excess_refund_queued', 'already_paid:excess_refund_queued']) {
+    it(`${answer}: success with the excess-refund notice`, async () => {
+      confirmAnswers(answer);
+      const res = makeRes();
+      await handler(verifyReq('txf_0239'), res);
+      const body = res.json.mock.calls.at(-1)[0];
+      expect(body.status).toBe('success');
+      expect(body.notice).toMatch(/extra amount has been recorded for a refund/);
+    });
+  }
+  it('every answer literal in the migration is one of the above', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const sql = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0239_transfer_fee_payment_safety_live.sql'), 'utf8');
+    const confirm = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION public.confirm_transfer_fee_payment'));
+    const literals = new Set([...confirm.matchAll(/'([a-z_]+(?::[a-z_]+)*:(?:refund_queued|excess_refund_queued))'/g)].map((m) => m[1]));
+    for (const l of literals) {
+      const covered = [...failed, 'confirmed:excess_refund_queued', 'already_paid:excess_refund_queued'].some((a) => a === l || a.endsWith(l));
+      expect(covered, `uncovered 0239 answer ${l}`).toBe(true);
+    }
+    expect(confirm).toMatch(/':refund_queued'/);   // composed answers (expired / not pending / ineligible / amount) end with it
+  });
+});
