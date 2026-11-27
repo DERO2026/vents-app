@@ -76,6 +76,18 @@ describe('two-admin refund in the payment exceptions panel', () => {
     expect(q('payment-exception-request-refund')).toBeNull();
   });
 
+  it('a waiting request cannot be closed by hand from the panel', async () => {
+    await render({ ...BASE, refund_status: 'requested', refund_amount_kobo: 1000000, refund_request_status: 'pending' });
+    expect(q('payment-exception-resolve')).toBeNull();
+  });
+
+  it('a request the second admin rejected says so and allows a new request', async () => {
+    await render({ ...BASE, refund_status: 'requested', refund_amount_kobo: 1000000, refund_request_status: 'rejected' });
+    expect(q('payment-exception-refund-stage')!.textContent).toMatch(/was rejected in Admin Actions/);
+    expect(q('payment-exception-request-refund')).toBeTruthy();
+    expect(q('payment-exception-send-refund')).toBeNull();
+  });
+
   it('an approved refund: a Super Admin can send it (exact route and body); it can no longer be closed by hand', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch' as any).mockResolvedValue({ ok: true, json: async () => ({ status: 'refund_pending' }) } as any);
     await render({ ...BASE, refund_status: 'approved', refund_amount_kobo: 400000, refund_reason: 'Partial refund agreed', refund_requested_by_name: 'sub', refund_approved_by_name: 'admin_b' });

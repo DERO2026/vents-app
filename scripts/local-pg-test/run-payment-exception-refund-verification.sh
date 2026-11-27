@@ -151,6 +151,10 @@ expect_value "...and nothing is approved" "$(state "$E2")" "open/requested"
 expect_error "a request older than 7 days can't be approved" "older than 7 days" "$(as "$ADMIN_B" "SELECT public.approve_admin_action('$Q2');")"
 "${PSQL[@]}" -q -c "$(as "$ADMIN_B" "SELECT public.reject_admin_action('$Q2', 'old request');")" 2>/dev/null || \
   "${PSQL[@]}" -q -c "UPDATE public.admin_action_requests SET status = 'rejected' WHERE id = '$Q2';"
+expect_value "the admin list shows the request was rejected" \
+  "$(val "$(as "$SUB" "SELECT refund_status || '/' || refund_request_status FROM public.admin_list_payment_exceptions('open', 50, 0) WHERE id = '$E2';")")" "requested/rejected"
+expect_ok "a rejected request no longer blocks closing it by hand (checked in a rolled-back transaction)" \
+  "BEGIN; $(as "$ADMIN_B" "SELECT public.admin_resolve_payment_exception('$E2', 'checking the rule only');") ROLLBACK;"
 Q2B=$(request "$ADMIN_A" "$E2" 500000 "Amount mismatch refund, refiled")
 expect_value "after the second admin rejects, a new request can be filed" "$(state "$E2")/$(val "SELECT status FROM public.admin_action_requests WHERE id = '$Q2B';")" "open/requested/pending"
 

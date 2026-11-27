@@ -113,8 +113,8 @@ async function attemptTransferFeeRefund(reference: string, amountKobo: number, n
 export async function paymentExceptionRefundOutcome(kind: 'processed' | 'failed', refundId: string, reason?: string): Promise<string> {
   try {
     if (kind === 'processed') {
-      const rows = await callProjectAdminTableRpc<any>('finalize_payment_exception_refund', [refundId]);
-      return rows[0]?.status ?? 'not_found';
+      const finalized = await callProjectAdminTableRpc<any>('finalize_payment_exception_refund', [refundId]);
+      return finalized[0]?.status ?? 'not_found';
     }
     return (await callProjectAdminRpc<string>('fail_payment_exception_refund', [refundId, reason || 'refund failed'])) ?? 'not_found';
   } catch (err: any) {

@@ -42,6 +42,7 @@ export interface PaymentExceptionRow {
   refund_requested_by_name?: string | null;
   refund_approved_by_name?: string | null;
   refund_error?: string | null;
+  refund_request_status?: 'pending' | 'approved' | 'rejected' | null;
 }
 
 const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -64,7 +65,10 @@ export function refundStage(r: PaymentExceptionRow): string | null {
   if (r.refund_status === undefined) return null;
   const amt = r.refund_amount_kobo != null ? fmt(r.refund_amount_kobo) : '';
   switch (r.refund_status) {
-    case 'requested': return `Refund of ${amt} requested by ${r.refund_requested_by_name ?? 'an admin'}: waiting for a different Super Admin to approve it in Admin Actions`;
+    case 'requested':
+      return r.refund_request_status === 'rejected'
+        ? `The refund request of ${amt} was rejected in Admin Actions. Request it again if the money is still owed.`
+        : `Refund of ${amt} requested by ${r.refund_requested_by_name ?? 'an admin'}: waiting for a different Super Admin to approve it in Admin Actions`;
     case 'approved': return `Refund of ${amt} approved by ${r.refund_requested_by_name ?? 'an admin'} and ${r.refund_approved_by_name ?? 'a Super Admin'}: ready to send to Paystack`;
     case 'refund_pending': return `Refund of ${amt} sent to Paystack: waiting for Paystack to confirm`;
     case 'refunded': return `Refunded ${amt}`;
@@ -169,8 +173,12 @@ export function PaymentExceptionsPanel({ isSuperAdmin }: { isSuperAdmin: boolean
       ) : rows.map((r) => {
         const stage = refundStage(r);
         const hasRefundFlow = stage !== null;
-        const canRequest = hasRefundFlow && r.status === 'open' && (r.refund_status == null || r.refund_status === 'refund_failed' || r.refund_status === 'requested');
-        const refundBusy = hasRefundFlow && (r.refund_status === 'approved' || r.refund_status === 'refund_pending');
+        const requestRejected = r.refund_status === 'requested' && r.refund_request_status === 'rejected';
+        const canRequest = hasRefundFlow && r.status === 'open' && (r.refund_status == null || r.refund_status === 'refund_failed' || requestRejected);
+        // Approved or in flight: Paystack's webhook finishes it. Requested and
+        // still waiting: the second admin decides first (the database refuses
+        // a hand close in both cases; the panel doesn't offer it).
+        const refundBusy = hasRefundFlow && (r.refund_status === 'approved' || r.refund_status === 'refund_pending' || (r.refund_status === 'requested' && !requestRejected));
         const canClose = r.status === 'open' && isSuperAdmin && !refundBusy;
         return (
         <div key={r.id} data-testid="payment-exception-row" style={{ background: adminTheme.panelAlt, borderRadius: 14, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -211,7 +219,7 @@ export function PaymentExceptionsPanel({ isSuperAdmin }: { isSuperAdmin: boolean
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              {canRequest && r.refund_status !== 'requested' && (
+              {canRequest && (
                 <button data-testid="payment-exception-request-refund" onClick={() => { setRequesting(r.id); setResolving(null); setAmount((r.amount_kobo / 100).toFixed(2)); setReason(''); setActionError(null); setMessage(null); }} style={{ ...linkBtn, color: adminTheme.blue }}>Request refund</button>
               )}
               {hasRefundFlow && r.refund_status === 'approved' && isSuperAdmin && (

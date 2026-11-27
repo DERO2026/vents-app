@@ -346,7 +346,8 @@ CREATE FUNCTION public.admin_list_payment_exceptions(
   refund_status text, refund_amount_kobo bigint, refund_reason text,
   refund_requested_by uuid, refund_requested_by_name text, refund_requested_at timestamptz,
   refund_approved_by uuid, refund_approved_by_name text, refund_approved_at timestamptz,
-  refund_admin_request_id uuid, refund_id text, refund_error text
+  refund_admin_request_id uuid, refund_id text, refund_error text,
+  refund_request_status text
 )
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO ''
 AS $function$
@@ -368,12 +369,14 @@ BEGIN
          x.refund_status, x.refund_amount_kobo, x.refund_reason,
          x.refund_requested_by, COALESCE(ra.username, ra.full_name), x.refund_requested_at,
          x.refund_approved_by, COALESCE(rb.username, rb.full_name), x.refund_approved_at,
-         x.refund_admin_request_id, x.refund_id, x.refund_error
+         x.refund_admin_request_id, x.refund_id, x.refund_error,
+         q.status
     FROM public.payment_exceptions x
     LEFT JOIN public.users u ON u.id = x.user_id
     LEFT JOIN public.events e ON e.id = x.event_id
     LEFT JOIN public.users ra ON ra.id = x.refund_requested_by
     LEFT JOIN public.users rb ON rb.id = x.refund_approved_by
+    LEFT JOIN public.admin_action_requests q ON q.id = x.refund_admin_request_id
    WHERE p_status IS NULL OR x.status = p_status
    ORDER BY x.first_seen_at DESC, x.id
    LIMIT LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200)
