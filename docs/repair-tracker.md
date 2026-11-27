@@ -2,6 +2,26 @@
 
 Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open items from the earlier lifecycle audit (OEL) and checkout audit (CF).
 
+## Current state (consolidation, 2026-11-27)
+
+Supersedes the "Verified state" section below, which describes `main` at `8663202`.
+
+- **`main` = production = `818d0df`** ("Merge pull request #134"). `getvents.com` → `dpl_8RKLbddeS7JTdz892r3sbt9oXwHU` (READY, built from `818d0df`). No Vercel runtime errors in the 24 hours before the check.
+- **Merged since `8663202`:** #128 (post-merge audit docs), #129 (N1, 0230), #130 (N2, 0232), #131 (N3, 0231), #132–#134 (backup tooling). No open PRs.
+- **Branch consolidation (patch content compared with `main`):** nothing completed is left off `main`.
+  - Superseded by merged work: `claude/amazing-knuth-72smkr` (0220/0221 identical on main), `prep/f15-f16-f21-vc-pool-accounting` (0170 identical), `feat/centralize-promotion-pricing` (#30), `claude/admin-send-announcement` (0191 identical), `claude/awesome-pascal-adus2b` (0198 identical), `claude/hopeful-gates-dmxdkb` (`89b1ccd`), `claude/payout-incident-batch-d` (#84, ported and closed).
+  - Kept off `main` on purpose: `claude/o4-cloud-rehearsal` and `claude/prod-visual-check` (throwaway rehearsals); `claude/project-thread-oesvkg` (speculative `exploreTab` change its own commit says has no visible effect; bug never reproduced).
+- **Production database:** migration state for 0180–0232 is still **unknown** (no production query made). Nothing has been applied since the records in the migration register.
+- **Backups:** the scheduled backup has failed since 10 Nov (missing `BACKUP_ENCRYPTION_PASSPHRASE`). The last good artifact (run #22, 11 Nov) expires 2026-12-11.
+
+### Registration pause (AZ-50)
+
+- **Mechanism:** the production row `app_config.disable_signups = true`. Not code, an environment variable, a feature flag or a deployment.
+- **Who could set it:** only the root account. The `app_config` update policy and `admin_update_app_config` have required `is_root()` since 0083/0124 (Sept 2026); no migration or script in the repository sets it. It is changed from Admin → System → New Sign-ups and logged in `admin_logs` with action `app_config_update` (readable in the Admin audit log; not read here).
+- **When:** first recorded as already on in the read-only production facts of 2026-10-30 (`docs/LAUNCH_READINESS_MASTER.md`, commit `877d2af`). The exact date is in that `admin_logs` entry.
+- **Authorization:** the owner confirmed on 2026-11-27 that the pause was approved until launch readiness.
+- **Gap (AZ-45):** the pause is enforced only by the app. `handle_new_user` (the `auth.users` trigger) does not check it, so a direct Supabase Auth sign-up with the public anon key is not blocked unless the Supabase dashboard sign-up setting is also off (not visible here). Fixed in the registration batch together with a server-enforced tester allowlist. **Sign-ups stay paused.**
+
 ## Verified state (post-merge audit, 2026-11-26)
 
 Verified from the repository, GitHub and Vercel deployment records. **No production database was queried.**
@@ -69,6 +89,19 @@ Approved decisions are binding for every batch. A decision being approved does n
 |---|---|---|---|---|---|
 | D1a | **Choosing the Organizer role is enough.** A user who selects it is approved to operate as an organizer. No separate admin approval before publishing events or selling paid tickets. | 2026-11-26 | Sign-up already worked this way (`set_signup_role`). After sign-up, "Become an Organizer" (VENTS Work) filed an application and waited "1–3 business days" for admin review, which is a separate approval. #126 makes it the same one-step choice as sign-up, with no database or permission change. Legacy pending or rejected applications no longer block anyone. Admins can still read old requests. Unchanged: event creation still needs the organizer capability; payouts still need a verified bank account, the PIN and two-admin approval; `promote_to_organizer` stays revoked; staff are never offered the option. | M5, OEL-04, OEL-10 | ✅ Decided; implemented in #126 |
 | D2a | **Organizers may rename a ticket tier after sales begin.** Existing tickets keep their purchase-time name; transactions, payments, receipts, refunds and reports are never rewritten; ownership, door scanning and check-in keep working; the event shows the new name. | 2026-11-26 | Tickets store the tier **name**, and capacity, availability and analytics matched by the current name. Without a fix, a rename oversold the tier, broke orders already in checkout (charged, no ticket) and split reports. Migration 0229 (additive) gives each tier a stable key and server-kept previous names, and makes purchase, capacity and reporting count every name the tier has had. No ticket or financial row is written. | M4 (renaming), #127 | ✅ Decided; implemented in #127 |
+
+### Confirmed policies (owner, 2026-11-27)
+
+Binding for every batch. They match the latest decisions already in the code; none of them changes code or production.
+
+| ID | Policy | Source it confirms | Note |
+|---|---|---|---|
+| P1 | **Withdrawals: the VENTS Super Admin alone approves, with the 10-digit Admin Payout PIN.** | 0213 (owner decision 2026-11-10) | Replaces the "two-admin approval" wording in D1a above and the 0211 rule. Admin and sub-admin reviews stay advisory. |
+| P2 | **Attendee service fee 1.5%; organizer commission 3.5%.** | 0208 (owner instruction 2026-11-08), `docs/business-model.md` | The 4% + 5% model of 0203 is retired. |
+| P3 | **Eligible organizer and service-provider earnings release within 48 hours (or sooner) after the event ends or the service is completed.** | 0203 (approved 2026-10-30) | Representative rewards keep their own 7-day hold (0201). |
+| P4 | **A successful payment without an issued ticket is refunded only with two-admin approval.** | D4 above | Still to build (batch B3c / AZ-10). |
+| P5 | **Public sign-ups stay paused until launch readiness; controlled reopening for live testing only.** | AZ-50 above | |
+| P6 | **Phone number is optional at registration** (label "PHONE NUMBER (OPTIONAL)"; no phone verification when none is given). | Owner requirement 2026-11-27 | Next batch. The database and RPCs already accept a missing phone; only `AuthScreen.tsx` requires it. |
 
 ### ⚠️ D7 compatibility risk
 
@@ -161,12 +194,12 @@ Each gate needs its own explicit approval, recorded here, before anything behind
 
 | ID | Sev | Finding | Root cause | Evidence | Status | Proposed fix |
 |---|---|---|---|---|---|---|
-| N1 | High | A price (or promo) change while a buyer is mid-checkout breaks the purchase. **Paystack path:** a raise means charged with no ticket; a cut means the buyer overpays with no record or refund. **Wallet path:** a raise means the wallet is debited more than agreed. A buyer who retries within 30 minutes is stuck on "price changed". | `create_pending_purchase` stores only the total (`amount_kobo`). `finalize_pending_purchase` re-reads the **current** tier price and promo. `confirm_ticket_payment(_via_wallet)` computes the expected amount (and the wallet debit) from those values. The 30-minute reuse ignores price changes. | Code trace (`docs/n1-checkout-price-snapshot.md`); reproduced locally (9 defects) | 🔶 **Implemented, unmerged: [#129](https://github.com/DERO2026/vents-app/pull/129)**, migration **0230** | See "N1–N3 fixes" below. |
-| N2 | High (per owner brief; was Low) | Staff exclusion from self-selecting Organizer was enforced only in the UI: `set_signup_role` refused only `role = 'admin'`, so a **sub-admin**, or **root** when its role isn't `'admin'`, could make themselves an organizer by calling the RPC directly. | 0121 checks `v_current_role = 'admin'` only | Code (0121); reproduced locally | 🔶 **Implemented, unmerged: [#130](https://github.com/DERO2026/vents-app/pull/130)**, migration **0232** | See "N1–N3 fixes" below. |
-| N3 | Critical (per owner brief) | **0229's older-app fallback can link the wrong tier.** An older app build (no tier keys) that deletes a tier and adds or renames another in the same save makes the new tier inherit the deleted tier's identity and sales; an order already in checkout for the deleted tier **finalizes at the other tier's price** (₦9,000 order issued as ₦50 and confirmed). An event with **two tiers of the same name can't be edited**. Also found while fixing: an older build re-saving a tier the current app renamed drops its earlier names (sales stop counting), and the current app can delete a sold tier and add a new one with the same name, which takes over its sales. | The fallback matches by the per-save positional `id`; legacy duplicate names fail the identity check; no rule ties a sold name to its tier. | Local Postgres test (6 defects reproduced) | 🔶 **Implemented, unmerged: [#131](https://github.com/DERO2026/vents-app/pull/131)**, migration **0231** | See "N1–N3 fixes" below. |
+| N1 | High | A price (or promo) change while a buyer is mid-checkout breaks the purchase. **Paystack path:** a raise means charged with no ticket; a cut means the buyer overpays with no record or refund. **Wallet path:** a raise means the wallet is debited more than agreed. A buyer who retries within 30 minutes is stuck on "price changed". | `create_pending_purchase` stores only the total (`amount_kobo`). `finalize_pending_purchase` re-reads the **current** tier price and promo. `confirm_ticket_payment(_via_wallet)` computes the expected amount (and the wallet debit) from those values. The 30-minute reuse ignores price changes. | Code trace (`docs/n1-checkout-price-snapshot.md`); reproduced locally (9 defects) | ✅ **Merged: [#129](https://github.com/DERO2026/vents-app/pull/129)**, migration **0230** | See "N1–N3 fixes" below. |
+| N2 | High (per owner brief; was Low) | Staff exclusion from self-selecting Organizer was enforced only in the UI: `set_signup_role` refused only `role = 'admin'`, so a **sub-admin**, or **root** when its role isn't `'admin'`, could make themselves an organizer by calling the RPC directly. | 0121 checks `v_current_role = 'admin'` only | Code (0121); reproduced locally | ✅ **Merged: [#130](https://github.com/DERO2026/vents-app/pull/130)**, migration **0232** | See "N1–N3 fixes" below. |
+| N3 | Critical (per owner brief) | **0229's older-app fallback can link the wrong tier.** An older app build (no tier keys) that deletes a tier and adds or renames another in the same save makes the new tier inherit the deleted tier's identity and sales; an order already in checkout for the deleted tier **finalizes at the other tier's price** (₦9,000 order issued as ₦50 and confirmed). An event with **two tiers of the same name can't be edited**. Also found while fixing: an older build re-saving a tier the current app renamed drops its earlier names (sales stop counting), and the current app can delete a sold tier and add a new one with the same name, which takes over its sales. | The fallback matches by the per-save positional `id`; legacy duplicate names fail the identity check; no rule ties a sold name to its tier. | Local Postgres test (6 defects reproduced) | ✅ **Merged: [#131](https://github.com/DERO2026/vents-app/pull/131)**, migration **0231** | See "N1–N3 fixes" below. |
 | N4 | High (operational) | PRs were merged and deployed before their migrations were confirmed applied (see "Production risk right now"). | Merge = deploy on Vercel; the apply-before-merge order wasn't followed | GitHub and Vercel records | Open: **owner must confirm which of 0220–0229 are applied** | Confirm the production state (owner), then apply any missing migrations in the order below. |
 
-## N1–N3 fixes (2026-11-26, owner-authorized; unmerged, nothing applied)
+## N1–N3 fixes (2026-11-26, owner-authorized; merged 2026-11-26 as #129–#131, nothing applied)
 
 Each fix is its own branch and PR from `main` `8663202`, with no shared files. They merge cleanly together (checked on a local throwaway merge that was not pushed). All three migrations were applied together on one local database and every suite was run there.
 
