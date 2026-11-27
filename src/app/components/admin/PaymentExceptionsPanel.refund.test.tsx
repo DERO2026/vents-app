@@ -135,6 +135,10 @@ describe('two-admin refund in the payment exceptions panel', () => {
     expect(q('payment-exception-resolve')!.textContent).toBe('Record resolution');
   });
 
+  it('describes a transfer that could not complete after its fee was paid (0238)', () => {
+    expect(reasonText({ ...BASE, kind: 'ticket_transfer_fee', reason: 'transfer_not_completed' } as any)).toMatch(/ticket transfer could not complete/);
+  });
+
   it('describes transfer-fee duplicates', () => {
     expect(reasonText({ ...BASE, kind: 'ticket_transfer_fee', reason: 'duplicate_payment' } as any)).toBe('Second payment of a ticket-transfer fee that was already paid');
   });

@@ -18,6 +18,10 @@ BEGIN
                   AND table_name = 'payment_exceptions' AND column_name = 'refund_status') THEN
     RAISE EXCEPTION 'undo_0234: 0234 is not applied';
   END IF;
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE oid = to_regprocedure('public.confirm_transfer_fee_payment(text,bigint)')
+              AND position('[0238]' IN prosrc) > 0) THEN
+    RAISE EXCEPTION 'undo_0234: 0238 is still applied; undo in reverse order (0238 first)';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.payment_exceptions WHERE refund_status IN ('approved', 'refund_pending')) THEN
     RAISE EXCEPTION 'undo_0234: a refund is approved or in flight; finish it before undoing';
   END IF;
