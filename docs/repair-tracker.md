@@ -2,6 +2,23 @@
 
 Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open items from the earlier lifecycle audit (OEL) and checkout audit (CF).
 
+## P0 incident: website username login (2026-11-27)
+
+- **Symptom:** "We couldn't verify your login right now. Please check your connection and try again." on getvents.com, for username logins only.
+- **Root cause (production API logs):**
+  - Since #125 (26 Nov) the website calls `resolve_login_email`, which migration 0227 creates.
+  - 0227 is not applied in production, so every call returned **404** (6 between 14:05 and 14:36 UTC on 27 Nov, all with referer getvents.com). The login screen mapped that to the generic message above.
+  - Email login was never affected (`/auth/v1/token` 200).
+  - The installed iOS app (pre-#125 build, no referer) still logs in by username through `resolve_username_to_email` (200), because **0228 is not applied either**.
+- **Fix (code only, no migration):** `src/lib/loginLookup.ts`.
+  - The website falls back to the pre-0227 lookup, and the pre-0227 status check, **only** when the server says the 0227 function does not exist (PGRST202 / 404 / 42883).
+  - Other failures are reported honestly:
+    - network: "couldn't reach the server";
+    - lookup service down: "username login temporarily unavailable, use your email".
+  - No-account and wrong-password are still the same generic answer.
+  - The H2 test now allows the old lookups only behind that guard.
+- **Permanent fix (needs approval):** apply 0227 after the read-only state check. The fallback then never runs. Apply 0228 (D7) only after 0227 **and** after the store apps are updated, or installed apps lose username login.
+
 ## Batch 1: financial integrity and access hardening (2026-11-27)
 
 - **Policy update (owner, 2026-11-27):** transfer-fee refunds also need two admins.

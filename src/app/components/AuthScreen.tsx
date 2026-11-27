@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { RepresentativeInviteBanner } from './work/RepresentativeInviteBanner';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { PhoneInput } from './PhoneInput';
+import { resolveUsernameToLoginEmail, getLoginAccountStatus, LoginLookupError, LOGIN_MESSAGES } from '../../lib/loginLookup';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { supabase } from '../../lib/supabase';
@@ -1192,9 +1193,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           // anyone's email (the old resolve_username_to_email did, to
           // anyone). No account and wrong password both return null and
           // reach the same generic "Incorrect" message.
-          const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email' as any, { p_username: loginEmail.toLowerCase(), p_password: password });
-          if (resolveError && /rate_limited/i.test(resolveError.message || '')) throw new Error('Too many attempts. Please wait a few minutes and try again.');
-          if (resolveError) throw new Error(`LOGIN_LOOKUP_FAILED: ${resolveError.message || 'username lookup failed'}`);
+          //
+          // P0 2026-11-27: production does not have 0227 yet, so this RPC
+          // answered 404 and every username login failed. The lookup now
+          // falls back to the pre-0227 function only when the server says
+          // the 0227 one does not exist (src/lib/loginLookup.ts).
+          const resolvedEmail = await resolveUsernameToLoginEmail(supabase as any, loginEmail, password);
           if (!resolvedEmail) throw new Error('Invalid login credentials');
           loginEmail = resolvedEmail;
         }
@@ -1401,8 +1405,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         // message instead of falling through to "Incorrect email or
         // password" below, which previously made a transient lookup
         // failure indistinguishable from a genuinely wrong password.
-        if (msg.includes('LOGIN_LOOKUP_FAILED')) {
-          setErrorMessage("We couldn't verify your login right now. Please check your connection and try again.");
+        if (err instanceof LoginLookupError || msg.includes('LOGIN_LOOKUP_FAILED')) {
+          // Network failure vs. the lookup service failing: different advice.
+          setErrorMessage(err instanceof LoginLookupError && err.kind === 'unavailable' ? LOGIN_MESSAGES.unavailable : LOGIN_MESSAGES.network);
           return;
         }
         // ROOT-CAUSE FIX (found on retest after the lookup/profile-read
@@ -1441,8 +1446,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           // status (the old get_account_status told anyone, by email).
           const checkIdentifier = email.trim();
           if (checkIdentifier && password) {
-            const { data: statusRows } = await supabase.rpc('get_login_account_status' as any, { p_identifier: checkIdentifier, p_password: password });
-            const row: any = Array.isArray(statusRows) ? statusRows[0] : statusRows;
+            const row: any = await getLoginAccountStatus(supabase as any, checkIdentifier, password);
             if (row?.status === 'suspended' || row?.status === 'deleted') {
               setBanInfo({ status: row.status, until: row.banned_until ?? null });
               return;
