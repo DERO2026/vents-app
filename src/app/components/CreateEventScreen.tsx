@@ -31,6 +31,7 @@ import { OrganizerDeductionNotice, TicketNetEarnings, useOrganizerDeductionRateT
 import { formatKobo } from '../../lib/ticketFees';
 import { toE164ContactPhone, splitStoredContactPhone } from '../../lib/contactPhone';
 import { formatSalesOpen, salesOpenAtFromLocal, salesOpenAtToLocal, validateSalesOpen } from '../../lib/comingSoon';
+import { isMissingComingSoonSchemaError, markComingSoonUnsupported, probeComingSoonSupport, publishErrorMessage } from '../../lib/comingSoonSupport';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; country?: string } | null;
@@ -178,6 +179,28 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   // published); 'coming_soon' = public now, ticket sales open at the planned
   // Nigeria-time date/time. The server enforces every rule again.
   const [salesMode, setSalesMode] = useState<'now' | 'coming_soon'>('now');
+  // P0 2026-11-27: Coming Soon needs migration 0224. null = not known yet.
+  const [comingSoonAvailable, setComingSoonAvailable] = useState<boolean | null>(null);
+  // The last publish/save attempt failed: the preview must not say "Ready".
+  const [publishFailed, setPublishFailed] = useState(false);
+  // On the preview step, find out once whether Coming Soon can work here.
+  useEffect(() => {
+    if (step !== 6) return;
+    let cancelled = false;
+    void probeComingSoonSupport(supabase as any).then((ok) => {
+      if (cancelled || ok === null) return;
+      setComingSoonAvailable(ok);
+      // Never leave a choice selected that this database can't save. An
+      // event already scheduled (editing) keeps its own state.
+      if (ok === false && !originalSalesOpenAtRef.current) setSalesMode('now');
+    });
+    return () => { cancelled = true; };
+  }, [step]);
+  // Moving to another step clears the failed-publish banner (so does the
+  // user picking another sales option, in its click handler). Not tied to
+  // salesMode itself: a failed Coming Soon publish switches it to 'now' and
+  // the failure must stay visible.
+  useEffect(() => { setPublishFailed(false); }, [step]);
   const [salesDate, setSalesDate] = useState('');
   const [salesTime, setSalesTime] = useState('');
   const originalSalesOpenAtRef = useRef<string | null>(null);
@@ -578,6 +601,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const submitEvent = async (requestedStatus: 'live' | 'draft') => {
     setSubmitting(true);
     setErrorMessage(null);
+    setPublishFailed(false);
     try {
       // Coming Soon: publishing makes the event public as Coming Soon (not on
       // sale); a draft keeps the planned opening for later.
@@ -795,7 +819,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     } catch (err: any) {
       console.error('Failed to save event:', err);
       Sentry.captureException(err);
-      setErrorMessage(err.message || 'Failed to save event. Please try again.');
+      // Nothing was created: the insert is a single statement. Never show a
+      // raw schema error, and never leave the preview saying "Ready".
+      setPublishFailed(true);
+      if (isMissingComingSoonSchemaError(err)) {
+        markComingSoonUnsupported();
+        setComingSoonAvailable(false);
+        setSalesMode('now');
+      }
+      setErrorMessage(publishErrorMessage(err, 'Failed to save event. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -962,7 +994,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     } catch (err: any) {
       console.error('Failed to update event:', err);
       Sentry.captureException(err);
-      setErrorMessage(err.message || 'Failed to update event. Please try again.');
+      setPublishFailed(true);
+      if (isMissingComingSoonSchemaError(err)) {
+        markComingSoonUnsupported();
+        setComingSoonAvailable(false);
+      }
+      setErrorMessage(publishErrorMessage(err, 'Failed to update event. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -2005,14 +2042,21 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   flexShrink: 0,
                 }}
               >
-                <Check size={20} color={ventsColors.success} />
+                {publishFailed ? <X size={20} color={ventsColors.error} /> : <Check size={20} color={ventsColors.success} />}
               </div>
-              <div>
-                <p style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 700 }}>{editEventId ? 'Ready to save!' : 'Ready to publish!'}</p>
-                <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>
-                  {editEventId ? 'Review your changes before saving.' : 'Review your event details before publishing.'}
-                </p>
-              </div>
+              {publishFailed ? (
+                <div data-testid="publish-readiness" data-state="failed">
+                  <p style={{ color: ventsColors.error, fontSize: '14px', fontWeight: 700 }}>{editEventId ? 'Not saved' : 'Not published'}</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{errorMessage || 'Something went wrong. Nothing was published.'}</p>
+                </div>
+              ) : (
+                <div data-testid="publish-readiness" data-state="ready">
+                  <p style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 700 }}>{editEventId ? 'Ready to save!' : 'Ready to publish!'}</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>
+                    {editEventId ? 'Review your changes before saving.' : 'Review your event details before publishing.'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Ticket sales: open now (unchanged default) or Coming Soon (0224) */}
@@ -2021,20 +2065,25 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, margin: 0 }}>Ticket sales</p>
                 {!(editEventId && originalSalesOpenAtRef.current) && (
                   <div role="radiogroup" aria-label="Ticket sales" style={{ display: 'flex', gap: '8px' }}>
-                    {([['now', 'Open now'], ['coming_soon', 'Coming Soon']] as const).map(([mode, label]) => (
+                    {([['now', 'Open now'], ['coming_soon', 'Coming Soon']] as const).filter(([mode]) => mode === 'now' || comingSoonAvailable !== false).map(([mode, label]) => (
                       <button
                         key={mode}
                         type="button"
                         role="radio"
                         aria-checked={salesMode === mode}
                         data-testid={`sales-mode-${mode}`}
-                        onClick={() => setSalesMode(mode)}
+                        onClick={() => { setSalesMode(mode); setPublishFailed(false); }}
                         style={{ flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', background: salesMode === mode ? 'rgba(168,85,247,0.15)' : 'transparent', border: `1px solid ${salesMode === mode ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.1)'}`, color: salesMode === mode ? ventsColors.white : ventsColors.ink2 }}
                       >
                         {label}
                       </button>
                     ))}
                   </div>
+                )}
+                {comingSoonAvailable === false && (
+                  <p data-testid="coming-soon-unavailable" style={{ color: ventsColors.ink2, fontSize: '12px', lineHeight: 1.5, margin: 0 }}>
+                    Scheduling ticket sales for later (Coming Soon) isn't available yet. Tickets open when you publish.
+                  </p>
                 )}
                 {salesMode === 'coming_soon' && (
                   <>
