@@ -89,6 +89,27 @@ describe('AZ-10 (0234): payments captured without a ticket are refunded only wit
   });
 });
 
+describe('0238: transfer-fee refunds need two admins (owner decision 2026-11-27)', () => {
+  let m: string; beforeAll(() => { m = mig('0238_transfer_fee_refunds_two_admin.sql'); });
+  it('the confirm function never claims an automatic refund any more; it queues a payment exception', () => {
+    const confirm = m.slice(m.indexOf('CREATE OR REPLACE FUNCTION public.confirm_transfer_fee_payment('), m.indexOf('-- ── 3.'));
+    expect(confirm).not.toContain(':refund_claimed');
+    expect(confirm.match(/':refund_queued'/g)?.length).toBe(4);
+    expect(confirm.match(/'transfer_not_completed'/g)?.length).toBe(4);
+    expect(confirm).not.toMatch(/fee_refund_status = 'needed'/);
+  });
+  it('the webhook only refunds automatically on the old answer, never on the queued one', () => {
+    const hook = readFileSync(join(root, 'api', 'webhook', 'paystack.ts'), 'utf8');
+    expect(hook).toMatch(/if \(raw\.endsWith\(':refund_queued'\)\) return \{ feeStatus: [^}]*refundClaimed: false/);
+    expect(hook.match(/if \(refundClaimed\) await attemptTransferFeeRefund|else if \(refundClaimed\) \{/g)?.length).toBe(2);
+  });
+  it('refunds already in flight are left alone; owed ones are backfilled; gated undo; suite exists', () => {
+    expect(m).toMatch(/t\.fee_refund_status = 'needed' AND t\.fee_refund_id IS NULL\) OR t\.fee_refund_status = 'failed'/);
+    expect(undo('0238')).toContain("'undo-0238'");
+    expect(suite('run-transfer-fee-refund-two-admin-verification.sh')).toBe(true);
+  });
+});
+
 describe('AZ-32 / AZ-16 / AZ-33 (0235-0237): least privilege', () => {
   it('0235 revokes boost_event_vc from anon and signed-in users', () => {
     expect(mig('0235_revoke_boost_event_vc.sql')).toMatch(/REVOKE ALL ON FUNCTION public\.boost_event_vc\(uuid\) FROM PUBLIC, anon, authenticated;/);
@@ -116,7 +137,7 @@ describe('AZ-32 / AZ-16 / AZ-33 (0235-0237): least privilege', () => {
 
 describe('confirmed financial policies are unchanged by Batch 1', () => {
   const batch = ['0233_transfer_fee_payment_attempts.sql', '0234_payment_exception_two_admin_refund.sql', '0235_revoke_boost_event_vc.sql',
-    '0236_event_read_privacy.sql', '0237_organizer_review_attendance.sql'];
+    '0236_event_read_privacy.sql', '0237_organizer_review_attendance.sql', '0238_transfer_fee_refunds_two_admin.sql'];
   it('no fee, settlement-hold or withdrawal-approval function is redefined', () => {
     for (const f of batch) {
       const m = mig(f);

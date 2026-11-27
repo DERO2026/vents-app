@@ -17,6 +17,10 @@ BEGIN
   IF to_regclass('public.ticket_transfer_fee_attempts') IS NULL THEN
     RAISE EXCEPTION 'undo_0233: 0233 is not applied (ticket_transfer_fee_attempts is missing)';
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+              AND table_name = 'payment_exceptions' AND column_name = 'refund_status') THEN
+    RAISE EXCEPTION 'undo_0233: 0234 is still applied; undo in reverse order (0238, then 0234, then 0233)';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.payment_exceptions WHERE kind = 'ticket_transfer_fee') THEN
     RAISE EXCEPTION 'undo_0233: transfer-fee payment exceptions exist; resolve them before undoing';
   END IF;

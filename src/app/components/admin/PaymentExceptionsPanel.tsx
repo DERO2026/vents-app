@@ -21,7 +21,7 @@ type RefundStatus = 'requested' | 'approved' | 'refund_pending' | 'refund_failed
 export interface PaymentExceptionRow {
   id: string;
   reference: string;
-  reason: 'not_found' | 'amount_mismatch' | 'duplicate_payment';
+  reason: 'not_found' | 'amount_mismatch' | 'duplicate_payment' | 'transfer_not_completed';
   detail: string | null;
   amount_kobo: number;
   expected_kobo: number | null;
@@ -50,6 +50,9 @@ const STATUS_LABEL: Record<ExceptionStatus, string> = { open: 'Open', ticket_iss
 
 export function reasonText(r: PaymentExceptionRow): string {
   const fee = r.kind === 'ticket_transfer_fee';
+  if (r.reason === 'transfer_not_completed') {
+    return 'Transfer fee paid, but the ticket transfer could not complete (cancelled, expired or ticket no longer eligible)';
+  }
   if (r.reason === 'duplicate_payment') {
     return fee ? 'Second payment of a ticket-transfer fee that was already paid' : 'Second payment for an order that was already paid';
   }

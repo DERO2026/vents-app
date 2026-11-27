@@ -123,6 +123,21 @@ export async function paymentExceptionRefundOutcome(kind: 'processed' | 'failed'
   }
 }
 
+// confirm_transfer_fee_payment's answer, with its suffix split off:
+//   ':refund_claimed' (0064, before 0238): THIS caller must start the
+//                      automatic Paystack refund (attemptTransferFeeRefund);
+//   ':refund_queued'  (0238): the paid fee is owed back, recorded as a payment
+//                      exception for the two-admin refund; nothing is
+//                      refunded here.
+// Without the split, 'expired:refund_queued' would match no known status and
+// the verify path would report a failed transfer as a success.
+export function parseTransferFeeStatus(raw: unknown): { feeStatus: unknown; refundClaimed: boolean; refundQueued: boolean } {
+  if (typeof raw !== 'string') return { feeStatus: raw, refundClaimed: false, refundQueued: false };
+  if (raw.endsWith(':refund_claimed')) return { feeStatus: raw.slice(0, -':refund_claimed'.length), refundClaimed: true, refundQueued: false };
+  if (raw.endsWith(':refund_queued')) return { feeStatus: raw.slice(0, -':refund_queued'.length), refundClaimed: false, refundQueued: true };
+  return { feeStatus: raw, refundClaimed: false, refundQueued: false };
+}
+
 function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
@@ -433,9 +448,15 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
       // means THIS call is the one that must actually initiate the
       // Paystack refund (see attemptTransferFeeRefund's own header comment
       // for why that can never happen twice for the same payment).
-      const refundClaimed = typeof rawFeeStatus === 'string' && rawFeeStatus.endsWith(':refund_claimed');
-      const feeStatus = refundClaimed ? rawFeeStatus.slice(0, -':refund_claimed'.length) : rawFeeStatus;
+      // 0238: ':refund_queued' means the same situation, but the refund now
+      // needs two admins (payment exception) -- nothing is refunded here.
+      const { feeStatus, refundClaimed, refundQueued } = parseTransferFeeStatus(rawFeeStatus);
 
+      if (feeStatus === 'duplicate_payment') {
+        // 0233: this transfer was already paid by another payment; this one
+        // was recorded for a two-admin refund and changed nothing.
+        return res.status(200).json({ status: 'error', error: 'This transfer was already paid. This extra payment was recorded and will be refunded after review by VENTS.' });
+      }
       if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
         const [, expected, got] = feeStatus.split(':');
         console.error('[webhook/paystack?action=verify] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', expected, 'vs', got);
@@ -458,7 +479,9 @@ async function handleClientVerify(req, res, rawBody: Buffer) {
             : 'This transfer is no longer pending';
         return res.status(200).json({
           status: 'error',
-          error: `${reasonText}. You were charged for the transfer fee — a refund has been started automatically and should appear on your statement shortly.`,
+          error: refundQueued
+            ? `${reasonText}. You were charged for the transfer fee — a refund has been requested and is paid back after review by VENTS.`
+            : `${reasonText}. You were charged for the transfer fee — a refund has been started automatically and should appear on your statement shortly.`,
         });
       }
 
@@ -652,8 +675,7 @@ async function handleWebhook(req, res, rawBody: Buffer) {
       // whichever of the two paths runs first wins and the other no-ops.
       try {
         const rawFeeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
-        const refundClaimed = typeof rawFeeStatus === 'string' && rawFeeStatus.endsWith(':refund_claimed');
-        const feeStatus = refundClaimed ? rawFeeStatus.slice(0, -':refund_claimed'.length) : rawFeeStatus;
+        const { feeStatus, refundClaimed } = parseTransferFeeStatus(rawFeeStatus);
 
         if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
           console.error('[Paystack webhook] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', feeStatus);

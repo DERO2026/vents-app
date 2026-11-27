@@ -4,6 +4,15 @@ Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open item
 
 ## Batch 1: financial integrity and access hardening (2026-11-27)
 
+- **Policy update (owner, 2026-11-27):** transfer-fee refunds also need two admins.
+  - Migration **0238** queues them as payment exceptions; nothing is refunded automatically.
+  - Owed refunds that never started are backfilled into the queue.
+- **Production readiness:**
+  - read-only state check: `scripts/ops/batch1-migration-state-check.sql` (tested, 35 checks; not yet run on production);
+  - windows: W1 0226 if missing; W2 0233 → 0234 → 0238 together; W3 0235–0237;
+  - reverse-order-only undo guards;
+  - backup steps in `docs/batch1-financial-security.md` §1–§5.
+
 Full detail, prechecks and the approval request: `docs/batch1-financial-security.md`.
 
 - **Code merged and deployed with the web app. Migrations 0233–0237 are NOT applied to production.** Until they are, AZ-08, AZ-10, AZ-32, AZ-16 and AZ-33 are fixed in code only.
