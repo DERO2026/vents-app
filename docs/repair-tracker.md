@@ -2,6 +2,19 @@
 
 Source: the A–Z audit of `main` at `815ec94` (31 findings), plus the open items from the earlier lifecycle audit (OEL) and checkout audit (CF).
 
+## Batch 1: financial integrity and access hardening (2026-11-27)
+
+Full detail, prechecks and the approval request: `docs/batch1-financial-security.md`.
+
+- **Code merged and deployed with the web app. Migrations 0233–0237 are NOT applied to production.** Until they are, AZ-08, AZ-10, AZ-32, AZ-16 and AZ-33 are fixed in code only.
+- **AZ-09 correction:** the payout-reject race is already closed in production's function (atomic claim, captured 2026-10-30). The audit compared against the older 0124 body. A concurrency suite with a mutation check proves it; no migration is needed. 0187 must still never be applied.
+- **Local suites:**
+  - reject concurrency: 43/43
+  - transfer-fee attempts (0233): 56/56
+  - two-admin refunds (0234): 68/68
+  - access hardening (0235–0237): 50/50
+- **Static CI guards:** `src/lib/batch1FinancialSecurity.security.test.ts`.
+
 ## Current state (consolidation, 2026-11-27)
 
 Supersedes the "Verified state" section below, which describes `main` at `8663202`.

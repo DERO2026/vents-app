@@ -14,7 +14,7 @@ import { refuseInPreview } from '../_lib/previewGuard.js';
 // what's needed) -> Paystack call -> RPC (record the provider's reference)
 // -> webhook finalizes later.
 //
-// Handles both ticket_id and booking_id in one file (not two) because
+// Handles ticket_id, booking_id and payment_exception_id (0234) in one file because
 // Vercel's Hobby plan caps this project at 12 serverless functions -- see
 // api/webhook/paystack.ts's ?action= dispatch for the same constraint.
 // Kept below the shortest Vercel function limit (10 s), so an unanswered
@@ -32,12 +32,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
-  const { ticket_id, booking_id, reason } = req.body || {};
+  const { ticket_id, booking_id, payment_exception_id, reason } = req.body || {};
   if (ticket_id && booking_id) {
     return res.status(400).json({ error: 'Pass either ticket_id or booking_id, not both' });
   }
-  if (!ticket_id && !booking_id) {
-    return res.status(400).json({ error: 'ticket_id or booking_id is required' });
+  if (payment_exception_id && (ticket_id || booking_id)) {
+    return res.status(400).json({ error: 'Pass payment_exception_id on its own' });
+  }
+  if (!ticket_id && !booking_id && !payment_exception_id) {
+    return res.status(400).json({ error: 'ticket_id or booking_id is required (or payment_exception_id)' });
   }
   if (ticket_id && typeof ticket_id !== 'string') {
     return res.status(400).json({ error: 'ticket_id is required' });
@@ -45,13 +48,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (booking_id && typeof booking_id !== 'string') {
     return res.status(400).json({ error: 'booking_id is required' });
   }
+  if (payment_exception_id && typeof payment_exception_id !== 'string') {
+    return res.status(400).json({ error: 'payment_exception_id is required' });
+  }
   if (!reason || typeof reason !== 'string' || !reason.trim()) {
     return res.status(400).json({ error: 'A refund reason is required' });
   }
 
   const isBooking = !!booking_id;
-  const entityId = isBooking ? booking_id : ticket_id;
-  const rpcNames = isBooking
+  // AZ-10 / D4 (migration 0234): a payment Paystack captured without a
+  // ticket is refunded only after two different admins approved it
+  // (admin_request_payment_exception_refund -> approve_admin_action).
+  // start_payment_exception_refund refuses anything not approved, so this
+  // route can never refund before both approvals; it then claims the refund
+  // exactly once for exactly the approved amount.
+  const isPaymentException = !!payment_exception_id;
+  const entityId = isPaymentException ? payment_exception_id : isBooking ? booking_id : ticket_id;
+  const rpcNames = isPaymentException
+    ? {
+        start: 'start_payment_exception_refund',
+        attach: 'attach_payment_exception_refund_id',
+        revert: 'admin_revert_payment_exception_refund',
+      }
+    : isBooking
     ? {
         start: 'cancel_service_booking',
         attach: 'attach_service_booking_refund_id',
@@ -62,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         attach: 'attach_ticket_refund_id',
         revert: 'admin_revert_stuck_refund',
       };
-  const idParam = isBooking ? 'p_booking_id' : 'p_ticket_id';
+  const idParam = isPaymentException ? 'p_payment_exception_id' : isBooking ? 'p_booking_id' : 'p_ticket_id';
 
   const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
   const baseUrl = process.env.VITE_SUPABASE_URL;

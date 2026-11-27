@@ -104,6 +104,25 @@ async function attemptTransferFeeRefund(reference: string, amountKobo: number, n
   }
 }
 
+// Last link of the refund.processed / refund.failed chain: two-admin refunds
+// of payments captured without a ticket (migration 0234). Before 0234 is
+// applied the functions don't exist (Postgres 42883); that is reported as
+// not_found, exactly as an unrelated refund id is, so an unmatched refund
+// event never turns into a 500 and an hourly Paystack retry loop. Any other
+// error still propagates and is retried.
+export async function paymentExceptionRefundOutcome(kind: 'processed' | 'failed', refundId: string, reason?: string): Promise<string> {
+  try {
+    if (kind === 'processed') {
+      const rows = await callProjectAdminTableRpc<any>('finalize_payment_exception_refund', [refundId]);
+      return rows[0]?.status ?? 'not_found';
+    }
+    return (await callProjectAdminRpc<string>('fail_payment_exception_refund', [refundId, reason || 'refund failed'])) ?? 'not_found';
+  } catch (err: any) {
+    if (err?.code === '42883') return 'not_found';
+    throw err;
+  }
+}
+
 function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
@@ -924,6 +943,11 @@ async function handleWebhook(req, res, rawBody: Buffer) {
             const sRows = await callProjectAdminTableRpc<any>('finalize_service_booking_refund', [refundId]);
             const sRow = sRows[0];
             console.log('[Paystack webhook] refund.processed -> finalize_service_booking_refund result:', sRow?.status, 'for', refundId);
+            if (sRow?.status === 'not_found') {
+              // Two-admin refunds of payments captured without a ticket (0234).
+              const pStatus = await paymentExceptionRefundOutcome('processed', refundId);
+              console.log('[Paystack webhook] refund.processed -> finalize_payment_exception_refund result:', pStatus, 'for', refundId);
+            }
           }
         }
       } else {
@@ -939,6 +963,10 @@ async function handleWebhook(req, res, rawBody: Buffer) {
             const sRows = await callProjectAdminTableRpc<any>('fail_service_booking_refund', [refundId, event.data?.message || event.event]);
             const sRow = sRows[0];
             console.log('[Paystack webhook] refund.failed -> fail_service_booking_refund result:', sRow?.status, 'for', refundId);
+            if (sRow?.status === 'not_found') {
+              const pStatus = await paymentExceptionRefundOutcome('failed', refundId, event.data?.message || event.event);
+              console.log('[Paystack webhook] refund.failed -> fail_payment_exception_refund result:', pStatus, 'for', refundId);
+            }
           }
         }
       }
