@@ -26,10 +26,29 @@ beforeAll(() => {
 });
 
 describe('H2: no client code can turn a username into an email', () => {
-  it('the app never calls the old open lookups', () => {
+  it('the app never calls the old open lookups (except the guarded pre-0227 fallback in loginLookup.ts)', () => {
+    // P0 2026-11-27: production lacks 0227, so username login fell back to
+    // nothing. src/lib/loginLookup.ts may call the pre-0227 functions ONLY
+    // after the server says the 0227 function does not exist; with 0227
+    // present (always, once 0228 can run) the fallback never runs.
+    const appNoFallback = [...walk(join(root, 'src')), ...walk(join(root, 'api'))]
+      .filter((f) => !f.endsWith(join('src', 'lib', 'loginLookup.ts')))
+      .map((f) => readFileSync(f, 'utf8')).join('\n');
     for (const fn of ['resolve_username_to_email', 'get_account_status', 'email_exists']) {
-      expect(appSrc).not.toMatch(new RegExp(`rpc\\(\\s*'${fn}'`));
+      expect(appNoFallback).not.toMatch(new RegExp(`rpc\\(\\s*'${fn}'`));
     }
+    const lookup = readFileSync(join(root, 'src', 'lib', 'loginLookup.ts'), 'utf8');
+    expect(lookup).not.toMatch(/rpc\(\s*'email_exists'/);
+    // Each legacy call sits after the function-missing guard of its own function.
+    for (const [fnStart, guard, legacy] of [
+      ['export async function resolveUsernameToLoginEmail', 'if (!isMissingRpc(res)) throw lookupFailure(res);', "client.rpc('resolve_username_to_email'"],
+      ['export async function getLoginAccountStatus', 'if (!isMissingRpc(res)) return null;', "client.rpc('get_account_status'"],
+    ] as const) {
+      const body = lookup.slice(lookup.indexOf(fnStart));
+      expect(body.indexOf(guard)).toBeGreaterThan(-1);
+      expect(body.indexOf(legacy)).toBeGreaterThan(body.indexOf(guard));
+    }
+    expect(lookup).toMatch(/e\.code === 'PGRST202' \|\| e\.code === '42883'/);
   });
   it('0228 revokes the old lookups from every client role (server keeps them); 0227 stays safe for old app builds', () => {
     const m28 = readFileSync(join(root, 'supabase', 'migrations', '0228_revoke_open_auth_lookups.sql'), 'utf8');

@@ -32,7 +32,7 @@ beforeAll(() => {
 describe('AuthScreen.tsx: suspended/deleted account login handling', () => {
   it('checks account status only after signInWithPassword has already failed, never before', () => {
     const signInIdx = authScreenSrc.indexOf("supabase.auth.signInWithPassword({ email: loginEmail, password })");
-    const statusCheckIdx = authScreenSrc.indexOf("supabase.rpc('get_login_account_status'");
+    const statusCheckIdx = authScreenSrc.indexOf('await getLoginAccountStatus(supabase as any, checkIdentifier, password)');
     expect(signInIdx).toBeGreaterThan(-1);
     expect(statusCheckIdx).toBeGreaterThan(signInIdx);
   });
@@ -40,7 +40,9 @@ describe('AuthScreen.tsx: suspended/deleted account login handling', () => {
   it('covers username-based login too: the status check takes the typed identifier (email OR username) plus the password', () => {
     // 0227 (L4): get_login_account_status resolves email or username on the
     // server and answers only for the owner (correct password).
-    expect(authScreenSrc).toContain("supabase.rpc('get_login_account_status' as any, { p_identifier: checkIdentifier, p_password: password })");
+    expect(authScreenSrc).toContain('await getLoginAccountStatus(supabase as any, checkIdentifier, password)');
+    const lookupSrc = readFileSync(join(__dirname, 'loginLookup.ts'), 'utf8');
+    expect(lookupSrc).toContain("client.rpc('get_login_account_status', { p_identifier: identifier, p_password: password })");
     expect(authScreenSrc).toMatch(/const checkIdentifier = email\.trim\(\);/);
     expect(authScreenSrc).not.toContain("rpc('get_account_status'");
     expect(authScreenSrc).not.toContain("rpc('resolve_username_to_email'");

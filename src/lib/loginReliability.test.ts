@@ -53,17 +53,22 @@ import { join } from 'node:path';
 
 let authScreenSrc: string;
 let m0049: string;
+let lookupSrc: string;
 
 beforeAll(() => {
   authScreenSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'AuthScreen.tsx'), 'utf8');
+  lookupSrc = readFileSync(join(__dirname, 'loginLookup.ts'), 'utf8');
   m0049 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0049_harden_username_lookup.sql'), 'utf8');
 });
 
 describe('login: username-lookup failures are never shown as "wrong password"', () => {
   it('a username-lookup RPC error (resolve_login_email since 0227) is tagged distinctly, not thrown raw', () => {
     const loginBlock = authScreenSrc.match(/if \(!isValidEmail\(loginEmail\)\) \{[\s\S]*?loginEmail = resolvedEmail;\s*\n\s*\}/)?.[0] ?? '';
-    expect(loginBlock).toMatch(/if \(resolveError\) throw new Error\(`LOGIN_LOOKUP_FAILED: /);
-    expect(loginBlock).toContain("supabase.rpc('resolve_login_email' as any, { p_username: loginEmail.toLowerCase(), p_password: password })");
+    expect(loginBlock).toContain('await resolveUsernameToLoginEmail(supabase as any, loginEmail, password)');
+    // src/lib/loginLookup.ts: every failure that isn't "function missing" becomes a tagged LoginLookupError.
+    expect(lookupSrc).toContain("const res = await client.rpc('resolve_login_email', { p_username, p_password: password });");
+    expect(lookupSrc).toContain('if (!isMissingRpc(res)) throw lookupFailure(res);');
+    expect(lookupSrc).toMatch(/super\(`LOGIN_LOOKUP_FAILED\[\$\{kind\}\]: \$\{detail\}`\)/);
   });
 
   it('the catch block shows an honest lookup-failure message, checked before the generic wrong-password fallback', () => {
@@ -75,9 +80,15 @@ describe('login: username-lookup failures are never shown as "wrong password"', 
   });
 
   it('the lookup-failure message never claims the password was wrong', () => {
-    const block = authScreenSrc.match(/if \(msg\.includes\('LOGIN_LOOKUP_FAILED'\)\) \{[\s\S]*?\n\s{8}\}/)?.[0] ?? '';
-    expect(block).toMatch(/couldn't verify your login/i);
+    const block = authScreenSrc.match(/if \(err instanceof LoginLookupError \|\| msg\.includes\('LOGIN_LOOKUP_FAILED'\)\) \{[\s\S]*?\n\s{8}\}/)?.[0] ?? '';
+    expect(block).toContain('LOGIN_MESSAGES.unavailable');
+    expect(block).toContain('LOGIN_MESSAGES.network');
     expect(block).not.toMatch(/incorrect|wrong password/i);
+    const msgs = lookupSrc.match(/export const LOGIN_MESSAGES = \{([\s\S]*?)\} as const;/)?.[1] ?? '';
+    for (const key of ['network', 'unavailable']) {
+      const line = msgs.split('\n').find((l) => l.trim().startsWith(`${key}:`)) ?? '';
+      expect(line).not.toMatch(/incorrect|wrong password/i);
+    }
   });
 
   it('a genuine "no account found" (or a wrong password) is a distinct, separate error from a lookup failure', () => {
