@@ -69,6 +69,7 @@ function describe(r: ActionRequest): string {
     resolve_booking_dispute: `${who} requested to resolve a booking dispute for the ${r.payload?.outcome === 'customer' ? 'CUSTOMER (earnings stay held)' : r.payload?.outcome === 'provider' ? 'PROVIDER (earnings release)' : '?'} (${label})`,
     earnings_adjustment: describeEarningsAdjustment(who, label, r.payload),
     reassign_withdrawal_bank_account: describeWithdrawalReassignment(who, label, r.payload),
+    refund_payment_exception: `${who} requested a REFUND of ${typeof r.payload?.amount_kobo === 'number' ? '₦' + (r.payload.amount_kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 }) : '?'} for a payment captured without a ticket (${r.payload?.reference ?? label})${r.payload?.reason ? `: ${r.payload.reason}` : ''}`,
     authorize_withdrawal: `${who} requested to AUTHORIZE a withdrawal of ${typeof r.payload?.amount_kobo === 'number' ? '₦' + (r.payload.amount_kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 }) : '?'} (${label})`,
     toggle_user_verified: `${who} requested to change verification of ${label}`,
     credit_vents_cents: `${who} requested to credit ${r.payload?.amount ?? '?'} VC to ${label}`,

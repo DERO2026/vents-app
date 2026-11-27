@@ -275,7 +275,17 @@ public_exec() { val "SELECT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl
 section_mechanics() { [ "$WITHOUT_0220" = 0 ]; }
 
 echo "== Fidelity: every function the harness runs is the repository's latest definition =="
-for pair in "schema-ticket-integrity.sql:log_scan_attempt door_stats scan_reason_to_result is_event_door_manager generate_ticket_token purchase_ticket purchase_ticket_with_tokens verify_entry_pass manual_check_in protect_ticket_ownership_column compute_transfer_fee_kobo initiate_ticket_transfer initiate_transfer_fee_payment accept_ticket_transfer confirm_transfer_fee_payment" \
+# The two transfer-fee payment functions are this harness's pre-0233 copies:
+# 0233 (transfer-fee payment attempts) replaced them later and has its own
+# suite (run-transfer-fee-attempts-verification.sh), so they are compared,
+# byte for byte, with their latest definition before 0233.
+if python3 -I "$SCRIPT_DIR/check-verbatim-functions.py" --before 0233 "$REPO_ROOT" "$SCRIPT_DIR/schema-ticket-integrity.sql" \
+     initiate_transfer_fee_payment confirm_transfer_fee_payment >"$OUT" 2>&1; then
+  pass "schema-ticket-integrity.sql: the two transfer-fee payment functions are byte-identical to their latest pre-0233 definition"
+else
+  fail "schema-ticket-integrity.sql: a transfer-fee payment function differs from its pre-0233 migration"; cat "$OUT" >&2
+fi
+for pair in "schema-ticket-integrity.sql:log_scan_attempt door_stats scan_reason_to_result is_event_door_manager generate_ticket_token purchase_ticket purchase_ticket_with_tokens verify_entry_pass manual_check_in protect_ticket_ownership_column compute_transfer_fee_kobo initiate_ticket_transfer accept_ticket_transfer" \
             "live-money-functions.sql:create_pending_purchase finalize_pending_purchase confirm_ticket_payment confirm_ticket_payment_via_wallet refund_ticket finalize_ticket_refund" \
             "schema-event-cancellation.sql:admin_revert_stuck_refund fail_ticket_refund attach_ticket_refund_id"; do
   file="${pair%%:*}"; names="${pair#*:}"
